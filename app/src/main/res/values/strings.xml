@@ -1,5 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Riyan AI Keyboard</string>
-    <string name="automatic_reply_accessibility_description">Membaca teks percakapan yang terlihat hanya saat tombol Balas pada Riyan AI Keyboard ditekan.</string>
 </resources>

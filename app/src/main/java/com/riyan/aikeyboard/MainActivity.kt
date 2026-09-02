@@ -74,9 +74,9 @@ class MainActivity : AppCompatActivity() {
         })
 
         root.addView(sectionTitle("Ukuran dan respons"))
-        root.addView(description("Tinggi potret dan lanskap disimpan terpisah. Keduanya juga dapat diubah langsung lewat tombol ↕ pada keyboard."))
+        root.addView(description("Tinggi potret dan lanskap disimpan terpisah. Rentang lanskap dibuat lebih rendah dan keduanya dapat diubah langsung lewat tombol ↕ pada keyboard."))
         val portraitHeight = settingSlider(root, "Tinggi mode potret", 210, 360, prefs.getInt("keyboard_height_portrait_dp", 250), " dp")
-        val landscapeHeight = settingSlider(root, "Tinggi mode lanskap", 175, 300, prefs.getInt("keyboard_height_landscape_dp", 205), " dp")
+        val landscapeHeight = settingSlider(root, "Tinggi mode lanskap", 135, 220, prefs.getInt("keyboard_height_landscape_dp", 155), " dp")
         val keyTextSize = settingSlider(root, "Ukuran huruf tombol", 16, 28, prefs.getInt("key_text_size_sp", 21), " sp")
         val touchSensitivity = settingSlider(root, "Sensitivitas sentuhan", 20, 100, prefs.getInt("touch_sensitivity", 65), "%")
         val longPressDuration = settingSlider(root, "Penundaan tekan lama", 200, 900, prefs.getInt("long_press_ms", 450), " ms")
@@ -103,13 +103,32 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
+        root.addView(sectionTitle("Koreksi dan kalimat tersimpan"))
+        val suggestions = switchSetting(root, "Prediksi dan koreksi otomatis", "Bar koreksi hanya muncul setelah ada 2–3 huruf yang cocok, lalu tersembunyi lagi saat tidak diperlukan.", prefs.getBoolean("suggestions_enabled", true))
+        val personalizedLearning = switchSetting(root, "Pelajari tulisan yang sering dipakai", "Simpan kata, email, dan frasa yang sering diketik hanya di perangkat. Kolom sandi tidak pernah dipelajari.", prefs.getBoolean("personalized_learning_enabled", true))
+        val personalPhrases = EditText(this).apply {
+            hint = "Email atau kalimat tersimpan, satu per baris"
+            minLines = 3
+            maxLines = 7
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            setText(prefs.getString("personal_phrases", ""))
+        }
+        root.addView(personalPhrases, ViewGroup.LayoutParams(-1, -2))
+        root.addView(Button(this).apply {
+            text = "Hapus hasil pembelajaran otomatis"
+            setOnClickListener {
+                prefs.edit().remove("learned_suggestions").remove("learned_words").apply()
+                Toast.makeText(this@MainActivity, "Kata dan kalimat yang dipelajari telah dihapus.", Toast.LENGTH_SHORT).show()
+            }
+        })
+
         root.addView(Button(this).apply {
             text = "Simpan pengaturan keyboard"
             setOnClickListener {
                 prefs.edit()
                     .putInt("keyboard_height_portrait_dp", portraitHeight.progress + 210)
-                    .putInt("keyboard_height_landscape_dp", landscapeHeight.progress + 175)
-                    .putInt("keyboard_layout_version", 5)
+                    .putInt("keyboard_height_landscape_dp", landscapeHeight.progress + 135)
+                    .putInt("keyboard_layout_version", 6)
                     .putInt("key_text_size_sp", keyTextSize.progress + 16)
                     .putInt("touch_sensitivity", touchSensitivity.progress + 20)
                     .putInt("long_press_ms", longPressDuration.progress + 200)
@@ -122,17 +141,16 @@ class MainActivity : AppCompatActivity() {
                     .putBoolean("vibration_enabled", vibration.isChecked)
                     .putInt("vibration_duration_ms", vibrationDuration.progress + 5)
                     .putBoolean("clipboard_history_enabled", clipboardHistory.isChecked)
+                    .putBoolean("suggestions_enabled", suggestions.isChecked)
+                    .putBoolean("personalized_learning_enabled", personalizedLearning.isChecked)
+                    .putString("personal_phrases", personalPhrases.text.toString().trim())
                     .apply()
                 Toast.makeText(this@MainActivity, "Pengaturan keyboard tersimpan.", Toast.LENGTH_SHORT).show()
             }
         })
 
-        root.addView(sectionTitle("Balasan AI otomatis"))
-        root.addView(description("Aktifkan layanan ini agar tombol Balas dapat membaca teks percakapan yang sedang terlihat tanpa ditempel manual. Teks hanya diambil saat Balas ditekan dan langsung dikirim ke provider AI pilihanmu."))
-        root.addView(Button(this).apply {
-            text = "Aktifkan Akses Balasan Otomatis"
-            setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
-        })
+        root.addView(sectionTitle("Balasan AI tanpa Aksesibilitas"))
+        root.addView(description("Salin pesan yang ingin dibalas, buka kolom balasan, lalu tekan Balas di panel AI. Keyboard membaca clipboard saat tombol ditekan sehingga teks tidak perlu ditempel. Versi ini tidak lagi menyediakan layanan Aksesibilitas yang dapat memicu peringatan aplikasi bank."))
 
         root.addView(sectionTitle("Provider AI utama"))
         val provider = Spinner(this)
@@ -205,13 +223,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun migrateOldHeight() {
-        if (prefs.getInt("keyboard_layout_version", 0) >= 5) return
+        if (prefs.getInt("keyboard_layout_version", 0) >= 6) return
         val old = prefs.getInt("keyboard_height_dp", 350)
         val migrated = if (old == 350) 250 else old.coerceIn(210, 360)
+        val oldLandscape = prefs.getInt("keyboard_height_landscape_dp", 205)
+        val migratedLandscape = if (oldLandscape >= 175) oldLandscape - 30 else oldLandscape
         prefs.edit()
             .putInt("keyboard_height_portrait_dp", migrated)
-            .putInt("keyboard_height_landscape_dp", 205)
-            .putInt("keyboard_layout_version", 5)
+            .putInt("keyboard_height_landscape_dp", migratedLandscape.coerceIn(135, 220))
+            .putInt("keyboard_layout_version", 6)
             .apply()
     }
 
