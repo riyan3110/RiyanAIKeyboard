@@ -73,6 +73,7 @@ class RiyanKeyboardService : InputMethodService() {
     private var maxKeyboardHeightDp = MAX_KEYBOARD_HEIGHT_PORTRAIT_DP
     private var heightPreferenceKey = HEIGHT_PORTRAIT_KEY
     private var keyTextSizeSp = 21f
+    private var keyBoxScale = 1f
     private var touchTolerancePx = 0f
     private var instantKeyResponse = false
     private var longPressDurationMs = 450L
@@ -100,7 +101,8 @@ class RiyanKeyboardService : InputMethodService() {
     private val suggestionRefreshRunnable = Runnable { refreshSuggestions() }
     private val suggestionAutoHideRunnable = Runnable {
         if (::suggestionBar.isInitialized) {
-            suggestionBar.visibility = if (suggestionsEnabled) View.INVISIBLE else View.GONE
+            suggestionBar.removeAllViews()
+            suggestionBar.visibility = View.VISIBLE
         }
     }
     private var bg = Color.rgb(18, 18, 23)
@@ -245,6 +247,7 @@ class RiyanKeyboardService : InputMethodService() {
         baseKeyboardHeightDp = prefs.getInt(heightPreferenceKey, defaultHeight)
             .coerceIn(minKeyboardHeightDp, maxKeyboardHeightDp)
         keyTextSizeSp = prefs.getInt("key_text_size_sp", 21).coerceIn(16, 28).toFloat()
+        keyBoxScale = prefs.getInt("key_box_scale_percent", 100).coerceIn(65, 100) / 100f
         val sensitivity = prefs.getInt("touch_sensitivity", 100).coerceIn(20, 400)
         touchTolerancePx = dpFloat(12f + sensitivity * 0.18f)
         instantKeyResponse = sensitivity >= INSTANT_RESPONSE_THRESHOLD
@@ -282,7 +285,7 @@ class RiyanKeyboardService : InputMethodService() {
         val palette = KeyboardTheme.palette(prefs)
         root.background = KeyboardTheme.background(this, prefs, palette)
         if (::suggestionBar.isInitialized) {
-            suggestionBar.setBackgroundColor(if (themeUsesPhoto) Color.TRANSPARENT else bg)
+            suggestionBar.setBackgroundColor(Color.BLACK)
         }
         if (::bottomBrandBar.isInitialized) {
             bottomBrandBar.setBackgroundColor(if (themeUsesPhoto) Color.TRANSPARENT else bg)
@@ -299,7 +302,7 @@ class RiyanKeyboardService : InputMethodService() {
             setPadding(0, dp(2), 0, 0)
             setBackgroundColor(if (themeUsesPhoto) Color.TRANSPARENT else bg)
             addView(TextView(this@RiyanKeyboardService).apply {
-                text = "AI Ads Keyboard · v0.11"
+                text = "AI Ads Keyboard · v0.12"
                 textSize = 9f
                 setTextColor(Color.rgb(145, 137, 190))
                 gravity = Gravity.CENTER
@@ -407,6 +410,7 @@ class RiyanKeyboardService : InputMethodService() {
         utilityBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            setBackgroundColor(Color.BLACK)
         }
         utilityBar.addView(toolbarButton("✦ AI", dp(57)) { toggleAiPanel() })
         utilityBar.addView(toolbarButton("⌨", dp(43)) {
@@ -416,6 +420,7 @@ class RiyanKeyboardService : InputMethodService() {
         })
         utilityBar.addView(toolbarButton("😊", dp(43)) {
             aiComposeActive = false
+            emojiPage = 0
             mode = KeyboardMode.EMOJI
             renderKeyboard()
         })
@@ -426,20 +431,19 @@ class RiyanKeyboardService : InputMethodService() {
             renderKeyboard()
         })
         utilityBar.addView(toolbarButton("↕", dp(43)) { toggleResizePanel() })
-        utilityBar.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
+        suggestionBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(2), 0, dp(2), 0)
+            setBackgroundColor(Color.BLACK)
+            visibility = View.VISIBLE
+        }
+        utilityBar.addView(suggestionBar, LinearLayout.LayoutParams(0, dp(utilityHeightDp()), 1f))
         utilityBar.addView(toolbarButton("⚙", dp(43)) { openSettings() })
         root.addView(utilityBar, LinearLayout.LayoutParams(-1, dp(utilityHeightDp())))
     }
 
     private fun addSuggestionBar() {
-        suggestionBar = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            setPadding(dp(3), dp(2), dp(3), dp(2))
-            setBackgroundColor(if (themeUsesPhoto) Color.TRANSPARENT else bg)
-            visibility = if (suggestionsEnabled) View.INVISIBLE else View.GONE
-        }
-        root.addView(suggestionBar, LinearLayout.LayoutParams(-1, dp(activeSuggestionHeightDp())))
         refreshSuggestions()
     }
 
@@ -533,11 +537,8 @@ class RiyanKeyboardService : InputMethodService() {
             }
         }
         if (::suggestionBar.isInitialized) {
-            suggestionBar.visibility = when {
-                aiFullscreen -> View.GONE
-                !suggestionsEnabled -> View.GONE
-                else -> View.INVISIBLE
-            }
+            if (aiFullscreen || !suggestionsEnabled) suggestionBar.removeAllViews()
+            suggestionBar.visibility = View.VISIBLE
         }
         if (::resizePanel.isInitialized) {
             resizePanel.visibility = if (!aiFullscreen && resizePanelVisible) View.VISIBLE else View.GONE
@@ -588,7 +589,7 @@ class RiyanKeyboardService : InputMethodService() {
             height = dp(utilityHeightDp())
         }
         if (::suggestionBar.isInitialized) suggestionBar.layoutParams = suggestionBar.layoutParams.apply {
-            height = dp(activeSuggestionHeightDp())
+            height = dp(utilityHeightDp())
         }
         if (::resizePanel.isInitialized) resizePanel.layoutParams = resizePanel.layoutParams.apply {
             height = dp(resizePanelHeightDp())
@@ -617,7 +618,7 @@ class RiyanKeyboardService : InputMethodService() {
             return
         }
         applyAiDisplayMode()
-        val suggestionReduction = if (suggestionsEnabled) 0 else suggestionHeightDp()
+        val suggestionReduction = 0
         val extra = brandBarHeightDp() +
             (if (aiPanelVisible) currentAiPanelHeightDp() else 0) +
             (if (resizePanelVisible) resizePanelHeightDp() else 0)
@@ -659,30 +660,33 @@ class RiyanKeyboardService : InputMethodService() {
         handler.removeCallbacks(suggestionAutoHideRunnable)
         suggestionBar.removeAllViews()
         if (!suggestionsEnabled || isSensitiveEditor() || (mode != KeyboardMode.LETTERS && !aiComposeActive)) {
-            suggestionBar.visibility = if (suggestionsEnabled) View.INVISIBLE else View.GONE
+            suggestionBar.visibility = View.VISIBLE
             return
         }
         val before = textBeforeTypingCursor()
-        val candidates = SuggestionEngine.suggest(before, loadLearnedSuggestions(), savedSuggestionEntries())
+        val candidates = SuggestionEngine
+            .suggest(before, loadLearnedSuggestions(), savedSuggestionEntries(), limit = 2)
+            .take(2)
         if (candidates.isEmpty()) {
-            suggestionBar.visibility = View.INVISIBLE
+            suggestionBar.visibility = View.VISIBLE
             return
         }
         suggestionBar.visibility = View.VISIBLE
         candidates.forEach { candidate ->
-            suggestionBar.addView(Button(this).apply {
+            suggestionBar.addView(TextView(this).apply {
                 text = candidate.text
-                textSize = 12f
-                isAllCaps = false
-                minWidth = 0
-                minimumWidth = 0
-                minHeight = 0
-                minimumHeight = 0
-                setPadding(dp(4), 0, dp(4), 0)
+                textSize = 11f
+                maxLines = 1
+                gravity = Gravity.CENTER
+                setPadding(dp(3), 0, dp(3), 0)
                 setTextColor(Color.WHITE)
-                background = roundedBackground(Color.rgb(39, 39, 47), 9f)
+                background = null
+                isClickable = true
+                contentDescription = "Saran: ${candidate.text}"
                 setOnClickListener { acceptPrediction(candidate) }
-            }, LinearLayout.LayoutParams(0, -1, 1f).apply { setMargins(dp(2), 0, dp(2), 0) })
+            }, LinearLayout.LayoutParams(0, -1, 1f).apply {
+                setMargins(dp(1), 0, dp(1), 0)
+            })
         }
         handler.postDelayed(suggestionAutoHideRunnable, SUGGESTION_AUTO_HIDE_MS)
     }
@@ -747,7 +751,7 @@ class RiyanKeyboardService : InputMethodService() {
                 KeySpec(",", action = { commitPunctuation(",") }),
                 KeySpec("spasi", weight = 4.45f, action = { commitSpace() }),
                 KeySpec(".", action = { commitPunctuation(".") }),
-                KeySpec("↵", weight = 1.25f, action = { pressEnter() })
+                KeySpec(enterKeyLabel(), weight = 1.25f, action = { pressEnter() })
             )
         )
     }
@@ -812,7 +816,7 @@ class RiyanKeyboardService : InputMethodService() {
                 KeySpec(":", action = { commitPunctuation(":") }),
                 KeySpec("spasi", weight = 3.1f, action = { commitSpace() }),
                 KeySpec("?", action = { commitPunctuation("?") }),
-                KeySpec("↵", weight = 1.25f, action = { pressEnter() })
+                KeySpec(enterKeyLabel(), weight = 1.25f, action = { pressEnter() })
             )
         )
     }
@@ -822,11 +826,15 @@ class RiyanKeyboardService : InputMethodService() {
     private fun symbolSpec(symbol: String) = KeySpec(symbol, action = { commit(symbol) })
 
     private fun renderEmoji() {
-        val emojis = emojiPages[emojiPage]
-        repeat(3) { rowIndex ->
-            addRow(emojis.drop(rowIndex * 8).take(8).map { emoji -> KeySpec(emoji, action = { commit(emoji) }) })
+        val emojis = if (emojiPage == 0) {
+            (loadRecentEmojis() + emojiPages[0]).distinct().take(31)
+        } else {
+            emojiPages[emojiPage]
         }
-        val fourth = emojis.drop(24).take(7).map { emoji -> KeySpec(emoji, action = { commit(emoji) }) }.toMutableList()
+        repeat(3) { rowIndex ->
+            addRow(emojis.drop(rowIndex * 8).take(8).map { emoji -> KeySpec(emoji, action = { rememberEmoji(emoji); commit(emoji) }) })
+        }
+        val fourth = emojis.drop(24).take(7).map { emoji -> KeySpec(emoji, action = { rememberEmoji(emoji); commit(emoji) }) }.toMutableList()
         fourth += KeySpec("⌫", weight = 1.2f, action = { deleteOne() }, longAction = { deleteWord() })
         addRow(fourth)
         addRow(
@@ -836,9 +844,32 @@ class RiyanKeyboardService : InputMethodService() {
                 KeySpec("${emojiPage + 1}/${emojiPages.size}", weight = 1.15f, action = {}),
                 KeySpec("▶", action = { emojiPage = (emojiPage + 1) % emojiPages.size; renderKeyboard() }),
                 KeySpec("spasi", weight = 2.8f, action = { commitSpace() }),
-                KeySpec("↵", weight = 1.25f, action = { pressEnter() })
+                KeySpec(enterKeyLabel(), weight = 1.25f, action = { pressEnter() })
             )
         )
+    }
+
+
+    private fun loadRecentEmojis(): List<String> = runCatching {
+        val raw = getSharedPreferences(PREFS, MODE_PRIVATE).getString("recent_emojis", "[]").orEmpty()
+        val array = JSONArray(raw)
+        buildList {
+            for (index in 0 until array.length()) {
+                val value = array.optString(index).trim()
+                if (value.isNotBlank()) add(value)
+            }
+        }
+    }.getOrDefault(emptyList())
+
+    private fun rememberEmoji(emoji: String) {
+        val recent = loadRecentEmojis().toMutableList()
+        recent.removeAll { it == emoji }
+        recent.add(0, emoji)
+        val array = JSONArray()
+        recent.take(16).forEach(array::put)
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+            .putString("recent_emojis", array.toString())
+            .apply()
     }
 
     private fun renderClipboard() {
@@ -930,6 +961,8 @@ class RiyanKeyboardService : InputMethodService() {
         val isSpecial = spec.label.length > 2 || spec.label in listOf("⇧", "⇪", "⌫", "↵", "◀", "▶")
         val normalColor = if (isSpecial) specialKeyBg else keyBg
         val frame = FrameLayout(this).apply {
+            scaleX = keyBoxScale
+            scaleY = keyBoxScale
             isClickable = true
             isFocusable = false
             background = roundedBackground(normalColor, 7f)
@@ -1043,7 +1076,7 @@ class RiyanKeyboardService : InputMethodService() {
         minimumWidth = 0
         setPadding(0, 0, 0, 0)
         setTextColor(Color.WHITE)
-        setBackgroundColor(bg)
+        setBackgroundColor(Color.BLACK)
         setOnClickListener { action() }
         layoutParams = LinearLayout.LayoutParams(widthPx, dp(utilityHeightDp()))
     }
@@ -1312,6 +1345,21 @@ class RiyanKeyboardService : InputMethodService() {
         return true
     }
 
+
+    private fun enterKeyLabel(): String {
+        val action = currentInputEditorInfo?.imeOptions?.and(EditorInfo.IME_MASK_ACTION)
+            ?: EditorInfo.IME_ACTION_NONE
+        return when (action) {
+            EditorInfo.IME_ACTION_SEARCH -> "🔍"
+            EditorInfo.IME_ACTION_SEND -> "➤"
+            EditorInfo.IME_ACTION_GO -> "→"
+            EditorInfo.IME_ACTION_NEXT -> "→"
+            EditorInfo.IME_ACTION_PREVIOUS -> "←"
+            EditorInfo.IME_ACTION_DONE -> "✓"
+            else -> "↵"
+        }
+    }
+
     private fun pressEnter() {
         if (aiComposeActive) {
             runAiConversation()
@@ -1319,7 +1367,7 @@ class RiyanKeyboardService : InputMethodService() {
         }
         learnCurrentBoundary(completed = true)
         val action = currentInputEditorInfo?.imeOptions?.and(EditorInfo.IME_MASK_ACTION) ?: EditorInfo.IME_ACTION_NONE
-        if (enterActionEnabled && action != EditorInfo.IME_ACTION_NONE && action != EditorInfo.IME_ACTION_UNSPECIFIED) {
+        if (action != EditorInfo.IME_ACTION_NONE && action != EditorInfo.IME_ACTION_UNSPECIFIED) {
             currentInputConnection?.performEditorAction(action)
         } else {
             currentInputConnection?.commitText("\n", 1)

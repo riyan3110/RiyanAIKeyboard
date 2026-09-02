@@ -34,22 +34,41 @@ service = replace_required(
 )
 
 # Put the prediction bar in the exact empty toolbar area between resize and Settings.
-# It is always black so it visually joins the utility bar even when a photo theme is active.
+# The black host is permanent and exactly as tall as the utility bar. Only its text children
+# appear and disappear, so the toolbar never changes size or looks visually disconnected.
 service = replace_required(
     service,
     '''        utilityBar.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))''',
     '''        suggestionBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(2), dp(1), dp(2), dp(1))
+            setPadding(dp(2), 0, dp(2), 0)
             setBackgroundColor(Color.BLACK)
-            visibility = if (suggestionsEnabled) View.INVISIBLE else View.GONE
+            visibility = View.VISIBLE
         }
-        utilityBar.addView(suggestionBar, LinearLayout.LayoutParams(0, dp(utilityHeightDp() - 4), 1f).apply {
-            leftMargin = dp(3)
-            rightMargin = dp(3)
-        })''',
+        utilityBar.addView(suggestionBar, LinearLayout.LayoutParams(0, dp(utilityHeightDp()), 1f))''',
     "prediction toolbar host",
+)
+
+# Make the toolbar and prediction host one continuous black strip, independent of theme.
+service = service.replace(
+    '''        utilityBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }''',
+    '''        utilityBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setBackgroundColor(Color.BLACK)
+        }''',
+)
+service = service.replace(
+    '''        setBackgroundColor(bg)
+        setOnClickListener { action() }
+        layoutParams = LinearLayout.LayoutParams(widthPx, dp(utilityHeightDp()))''',
+    '''        setBackgroundColor(Color.BLACK)
+        setOnClickListener { action() }
+        layoutParams = LinearLayout.LayoutParams(widthPx, dp(utilityHeightDp()))''',
 )
 
 # addSuggestionBar used to create a separate row below the toolbar. The host now exists in toolbar.
@@ -76,7 +95,48 @@ service = service.replace(
     'suggestionBar.setBackgroundColor(Color.BLACK)',
 )
 
-# Prediction items are text-only, maximum two, with no chip/button backgrounds and no timed hiding.
+# Hiding suggestions clears only their text; the black toolbar host remains visible.
+service = service.replace(
+    '''    private val suggestionAutoHideRunnable = Runnable {
+        if (::suggestionBar.isInitialized) {
+            suggestionBar.visibility = if (suggestionsEnabled) View.INVISIBLE else View.GONE
+        }
+    }''',
+    '''    private val suggestionAutoHideRunnable = Runnable {
+        if (::suggestionBar.isInitialized) {
+            suggestionBar.removeAllViews()
+            suggestionBar.visibility = View.VISIBLE
+        }
+    }''',
+)
+service = service.replace(
+    '''        if (::suggestionBar.isInitialized) {
+            suggestionBar.visibility = when {
+                aiFullscreen -> View.GONE
+                !suggestionsEnabled -> View.GONE
+                else -> View.INVISIBLE
+            }
+        }''',
+    '''        if (::suggestionBar.isInitialized) {
+            if (aiFullscreen || !suggestionsEnabled) suggestionBar.removeAllViews()
+            suggestionBar.visibility = View.VISIBLE
+        }''',
+)
+service = service.replace(
+    '''        if (::suggestionBar.isInitialized) suggestionBar.layoutParams = suggestionBar.layoutParams.apply {
+            height = dp(activeSuggestionHeightDp())
+        }''',
+    '''        if (::suggestionBar.isInitialized) suggestionBar.layoutParams = suggestionBar.layoutParams.apply {
+            height = dp(utilityHeightDp())
+        }''',
+)
+service = service.replace(
+    '        val suggestionReduction = if (suggestionsEnabled) 0 else suggestionHeightDp()',
+    '        val suggestionReduction = 0',
+)
+
+# Prediction items are text-only and maximum two. Their text hides automatically while the
+# permanent black host stays in place.
 old_prediction_ui = '''        val before = textBeforeTypingCursor()
         val candidates = SuggestionEngine.suggest(before, loadLearnedSuggestions(), savedSuggestionEntries())
         if (candidates.isEmpty()) {
@@ -105,7 +165,7 @@ new_prediction_ui = '''        val before = textBeforeTypingCursor()
             .suggest(before, loadLearnedSuggestions(), savedSuggestionEntries(), limit = 2)
             .take(2)
         if (candidates.isEmpty()) {
-            suggestionBar.visibility = View.INVISIBLE
+            suggestionBar.visibility = View.VISIBLE
             return
         }
         suggestionBar.visibility = View.VISIBLE
@@ -124,8 +184,20 @@ new_prediction_ui = '''        val before = textBeforeTypingCursor()
             }, LinearLayout.LayoutParams(0, -1, 1f).apply {
                 setMargins(dp(1), 0, dp(1), 0)
             })
-        }'''
+        }
+        handler.postDelayed(suggestionAutoHideRunnable, SUGGESTION_AUTO_HIDE_MS)'''
 service = replace_required(service, old_prediction_ui, new_prediction_ui, "text-only prediction UI")
+
+service = service.replace(
+    '''        if (!suggestionsEnabled || isSensitiveEditor() || (mode != KeyboardMode.LETTERS && !aiComposeActive)) {
+            suggestionBar.visibility = if (suggestionsEnabled) View.INVISIBLE else View.GONE
+            return
+        }''',
+    '''        if (!suggestionsEnabled || isSensitiveEditor() || (mode != KeyboardMode.LETTERS && !aiComposeActive)) {
+            suggestionBar.visibility = View.VISIBLE
+            return
+        }''',
+)
 
 # Page 1 starts with most recently used emojis, then fills the rest with defaults.
 service = replace_required(
