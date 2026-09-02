@@ -74,8 +74,9 @@ class MainActivity : AppCompatActivity() {
         })
 
         root.addView(sectionTitle("Ukuran dan respons"))
-        root.addView(description("Perubahan dipakai saat keyboard dibuka lagi. Tinggi juga dapat diubah langsung lewat tombol ↕ pada keyboard."))
-        val keyboardHeight = settingSlider(root, "Tinggi keyboard", 210, 360, prefs.getInt("keyboard_height_dp", 250), " dp")
+        root.addView(description("Tinggi potret dan lanskap disimpan terpisah. Keduanya juga dapat diubah langsung lewat tombol ↕ pada keyboard."))
+        val portraitHeight = settingSlider(root, "Tinggi mode potret", 210, 360, prefs.getInt("keyboard_height_portrait_dp", 250), " dp")
+        val landscapeHeight = settingSlider(root, "Tinggi mode lanskap", 175, 300, prefs.getInt("keyboard_height_landscape_dp", 205), " dp")
         val keyTextSize = settingSlider(root, "Ukuran huruf tombol", 16, 28, prefs.getInt("key_text_size_sp", 21), " sp")
         val touchSensitivity = settingSlider(root, "Sensitivitas sentuhan", 20, 100, prefs.getInt("touch_sensitivity", 65), "%")
         val longPressDuration = settingSlider(root, "Penundaan tekan lama", 200, 900, prefs.getInt("long_press_ms", 450), " ms")
@@ -106,8 +107,9 @@ class MainActivity : AppCompatActivity() {
             text = "Simpan pengaturan keyboard"
             setOnClickListener {
                 prefs.edit()
-                    .putInt("keyboard_height_dp", keyboardHeight.progress + 210)
-                    .putInt("keyboard_layout_version", 4)
+                    .putInt("keyboard_height_portrait_dp", portraitHeight.progress + 210)
+                    .putInt("keyboard_height_landscape_dp", landscapeHeight.progress + 175)
+                    .putInt("keyboard_layout_version", 5)
                     .putInt("key_text_size_sp", keyTextSize.progress + 16)
                     .putInt("touch_sensitivity", touchSensitivity.progress + 20)
                     .putInt("long_press_ms", longPressDuration.progress + 200)
@@ -123,6 +125,13 @@ class MainActivity : AppCompatActivity() {
                     .apply()
                 Toast.makeText(this@MainActivity, "Pengaturan keyboard tersimpan.", Toast.LENGTH_SHORT).show()
             }
+        })
+
+        root.addView(sectionTitle("Balasan AI otomatis"))
+        root.addView(description("Aktifkan layanan ini agar tombol Balas dapat membaca teks percakapan yang sedang terlihat tanpa ditempel manual. Teks hanya diambil saat Balas ditekan dan langsung dikirim ke provider AI pilihanmu."))
+        root.addView(Button(this).apply {
+            text = "Aktifkan Akses Balasan Otomatis"
+            setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
         })
 
         root.addView(sectionTitle("Provider AI utama"))
@@ -196,12 +205,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun migrateOldHeight() {
-        if (prefs.getInt("keyboard_layout_version", 0) >= 4) return
+        if (prefs.getInt("keyboard_layout_version", 0) >= 5) return
         val old = prefs.getInt("keyboard_height_dp", 350)
         val migrated = if (old == 350) 250 else old.coerceIn(210, 360)
         prefs.edit()
-            .putInt("keyboard_height_dp", migrated)
-            .putInt("keyboard_layout_version", 4)
+            .putInt("keyboard_height_portrait_dp", migrated)
+            .putInt("keyboard_height_landscape_dp", 205)
+            .putInt("keyboard_layout_version", 5)
             .apply()
     }
 
