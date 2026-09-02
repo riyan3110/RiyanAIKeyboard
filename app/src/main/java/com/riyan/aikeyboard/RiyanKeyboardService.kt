@@ -728,6 +728,7 @@ class RiyanKeyboardService : InputMethodService() {
             ic.endBatchEdit()
         }
         learnSuggestion(candidate.text)
+        learnCurrentBoundary()
         refreshSuggestionsSoon()
     }
 
@@ -951,6 +952,7 @@ class RiyanKeyboardService : InputMethodService() {
     }
 
     private fun addRow(specs: List<KeySpec>) {
+        val isFirstKeyboardRow = keyboardPanel.childCount == 0
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
@@ -960,7 +962,7 @@ class RiyanKeyboardService : InputMethodService() {
                 row.addView(View(this), LinearLayout.LayoutParams(0, -1, spec.weight))
             } else {
                 row.addView(keyView(spec), LinearLayout.LayoutParams(0, -1, spec.weight).apply {
-                    setMargins(dp(2), dp(2), dp(2), dp(2))
+                    setMargins(dp(2), if (isFirstKeyboardRow) 0 else dp(2), dp(2), dp(2))
                 })
             }
         }
