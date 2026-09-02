@@ -299,7 +299,7 @@ class RiyanKeyboardService : InputMethodService() {
             setPadding(0, dp(2), 0, 0)
             setBackgroundColor(if (themeUsesPhoto) Color.TRANSPARENT else bg)
             addView(TextView(this@RiyanKeyboardService).apply {
-                text = "AI Ads Keyboard · v0.10"
+                text = "AI Ads Keyboard · v0.11"
                 textSize = 9f
                 setTextColor(Color.rgb(145, 137, 190))
                 gravity = Gravity.CENTER
@@ -1431,6 +1431,38 @@ class RiyanKeyboardService : InputMethodService() {
             .takeLast(MAX_REPLY_CONTEXT_CHARS)
     }
 
+    /**
+     * Chooses a translation source without requiring text to be pasted into the AI composer.
+     * An explicit selection wins; otherwise the currently visible application is read on demand.
+     * Shared text, the active editor, and the clipboard are safe fallbacks when Accessibility
+     * cannot expose the application's view hierarchy.
+     */
+    private fun automaticTranslationContext(ic: InputConnection): String {
+        val selected = ic.getSelectedText(0)?.toString().orEmpty().trim()
+        if (selected.isNotBlank()) return selected.takeLast(MAX_AI_CONTEXT_CHARS)
+
+        val screen = screenContextNow()?.text.orEmpty().trim()
+        if (screen.isNotBlank()) return screen.takeLast(MAX_AI_CONTEXT_CHARS)
+
+        val shared = recentSharedContext().trim()
+        if (shared.isNotBlank()) return shared.takeLast(MAX_AI_CONTEXT_CHARS)
+
+        val editor = editorContext(ic).trim()
+        if (editor.isNotBlank()) return editor.takeLast(MAX_AI_CONTEXT_CHARS)
+
+        if (!clipboardMarkedSensitive()) {
+            val copied = clipboardManager.primaryClip
+                ?.takeIf { it.itemCount > 0 }
+                ?.getItemAt(0)
+                ?.coerceToText(this)
+                ?.toString()
+                .orEmpty()
+                .trim()
+            if (copied.isNotBlank()) return copied.takeLast(MAX_AI_CONTEXT_CHARS)
+        }
+        return ""
+    }
+
     private fun conversationContext(ic: InputConnection?): String {
         val screen = screenContextNow()
         val editor = ic?.let(::editorContext).orEmpty()
@@ -1492,13 +1524,25 @@ class RiyanKeyboardService : InputMethodService() {
         if (!aiPanelVisible) toggleAiPanel(true)
         aiComposeActive = false
         aiInput.clearFocus()
-        val input = if (action == "Balas") automaticReplyContext(ic) else context(ic)
-        if (action == "Balas" && input.isBlank()) {
-            aiStatus.text = "Belum ada pesan untuk dibalas."
-            aiAnswer.text = "Aktifkan Akses Teks Layar, pilih atau salin pesan, lalu tekan Balas lagi."
+        val input = when (action) {
+            "Balas" -> automaticReplyContext(ic)
+            "Terjemah" -> automaticTranslationContext(ic)
+            else -> context(ic)
+        }
+        if (action in listOf("Balas", "Terjemah") && input.isBlank()) {
+            aiStatus.text = if (action == "Balas") {
+                "Belum ada pesan untuk dibalas."
+            } else {
+                "Belum ada teks yang dapat diterjemahkan."
+            }
+            aiAnswer.text = "Aktifkan Akses Teks Layar, buka kembali aplikasi yang berisi teks, lalu tekan $action lagi. Teks pilihan, Bagikan, atau clipboard tetap dapat dipakai sebagai cadangan."
             return
         }
-        aiStatus.text = if (action == "Balas") "Membaca percakapan layar dan menyiapkan balasan…" else "$action sedang diproses…"
+        aiStatus.text = when (action) {
+            "Balas" -> "Membaca percakapan layar dan menyiapkan balasan…"
+            "Terjemah" -> "Membaca teks layar dan menerjemahkan otomatis…"
+            else -> "$action sedang diproses…"
+        }
         thread {
             val result = AiClient.transform(aiSettings(), action, input)
             aiStatus.post {

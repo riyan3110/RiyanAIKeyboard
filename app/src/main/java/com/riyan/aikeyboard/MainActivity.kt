@@ -81,7 +81,7 @@ class MainActivity : AppCompatActivity() {
             setTypeface(typeface, Typeface.BOLD)
         })
         root.addView(TextView(this).apply {
-            text = "Versi 0.10.0 · Obrolan AI layar penuh, tema warna atau foto galeri, dan respons tombol tanpa jeda saat sensitivitas tinggi."
+            text = "Versi 0.11.0 · Terjemah otomatis membaca teks layar, obrolan AI layar penuh, tema warna atau foto galeri, dan respons tombol tanpa jeda."
             textSize = 14f
             setPadding(0, dp(7), 0, dp(14))
         })

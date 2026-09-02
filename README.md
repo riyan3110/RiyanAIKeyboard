@@ -2,12 +2,13 @@
 
 Keyboard Android dengan OpenRouter/TabiAI, obrolan AI, akses teks layar sesuai permintaan pengguna, prediksi lokal, clipboard, emoji, simbol, Caps Lock dua ketukan, dan tinggi potret/lanskap terpisah.
 
-## Fitur versi 0.10
+## Fitur versi 0.11
 
 - Nama aplikasi dan label bawah keyboard sudah seragam menjadi **AI Ads Keyboard**.
 - Layanan **Akses Teks Layar** tersedia lagi. Isi layar dibaca saat pengguna menekan fungsi AI, bukan direkam terus-menerus; node sandi selalu dilewati.
 - `Balas` memprioritaskan percakapan yang terlihat, mengabaikan tombol UI dan draf pengguna, kemudian menyesuaikan bahasa serta gaya pesan terbaru.
-- `Terjemah`, `Perbaiki`, dan `Ringkas` dapat memakai teks pilihan, tulisan panjang di editor, teks layar, teks yang dibagikan, clipboard, atau OCR sesuai konteks.
+- `Terjemah` otomatis memakai teks yang disorot atau langsung membaca isi layar saat tombol ditekan, tanpa perlu menempel teks. Tombol dan label UI disaring; Bagikan, editor, dan clipboard menjadi cadangan.
+- `Perbaiki` dan `Ringkas` dapat memakai teks pilihan, tulisan panjang di editor, teks layar, teks yang dibagikan, clipboard, atau OCR sesuai konteks.
 - Halaman pengaturan menerima hingga enam sumber URL HTTPS. URL pencarian dapat memakai placeholder `{query}`.
 - Isi situs diperlakukan sebagai referensi tidak tepercaya dan tidak boleh mengubah instruksi AI.
 - Saat prediksi aktif, bar koreksi mempertahankan ruangnya agar tombol tidak meloncat. Saat prediksi dimatikan dari pengaturan, bar beserta seluruh ruangnya dihapus.

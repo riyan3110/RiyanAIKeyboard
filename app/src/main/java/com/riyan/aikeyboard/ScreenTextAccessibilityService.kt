@@ -76,10 +76,15 @@ class ScreenTextAccessibilityService : AccessibilityService() {
     ) {
         if (depth > MAX_TREE_DEPTH || output.size >= MAX_RAW_ITEMS || !node.isVisibleToUser || node.isPassword) return
 
-        val raw = node.text?.toString().orEmpty().ifBlank { node.contentDescription?.toString().orEmpty() }
+        // Do not treat an editable field's hint/content description as user text. Empty reply
+        // composers commonly expose strings such as "Write a reply", which previously became the
+        // translation source even though the user had not typed anything.
+        val raw = node.text?.toString().orEmpty().ifBlank {
+            if (node.isEditable) "" else node.contentDescription?.toString().orEmpty()
+        }
         val normalized = raw.replace(Regex("\\s+"), " ").trim()
         val className = node.className?.toString().orEmpty()
-        if (normalized.isNotBlank() && shouldKeep(normalized, className, node.isEditable)) {
+        if (normalized.isNotBlank() && shouldKeep(normalized, className, node.isEditable, node.isClickable)) {
             val bounds = Rect()
             node.getBoundsInScreen(bounds)
             output += VisibleText(normalized.take(MAX_ITEM_CHARS), bounds.top, bounds.left, node.isEditable)
@@ -91,12 +96,15 @@ class ScreenTextAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun shouldKeep(value: String, className: String, editable: Boolean): Boolean {
+    private fun shouldKeep(value: String, className: String, editable: Boolean, clickable: Boolean): Boolean {
         if (value.equals("AI Ads Keyboard", ignoreCase = true)) return false
         if (editable) return true
         val looksLikeControl = className.endsWith("Button") || className.endsWith("ImageButton") ||
             className.endsWith("Switch") || className.endsWith("CheckBox")
-        if (looksLikeControl && value.length <= 32) return false
+        // Modern apps often implement controls as clickable TextViews/Compose nodes instead of
+        // Button classes. Filtering short clickable nodes keeps Back/Post/menu labels out while
+        // retaining the actual long post or message body.
+        if ((looksLikeControl || clickable) && value.length <= 80) return false
         return value.length >= 2 && value.any { it.isLetterOrDigit() }
     }
 

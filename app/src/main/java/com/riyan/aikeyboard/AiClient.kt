@@ -231,7 +231,7 @@ object AiClient {
             readTimeout = 9_000
             instanceFollowRedirects = true
             setRequestProperty("Accept", "text/html,text/plain,application/json,application/xml;q=0.9,*/*;q=0.2")
-            setRequestProperty("User-Agent", "AI-Ads-Keyboard/0.10")
+            setRequestProperty("User-Agent", "AI-Ads-Keyboard/0.11")
         }
         return try {
             val status = connection.responseCode
@@ -328,7 +328,7 @@ object AiClient {
         "Santai" -> "Deteksi bahasa teks lalu ubah menjadi gaya yang lebih santai dan natural dalam bahasa yang sama tanpa mengubah arti. Keluarkan hanya hasil."
         "Sopan" -> "Deteksi bahasa teks lalu ubah menjadi lebih sopan dan natural dalam bahasa yang sama. Keluarkan hanya hasil."
         "Ringkas" -> "Baca seluruh teks termasuk jika panjang, identifikasi gagasan utama, lalu ringkas dalam bahasa yang sama. Pertahankan fakta, angka, nama, kesimpulan, dan konteks penting; hapus pengulangan dan detail yang tidak perlu. Gunakan paragraf atau poin sesuai bentuk teks. Keluarkan hanya hasil ringkasan."
-        "Terjemah" -> "Deteksi bahasa sumber secara otomatis. Jika sumber berbahasa Indonesia, terjemahkan secara natural ke bahasa Inggris. Jika sumber bukan bahasa Indonesia, terjemahkan secara natural ke bahasa Indonesia. Pertahankan maksud, nama, angka, dan nada. Keluarkan hanya terjemahan."
+        "Terjemah" -> "Teks dapat berasal dari tampilan aplikasi. Temukan isi utama yang bermakna dan abaikan status bar, tombol navigasi, menu, label antarmuka, placeholder kolom, iklan, serta teks AI Ads Keyboard. Jika ada beberapa potongan, utamakan paragraf atau pesan utuh yang sedang dibaca pengguna dan jangan menerjemahkan label UI. Deteksi bahasa sumber secara otomatis. Jika sumber berbahasa Indonesia, terjemahkan secara natural ke bahasa Inggris. Jika sumber bukan bahasa Indonesia, terjemahkan secara natural ke bahasa Indonesia. Pertahankan seluruh maksud, nama, angka, susunan paragraf, dan nada. Keluarkan hanya terjemahan tanpa penjelasan."
         else -> "Bantu tulis ulang teks dengan jelas. Keluarkan hanya hasil."
     }
 
