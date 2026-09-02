@@ -7,6 +7,11 @@ android {
     namespace = "com.riyan.aikeyboard"
     compileSdk = 35
 
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
     defaultConfig {
         applicationId = "com.riyan.aikeyboard"
         minSdk = 23
@@ -14,6 +19,10 @@ android {
         versionCode = 2
         versionName = "0.2.0"
     }
+}
+
+kotlin {
+    jvmToolchain(17)
 }
 
 dependencies {
