@@ -61,7 +61,7 @@ class MainActivity : AppCompatActivity() {
             setTypeface(typeface, Typeface.BOLD)
         })
         root.addView(TextView(this).apply {
-            text = "Versi ${BuildConfig.VERSION_NAME} · Keyboard lengkap dengan AI, emoji, simbol, clipboard, serta ukuran yang dapat diubah langsung dari toolbar ↕."
+            text = "Versi 0.7.0 · Keyboard lengkap dengan AI, emoji, simbol, clipboard, serta ukuran yang dapat diubah langsung dari toolbar ↕."
             textSize = 14f
             setPadding(0, dp(7), 0, dp(14))
         })
