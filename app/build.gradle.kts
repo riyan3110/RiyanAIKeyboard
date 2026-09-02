@@ -19,6 +19,19 @@ android {
         versionCode = 4
         versionName = "0.4.0"
     }
+
+    signingConfigs {
+        getByName("debug") {
+            System.getenv("RIYAN_KEYSTORE_PATH")
+                ?.takeIf { it.isNotBlank() }
+                ?.let { customKeystore ->
+                    storeFile = file(customKeystore)
+                    storePassword = "android"
+                    keyAlias = "androiddebugkey"
+                    keyPassword = "android"
+                }
+        }
+    }
 }
 
 kotlin {
