@@ -52,6 +52,9 @@ jobs:
       - name: Apply keyboard feature patches
         run: python3 tools/apply_keyboard_memory_patch.py
 
+      - name: Apply full-screen OCR cache patch
+        run: python3 tools/apply_fullscreen_ocr_cache_patch.py
+
       - name: Build debug APK
         run: RIYAN_KEYSTORE_PATH="$HOME/.riyan-ai-keyboard/debug.keystore" gradle --no-daemon :app:assembleDebug
 
