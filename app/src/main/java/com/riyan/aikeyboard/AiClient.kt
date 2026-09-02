@@ -32,6 +32,41 @@ object AiClient {
             return Result.failure(IllegalArgumentException("Pilih, tempel, atau impor teks terlebih dahulu."))
         }
 
+        return execute(settings, instruction(action), text)
+    }
+
+    fun chat(
+        settings: AiSettings,
+        prompt: String,
+        context: String,
+        history: String
+    ): Result<AiResponse> {
+        if (prompt.isBlank()) {
+            return Result.failure(IllegalArgumentException("Tulis pesan untuk AI terlebih dahulu."))
+        }
+        val message = buildString {
+            if (context.isNotBlank()) {
+                append("Konteks dari kolom teks aplikasi (gunakan hanya jika relevan):\n")
+                append(context.takeLast(1800))
+                append("\n\n")
+            }
+            if (history.isNotBlank()) {
+                append("Percakapan sebelumnya:\n")
+                append(history.takeLast(2400))
+                append("\n\n")
+            }
+            append("Pesan pengguna:\n")
+            append(prompt)
+        }
+        return execute(
+            settings,
+            "Anda adalah asisten di dalam keyboard Android. Jawab dalam bahasa yang sama dengan pengguna, natural, jelas, dan langsung membantu. Jangan mengaku telah melakukan tindakan yang tidak dilakukan.",
+            message
+        )
+    }
+
+    private fun execute(settings: AiSettings, systemInstruction: String, text: String): Result<AiResponse> {
+
         val providers = buildList {
             add(settings.primaryProvider)
             if (settings.fallbackEnabled) {
@@ -43,8 +78,8 @@ object AiClient {
         providers.forEach { provider ->
             val attempt = runCatching {
                 val output = when (provider) {
-                    AiProvider.OPENROUTER -> requestOpenRouter(settings, action, text)
-                    AiProvider.TABIAI -> requestTabiAi(settings, action, text)
+                    AiProvider.OPENROUTER -> requestOpenRouter(settings, systemInstruction, text)
+                    AiProvider.TABIAI -> requestTabiAi(settings, systemInstruction, text)
                 }
                 AiResponse(output, provider)
             }
@@ -55,7 +90,7 @@ object AiClient {
         return Result.failure(lastError ?: IllegalStateException("AI gagal merespons."))
     }
 
-    private fun requestOpenRouter(settings: AiSettings, action: String, text: String): String {
+    private fun requestOpenRouter(settings: AiSettings, systemInstruction: String, text: String): String {
         require(settings.openRouterApiKey.isNotBlank()) { "API key OpenRouter belum diisi." }
         require(settings.openRouterModel.isNotBlank()) { "Model OpenRouter belum diisi." }
 
@@ -64,7 +99,7 @@ object AiClient {
             .put("temperature", 0.35)
             .put(
                 "messages", JSONArray()
-                    .put(JSONObject().put("role", "system").put("content", instruction(action)))
+                    .put(JSONObject().put("role", "system").put("content", systemInstruction))
                     .put(JSONObject().put("role", "user").put("content", text))
             )
 
@@ -80,7 +115,7 @@ object AiClient {
             .getJSONObject("message").getString("content").trim()
     }
 
-    private fun requestTabiAi(settings: AiSettings, action: String, text: String): String {
+    private fun requestTabiAi(settings: AiSettings, systemInstruction: String, text: String): String {
         require(settings.tabiApiKey.isNotBlank()) { "API key TabiAI belum diisi." }
         require(settings.tabiModel.isNotBlank()) { "Model TabiAI belum diisi." }
 
@@ -92,7 +127,7 @@ object AiClient {
             .put("model", settings.tabiModel.trim())
             .put("max_tokens", 1024)
             .put("temperature", 0.35)
-            .put("system", instruction(action))
+            .put("system", systemInstruction)
             .put(
                 "messages", JSONArray().put(
                     JSONObject().put("role", "user").put("content", text)

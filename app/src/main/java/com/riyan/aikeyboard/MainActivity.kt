@@ -1,11 +1,23 @@
 package com.riyan.aikeyboard
 
 import android.content.Intent
+import android.graphics.Typeface
 import android.os.Bundle
 import android.provider.Settings
 import android.text.InputType
+import android.view.Gravity
 import android.view.ViewGroup
-import android.widget.*
+import android.widget.ArrayAdapter
+import android.widget.Button
+import android.widget.CheckBox
+import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.SeekBar
+import android.widget.Spinner
+import android.widget.Switch
+import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import com.google.mlkit.vision.common.InputImage
@@ -31,17 +43,24 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val pad = (20 * resources.displayMetrics.density).toInt()
+        migrateOldHeight()
+
+        val pad = dp(20)
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(pad, pad, pad, pad)
+            setPadding(pad, pad, pad, dp(40))
         }
-        root.addView(TextView(this).apply { text = "Riyan AI Keyboard"; textSize = 27f })
         root.addView(TextView(this).apply {
-            text = "Aktifkan keyboard, pilih sebagai keyboard utama, lalu atur OpenRouter atau TabiAI."
-            textSize = 15f
-            setPadding(0, pad / 2, 0, pad)
+            text = "Riyan AI Keyboard"
+            textSize = 27f
+            setTypeface(typeface, Typeface.BOLD)
         })
+        root.addView(TextView(this).apply {
+            text = "Keyboard lengkap dengan AI, emoji, simbol, clipboard, serta ukuran yang dapat diubah langsung dari toolbar ↕."
+            textSize = 14f
+            setPadding(0, dp(7), 0, dp(14))
+        })
+
         root.addView(Button(this).apply {
             text = "1. Aktifkan keyboard"
             setOnClickListener { startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) }
@@ -54,57 +73,55 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
-        root.addView(sectionTitle("Pengaturan keyboard"))
-        root.addView(TextView(this).apply {
-            text = "Atur ukuran dan respons tombol. Perubahan dipakai saat keyboard dibuka kembali."
-            textSize = 13f
+        root.addView(sectionTitle("Ukuran dan respons"))
+        root.addView(description("Perubahan dipakai saat keyboard dibuka lagi. Tinggi juga dapat diubah langsung lewat tombol ↕ pada keyboard."))
+        val keyboardHeight = settingSlider(root, "Tinggi keyboard", 210, 360, prefs.getInt("keyboard_height_dp", 250), " dp")
+        val keyTextSize = settingSlider(root, "Ukuran huruf tombol", 16, 28, prefs.getInt("key_text_size_sp", 21), " sp")
+        val touchSensitivity = settingSlider(root, "Sensitivitas sentuhan", 20, 100, prefs.getInt("touch_sensitivity", 65), "%")
+        val longPressDuration = settingSlider(root, "Penundaan tekan lama", 200, 900, prefs.getInt("long_press_ms", 450), " ms")
+
+        root.addView(sectionTitle("Masukan"))
+        val numberRow = switchSetting(root, "Baris nomor", "Tampilkan angka 1–0 di atas huruf.", prefs.getBoolean("number_row_enabled", true))
+        val longPressSymbols = switchSetting(root, "Tekan lama untuk simbol", "Tampilkan simbol kecil dan ketik dengan menahan tombol.", prefs.getBoolean("long_press_symbols_enabled", true))
+        val automaticCapitalization = switchSetting(root, "Kapitalisasi otomatis", "Gunakan huruf besar di awal kalimat.", prefs.getBoolean("automatic_capitalization_enabled", true))
+        val punctuationSpace = switchSetting(root, "Spasi otomatis setelah tanda baca", "Tambahkan spasi setelah tanda baca utama.", prefs.getBoolean("punctuation_space_enabled", false))
+        val doubleSpacePeriod = switchSetting(root, "Titik dengan spasi ganda", "Mengetuk spasi dua kali memasukkan titik dan spasi.", prefs.getBoolean("double_space_period_enabled", false))
+
+        root.addView(sectionTitle("Suara dan getaran"))
+        val sound = switchSetting(root, "Suara saat tombol ditekan", "Putar suara klik saat mengetik.", prefs.getBoolean("sound_enabled", false))
+        val vibration = switchSetting(root, "Getar saat tombol ditekan", "Berikan umpan balik getar pada setiap tombol.", prefs.getBoolean("vibration_enabled", true))
+        val vibrationDuration = settingSlider(root, "Durasi getar", 5, 80, prefs.getInt("vibration_duration_ms", 28), " ms")
+
+        root.addView(sectionTitle("Clipboard"))
+        val clipboardHistory = switchSetting(root, "Simpan riwayat clipboard", "Simpan hingga 12 klip secara lokal dan izinkan klip disematkan.", prefs.getBoolean("clipboard_history_enabled", true))
+        root.addView(Button(this).apply {
+            text = "Hapus seluruh riwayat clipboard"
+            setOnClickListener {
+                prefs.edit().putString("clipboard_items", "[]").apply()
+                Toast.makeText(this@MainActivity, "Riwayat clipboard dihapus.", Toast.LENGTH_SHORT).show()
+            }
         })
-        val keyboardHeight = settingSlider(
-            root = root,
-            label = "Tinggi keyboard",
-            minimum = 280,
-            maximum = 430,
-            current = prefs.getInt("keyboard_height_dp", 350),
-            suffix = " dp"
-        )
-        val keyTextSize = settingSlider(
-            root = root,
-            label = "Ukuran huruf tombol",
-            minimum = 16,
-            maximum = 30,
-            current = prefs.getInt("key_text_size_sp", 22),
-            suffix = " sp"
-        )
-        val touchSensitivity = settingSlider(
-            root = root,
-            label = "Sensitivitas sentuhan",
-            minimum = 20,
-            maximum = 100,
-            current = prefs.getInt("touch_sensitivity", 65),
-            suffix = "%"
-        )
-        val longPressDuration = settingSlider(
-            root = root,
-            label = "Durasi tekan lama",
-            minimum = 200,
-            maximum = 900,
-            current = prefs.getInt("long_press_ms", 450),
-            suffix = " ms"
-        )
+
         root.addView(Button(this).apply {
             text = "Simpan pengaturan keyboard"
             setOnClickListener {
                 prefs.edit()
-                    .putInt("keyboard_height_dp", keyboardHeight.progress + 280)
+                    .putInt("keyboard_height_dp", keyboardHeight.progress + 210)
+                    .putInt("keyboard_layout_version", 4)
                     .putInt("key_text_size_sp", keyTextSize.progress + 16)
                     .putInt("touch_sensitivity", touchSensitivity.progress + 20)
                     .putInt("long_press_ms", longPressDuration.progress + 200)
+                    .putBoolean("number_row_enabled", numberRow.isChecked)
+                    .putBoolean("long_press_symbols_enabled", longPressSymbols.isChecked)
+                    .putBoolean("automatic_capitalization_enabled", automaticCapitalization.isChecked)
+                    .putBoolean("punctuation_space_enabled", punctuationSpace.isChecked)
+                    .putBoolean("double_space_period_enabled", doubleSpacePeriod.isChecked)
+                    .putBoolean("sound_enabled", sound.isChecked)
+                    .putBoolean("vibration_enabled", vibration.isChecked)
+                    .putInt("vibration_duration_ms", vibrationDuration.progress + 5)
+                    .putBoolean("clipboard_history_enabled", clipboardHistory.isChecked)
                     .apply()
-                Toast.makeText(
-                    this@MainActivity,
-                    "Pengaturan tersimpan. Tutup lalu buka keyboard untuk melihat perubahan.",
-                    Toast.LENGTH_LONG
-                ).show()
+                Toast.makeText(this@MainActivity, "Pengaturan keyboard tersimpan.", Toast.LENGTH_SHORT).show()
             }
         })
 
@@ -120,31 +137,19 @@ class MainActivity : AppCompatActivity() {
         root.addView(provider, ViewGroup.LayoutParams(-1, -2))
 
         root.addView(sectionTitle("OpenRouter"))
-        val openRouterKey = secretField(
-            "API key OpenRouter",
-            prefs.getString("openrouter_api_key", prefs.getString("api_key", ""))
-        )
-        val openRouterModel = textField(
-            "Model OpenRouter",
-            prefs.getString("openrouter_model", "openrouter/free")
-        )
+        val openRouterKey = secretField("API key OpenRouter", prefs.getString("openrouter_api_key", prefs.getString("api_key", "")))
+        val openRouterModel = textField("Model OpenRouter", prefs.getString("openrouter_model", "openrouter/free"))
         root.addView(openRouterKey, ViewGroup.LayoutParams(-1, -2))
         root.addView(openRouterModel, ViewGroup.LayoutParams(-1, -2))
 
         root.addView(sectionTitle("TabiAI"))
         val tabiKey = secretField("API key TabiAI", prefs.getString("tabi_api_key", ""))
-        val tabiBaseUrl = textField(
-            "Base URL TabiAI",
-            prefs.getString("tabi_base_url", "https://tabitoken.com")
-        )
+        val tabiBaseUrl = textField("Base URL TabiAI", prefs.getString("tabi_base_url", "https://tabitoken.com"))
         val tabiModel = textField("Model TabiAI", prefs.getString("tabi_model", "claude-opus-5"))
         root.addView(tabiKey, ViewGroup.LayoutParams(-1, -2))
         root.addView(tabiBaseUrl, ViewGroup.LayoutParams(-1, -2))
         root.addView(tabiModel, ViewGroup.LayoutParams(-1, -2))
-        root.addView(TextView(this).apply {
-            text = "Endpoint Claude: /v1/messages · header: x-api-key"
-            textSize = 12f
-        })
+        root.addView(description("Endpoint Claude: /v1/messages · header: x-api-key"))
 
         val fallback = CheckBox(this).apply {
             text = "Coba provider lain jika provider utama gagal"
@@ -158,19 +163,10 @@ class MainActivity : AppCompatActivity() {
                 prefs.edit()
                     .putString("provider", selectedProvider.id)
                     .putString("openrouter_api_key", openRouterKey.text.toString().trim())
-                    .putString(
-                        "openrouter_model",
-                        openRouterModel.text.toString().trim().ifBlank { "openrouter/free" }
-                    )
+                    .putString("openrouter_model", openRouterModel.text.toString().trim().ifBlank { "openrouter/free" })
                     .putString("tabi_api_key", tabiKey.text.toString().trim())
-                    .putString(
-                        "tabi_base_url",
-                        tabiBaseUrl.text.toString().trim().ifBlank { "https://tabitoken.com" }
-                    )
-                    .putString(
-                        "tabi_model",
-                        tabiModel.text.toString().trim().ifBlank { "claude-opus-5" }
-                    )
+                    .putString("tabi_base_url", tabiBaseUrl.text.toString().trim().ifBlank { "https://tabitoken.com" })
+                    .putString("tabi_model", tabiModel.text.toString().trim().ifBlank { "claude-opus-5" })
                     .putBoolean("fallback_enabled", fallback.isChecked)
                     .apply()
                 Toast.makeText(this@MainActivity, "Pengaturan AI tersimpan.", Toast.LENGTH_SHORT).show()
@@ -195,18 +191,64 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this@MainActivity, "Konteks tersimpan.", Toast.LENGTH_SHORT).show()
             }
         })
+
         setContentView(ScrollView(this).apply { addView(root) })
+    }
+
+    private fun migrateOldHeight() {
+        if (prefs.getInt("keyboard_layout_version", 0) >= 4) return
+        val old = prefs.getInt("keyboard_height_dp", 350)
+        val migrated = if (old == 350) 250 else old.coerceIn(210, 360)
+        prefs.edit()
+            .putInt("keyboard_height_dp", migrated)
+            .putInt("keyboard_layout_version", 4)
+            .apply()
     }
 
     private fun sectionTitle(label: String) = TextView(this).apply {
         text = label
-        textSize = 18f
-        setPadding(
-            0,
-            (18 * resources.displayMetrics.density).toInt(),
-            0,
-            (6 * resources.displayMetrics.density).toInt()
-        )
+        textSize = 19f
+        setTypeface(typeface, Typeface.BOLD)
+        setPadding(0, dp(22), 0, dp(6))
+    }
+
+    private fun description(textValue: String) = TextView(this).apply {
+        text = textValue
+        textSize = 13f
+        setPadding(0, 0, 0, dp(6))
+    }
+
+    private fun switchSetting(
+        root: LinearLayout,
+        title: String,
+        detail: String,
+        current: Boolean
+    ): Switch {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(5), 0, dp(5))
+        }
+        val labels = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(TextView(this@MainActivity).apply {
+                text = title
+                textSize = 16f
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = detail
+                textSize = 12f
+            })
+        }
+        val toggle = Switch(this).apply {
+            isChecked = current
+            contentDescription = title
+        }
+        row.addView(labels, LinearLayout.LayoutParams(0, -2, 1f))
+        row.addView(toggle, LinearLayout.LayoutParams(-2, -2))
+        row.setOnClickListener { toggle.isChecked = !toggle.isChecked }
+        root.addView(row, ViewGroup.LayoutParams(-1, -2))
+        return toggle
     }
 
     private fun settingSlider(
@@ -219,7 +261,7 @@ class MainActivity : AppCompatActivity() {
     ): SeekBar {
         val valueLabel = TextView(this).apply {
             textSize = 15f
-            setPadding(0, (8 * resources.displayMetrics.density).toInt(), 0, 0)
+            setPadding(0, dp(8), 0, 0)
         }
         val slider = SeekBar(this).apply {
             max = maximum - minimum
@@ -231,10 +273,7 @@ class MainActivity : AppCompatActivity() {
         }
         updateValue(slider.progress)
         slider.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                updateValue(progress)
-            }
-
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) = updateValue(progress)
             override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
             override fun onStopTrackingTouch(seekBar: SeekBar?) = Unit
         })
@@ -254,4 +293,6 @@ class MainActivity : AppCompatActivity() {
         setText(value.orEmpty())
         inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
     }
+
+    private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 }
