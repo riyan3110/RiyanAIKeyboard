@@ -41,13 +41,15 @@ Kolom Base URL menerima `https://tabitoken.com`, alamat berakhiran `/v1`, atau e
 - API key disimpan lokal pada perangkat dan tidak dimasukkan ke source code.
 - Untuk distribusi publik, sebaiknya gunakan backend proxy dan penyimpanan key terenkripsi.
 
-## Keyboard versi 0.3
+## Keyboard versi 0.4
 
-- Tata letak lima baris yang lebih besar dengan baris angka permanen.
-- Simbol alternatif terlihat kecil pada tombol huruf dan dapat diketik dengan tekan lama.
-- Panel simbol dan empat halaman emoji.
+- Tinggi awal diperkecil dari 350 dp menjadi 250 dp agar tidak menutup hampir seluruh layar.
+- Tinggi dapat diubah langsung lewat tombol `↕`, tombol minus/plus, atau dengan menggeser kontrol tinggi.
+- Tata letak lima baris dengan baris angka opsional, simbol tekan lama, panel simbol, dan empat halaman emoji.
 - Tombol hapus berada tepat di atas tombol Enter.
-- Toolbar cepat untuk huruf, emoji, clipboard, dan pengaturan.
-- Pengaturan tinggi keyboard, ukuran huruf, sensitivitas sentuhan, dan durasi tekan lama.
+- Tombol tutup keyboard `⌄` berdiri sendiri pada toolbar.
+- Panel clipboard menyimpan riwayat lokal, menyematkan klip, menempelkan klip, dan menghapus klip.
+- Tombol AI membuka kotak percakapan di atas keyboard dengan riwayat singkat dan tombol memasukkan jawaban.
+- Pengaturan tambahan untuk suara, getaran, kapitalisasi, spasi tanda baca, titik spasi ganda, dan riwayat clipboard.
 
 GitHub Actions menghasilkan APK debug yang bisa langsung dipasang untuk pengujian. Sebelum dipublikasikan ke Play Store, tambahkan pengujian berbagai aplikasi chat, enkripsi penyimpanan API key, kebijakan privasi, saran kata, dan autocorrect lokal.

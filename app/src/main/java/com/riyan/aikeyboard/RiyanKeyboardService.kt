@@ -509,7 +509,7 @@ class RiyanKeyboardService : InputMethodService() {
         header.addView(compactButton("Tempel terbaru") { pasteClipboard() }, LinearLayout.LayoutParams(dp(105), dp(34)))
         header.addView(compactButton("Bersihkan") {
             saveClips(loadClips().filter { it.pinned })
-            renderClipboard()
+            renderKeyboard()
         }, LinearLayout.LayoutParams(dp(82), dp(34)).apply { leftMargin = dp(4) })
         keyboardPanel.addView(header, LinearLayout.LayoutParams(-1, dp(40)))
 
@@ -542,7 +542,7 @@ class RiyanKeyboardService : InputMethodService() {
             val clips = loadClips().toMutableList()
             if (index in clips.indices) clips[index] = clips[index].copy(pinned = !clips[index].pinned)
             saveClips(clips)
-            renderClipboard()
+            renderKeyboard()
         }, LinearLayout.LayoutParams(dp(45), dp(44)))
         row.addView(TextView(this).apply {
             text = clip.text.replace('\n', ' ')
@@ -557,7 +557,7 @@ class RiyanKeyboardService : InputMethodService() {
             val clips = loadClips().toMutableList()
             if (index in clips.indices) clips.removeAt(index)
             saveClips(clips)
-            renderClipboard()
+            renderKeyboard()
         }, LinearLayout.LayoutParams(dp(48), dp(44)))
         return row
     }
@@ -940,7 +940,7 @@ class RiyanKeyboardService : InputMethodService() {
         private const val MAX_KEYBOARD_HEIGHT_DP = 360
         private const val UTILITY_HEIGHT_DP = 41
         private const val RESIZE_PANEL_HEIGHT_DP = 38
-        private const val AI_PANEL_HEIGHT_DP = 171
+        private const val AI_PANEL_HEIGHT_DP = 184
         private const val MAX_CLIPS = 12
         private const val MAX_CLIP_LENGTH = 1200
     }
