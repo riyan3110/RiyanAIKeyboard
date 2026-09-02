@@ -115,12 +115,17 @@ service = service.replace(
 
 SERVICE.write_text(service, encoding="utf-8")
 
+# Older source versions did not learn phone numbers. Keep this migration only when the old
+# SuggestionEngine is still present. Newer versions contain their own filtered phone-number logic.
 suggestions = SUGGESTIONS.read_text(encoding="utf-8")
 old_learning = '''            if (token.length in 3..80 && (token.any(Char::isLetter) || token.contains('@'))) add(token)'''
 new_learning = '''            val digitCount = token.count(Char::isDigit)
             val looksLikePhoneOrNumber = digitCount >= 5 && token.all { it.isDigit() || it in "+-._" }
             if (token.length in 3..80 && (token.any(Char::isLetter) || token.contains('@') || looksLikePhoneOrNumber)) add(token)'''
-suggestions = replace_required(suggestions, old_learning, new_learning, "learn phone and number suggestions")
+if old_learning in suggestions:
+    suggestions = suggestions.replace(old_learning, new_learning)
+elif "isPhoneNumber(token)" not in suggestions and "looksLikePhoneOrNumber" not in suggestions:
+    raise RuntimeError("Patch target not found: learn phone and number suggestions")
 SUGGESTIONS.write_text(suggestions, encoding="utf-8")
 
-print("Applied personal prediction, recent emoji, and dynamic enter patches.")
+print("Applied personal prediction, recent emoji, dynamic enter, and memory-filter compatible patches.")
