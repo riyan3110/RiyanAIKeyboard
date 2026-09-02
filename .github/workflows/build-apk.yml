@@ -49,6 +49,9 @@ jobs:
               -validity 10000
           fi
 
+      - name: Apply keyboard feature patches
+        run: python3 tools/apply_keyboard_memory_patch.py
+
       - name: Build debug APK
         run: RIYAN_KEYSTORE_PATH="$HOME/.riyan-ai-keyboard/debug.keystore" gradle --no-daemon :app:assembleDebug
 
