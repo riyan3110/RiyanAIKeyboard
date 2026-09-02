@@ -54,6 +54,60 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
+        root.addView(sectionTitle("Pengaturan keyboard"))
+        root.addView(TextView(this).apply {
+            text = "Atur ukuran dan respons tombol. Perubahan dipakai saat keyboard dibuka kembali."
+            textSize = 13f
+        })
+        val keyboardHeight = settingSlider(
+            root = root,
+            label = "Tinggi keyboard",
+            minimum = 280,
+            maximum = 430,
+            current = prefs.getInt("keyboard_height_dp", 350),
+            suffix = " dp"
+        )
+        val keyTextSize = settingSlider(
+            root = root,
+            label = "Ukuran huruf tombol",
+            minimum = 16,
+            maximum = 30,
+            current = prefs.getInt("key_text_size_sp", 22),
+            suffix = " sp"
+        )
+        val touchSensitivity = settingSlider(
+            root = root,
+            label = "Sensitivitas sentuhan",
+            minimum = 20,
+            maximum = 100,
+            current = prefs.getInt("touch_sensitivity", 65),
+            suffix = "%"
+        )
+        val longPressDuration = settingSlider(
+            root = root,
+            label = "Durasi tekan lama",
+            minimum = 200,
+            maximum = 900,
+            current = prefs.getInt("long_press_ms", 450),
+            suffix = " ms"
+        )
+        root.addView(Button(this).apply {
+            text = "Simpan pengaturan keyboard"
+            setOnClickListener {
+                prefs.edit()
+                    .putInt("keyboard_height_dp", keyboardHeight.progress + 280)
+                    .putInt("key_text_size_sp", keyTextSize.progress + 16)
+                    .putInt("touch_sensitivity", touchSensitivity.progress + 20)
+                    .putInt("long_press_ms", longPressDuration.progress + 200)
+                    .apply()
+                Toast.makeText(
+                    this@MainActivity,
+                    "Pengaturan tersimpan. Tutup lalu buka keyboard untuk melihat perubahan.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        })
+
         root.addView(sectionTitle("Provider AI utama"))
         val provider = Spinner(this)
         val providerOptions = AiProvider.entries.toTypedArray()
@@ -153,6 +207,40 @@ class MainActivity : AppCompatActivity() {
             0,
             (6 * resources.displayMetrics.density).toInt()
         )
+    }
+
+    private fun settingSlider(
+        root: LinearLayout,
+        label: String,
+        minimum: Int,
+        maximum: Int,
+        current: Int,
+        suffix: String
+    ): SeekBar {
+        val valueLabel = TextView(this).apply {
+            textSize = 15f
+            setPadding(0, (8 * resources.displayMetrics.density).toInt(), 0, 0)
+        }
+        val slider = SeekBar(this).apply {
+            max = maximum - minimum
+            progress = current.coerceIn(minimum, maximum) - minimum
+            contentDescription = label
+        }
+        fun updateValue(progress: Int) {
+            valueLabel.text = "$label: ${progress + minimum}$suffix"
+        }
+        updateValue(slider.progress)
+        slider.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                updateValue(progress)
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
+            override fun onStopTrackingTouch(seekBar: SeekBar?) = Unit
+        })
+        root.addView(valueLabel, ViewGroup.LayoutParams(-1, -2))
+        root.addView(slider, ViewGroup.LayoutParams(-1, -2))
+        return slider
     }
 
     private fun textField(label: String, value: String?) = EditText(this).apply {

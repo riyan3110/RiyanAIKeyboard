@@ -41,6 +41,13 @@ Kolom Base URL menerima `https://tabitoken.com`, alamat berakhiran `/v1`, atau e
 - API key disimpan lokal pada perangkat dan tidak dimasukkan ke source code.
 - Untuk distribusi publik, sebaiknya gunakan backend proxy dan penyimpanan key terenkripsi.
 
-## Status versi 0.2
+## Keyboard versi 0.3
 
-Ini adalah MVP. GitHub Actions menghasilkan APK debug yang bisa langsung dipasang untuk pengujian. Sebelum dipublikasikan ke Play Store, tambahkan pengujian berbagai aplikasi chat, enkripsi penyimpanan API key, kebijakan privasi, simbol/angka, emoji, saran kata, dan autocorrect lokal.
+- Tata letak lima baris yang lebih besar dengan baris angka permanen.
+- Simbol alternatif terlihat kecil pada tombol huruf dan dapat diketik dengan tekan lama.
+- Panel simbol dan empat halaman emoji.
+- Tombol hapus berada tepat di atas tombol Enter.
+- Toolbar cepat untuk huruf, emoji, clipboard, dan pengaturan.
+- Pengaturan tinggi keyboard, ukuran huruf, sensitivitas sentuhan, dan durasi tekan lama.
+
+GitHub Actions menghasilkan APK debug yang bisa langsung dipasang untuk pengujian. Sebelum dipublikasikan ke Play Store, tambahkan pengujian berbagai aplikasi chat, enkripsi penyimpanan API key, kebijakan privasi, saran kata, dan autocorrect lokal.
