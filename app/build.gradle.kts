@@ -43,3 +43,70 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.mlkit:text-recognition:16.0.1")
 }
+
+// Keep the IME action key synchronized with the field opened by the host app.
+// Some apps (X, browsers, stores, etc.) expose IME_ACTION_SEARCH/SEND/NEXT/DONE,
+// so the keyboard should show the matching action and perform it instead of inserting a newline.
+val patchDynamicImeAction by tasks.registering {
+    doLast {
+        val sourceFile = file("src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt")
+        var source = sourceFile.readText()
+
+        source = source.replace(
+            """KeySpec("↵", weight = 1.25f, action = { pressEnter() })""",
+            """KeySpec(enterKeyLabel(), weight = 1.25f, action = { pressEnter() })"""
+        )
+
+        source = source.replace(
+            """spec.label in listOf("⇧", "⇪", "⌫", "↵", "◀", "▶")""",
+            """spec.label in listOf("⇧", "⇪", "⌫", "↵", "🔍", "➤", "→", "←", "✓", "◀", "▶")"""
+        )
+
+        if (!source.contains("private fun enterKeyLabel()")) {
+            val marker = "    private fun pressEnter() {\n"
+            val helper = """
+    private fun enterKeyLabel(): String {
+        if (aiComposeActive) return "➤"
+        return when (currentInputEditorInfo?.imeOptions?.and(EditorInfo.IME_MASK_ACTION)) {
+            EditorInfo.IME_ACTION_SEARCH -> "🔍"
+            EditorInfo.IME_ACTION_SEND -> "➤"
+            EditorInfo.IME_ACTION_NEXT -> "→"
+            EditorInfo.IME_ACTION_PREVIOUS -> "←"
+            EditorInfo.IME_ACTION_DONE -> "✓"
+            EditorInfo.IME_ACTION_GO -> "→"
+            else -> "↵"
+        }
+    }
+
+"""
+            source = source.replace(marker, helper + marker)
+        }
+
+        source = source.replace(
+            """        if (enterActionEnabled && action != EditorInfo.IME_ACTION_NONE && action != EditorInfo.IME_ACTION_UNSPECIFIED) {
+            currentInputConnection?.performEditorAction(action)
+        } else {
+            currentInputConnection?.commitText("\n", 1)
+        }""",
+            """        val semanticActions = setOf(
+            EditorInfo.IME_ACTION_SEARCH,
+            EditorInfo.IME_ACTION_GO,
+            EditorInfo.IME_ACTION_SEND,
+            EditorInfo.IME_ACTION_NEXT,
+            EditorInfo.IME_ACTION_DONE,
+            EditorInfo.IME_ACTION_PREVIOUS
+        )
+        if (action in semanticActions || (enterActionEnabled && action != EditorInfo.IME_ACTION_NONE && action != EditorInfo.IME_ACTION_UNSPECIFIED)) {
+            currentInputConnection?.performEditorAction(action)
+        } else {
+            currentInputConnection?.commitText("\n", 1)
+        }"""
+        )
+
+        sourceFile.writeText(source)
+    }
+}
+
+tasks.named("preBuild").configure {
+    dependsOn(patchDynamicImeAction)
+}
