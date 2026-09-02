@@ -60,7 +60,7 @@ object AiClient {
         }
         return execute(
             settings,
-            "Anda adalah asisten di dalam keyboard Android. Jawab dalam bahasa yang sama dengan pengguna, natural, jelas, dan langsung membantu. Jangan mengaku telah melakukan tindakan yang tidak dilakukan.",
+            "Anda adalah asisten percakapan di AI Ads Kyboard. Jika pesan pengguna berupa instruksi, ikuti instruksinya. Jika pesan tampak seperti chat yang ditempel tanpa instruksi, buat balasan yang wajar. Deteksi bahasa, ragam formal atau santai, dan kebiasaan tutur dari pesan terbaru, lalu jawab memakai bahasa dan tingkat keformalan yang sama. Tulis seperti manusia, ringkas, hangat, tidak kaku, tidak menerjemahkan secara harfiah, dan jangan menjelaskan proses deteksi bahasa. Jangan mengaku telah melakukan tindakan yang tidak dilakukan.",
             message
         )
     }
@@ -96,7 +96,7 @@ object AiClient {
 
         val body = JSONObject()
             .put("model", settings.openRouterModel.trim())
-            .put("temperature", 0.35)
+            .put("temperature", 0.55)
             .put(
                 "messages", JSONArray()
                     .put(JSONObject().put("role", "system").put("content", systemInstruction))
@@ -107,7 +107,7 @@ object AiClient {
             url = "https://openrouter.ai/api/v1/chat/completions",
             headers = mapOf(
                 "Authorization" to "Bearer ${settings.openRouterApiKey.trim()}",
-                "X-Title" to "Riyan AI Keyboard"
+                "X-Title" to "AI Ads Kyboard"
             ),
             body = body
         )
@@ -126,7 +126,7 @@ object AiClient {
         val body = JSONObject()
             .put("model", settings.tabiModel.trim())
             .put("max_tokens", 1024)
-            .put("temperature", 0.35)
+            .put("temperature", 0.55)
             .put("system", systemInstruction)
             .put(
                 "messages", JSONArray().put(
@@ -199,12 +199,12 @@ object AiClient {
     }.getOrNull()
 
     private fun instruction(action: String) = when (action) {
-        "Perbaiki" -> "Perbaiki typo dan tata bahasa. Pertahankan arti dan bahasa asli. Keluarkan hanya teks hasil."
-        "Balas" -> "Buat satu balasan chat yang natural, sopan, singkat, dan sesuai konteks. Keluarkan hanya balasannya."
-        "Santai" -> "Ubah menjadi bahasa Indonesia yang santai dan natural tanpa mengubah arti. Keluarkan hanya hasil."
-        "Sopan" -> "Ubah menjadi bahasa Indonesia yang lebih sopan dan natural. Keluarkan hanya hasil."
-        "Ringkas" -> "Ringkas teks tanpa menghilangkan informasi penting. Keluarkan hanya hasil."
-        "Terjemah" -> "Jika teks Indonesia, terjemahkan ke Inggris. Jika bukan Indonesia, terjemahkan ke Indonesia. Keluarkan hanya terjemahan."
+        "Perbaiki" -> "Deteksi bahasa teks. Perbaiki typo, pilihan kata, dan tata bahasa secara natural dalam bahasa yang sama. Pertahankan arti, nama, angka, dan gaya penulis. Keluarkan hanya teks hasil."
+        "Balas" -> "Baca konteks dan fokus pada pesan terbaru yang disalin, dipilih, atau dibagikan. Deteksi bahasa serta tingkat formalitas pesan terbaru. Buat satu balasan chat yang natural seperti penutur asli, memakai bahasa dan gaya yang sama, sesuai hubungan dan konteks, tidak kaku, tidak berlebihan, dan tidak menyebut proses penerjemahan. Keluarkan hanya balasannya."
+        "Santai" -> "Deteksi bahasa teks lalu ubah menjadi gaya yang lebih santai dan natural dalam bahasa yang sama tanpa mengubah arti. Keluarkan hanya hasil."
+        "Sopan" -> "Deteksi bahasa teks lalu ubah menjadi lebih sopan dan natural dalam bahasa yang sama. Keluarkan hanya hasil."
+        "Ringkas" -> "Deteksi bahasa teks lalu ringkas dalam bahasa yang sama tanpa menghilangkan informasi penting. Keluarkan hanya hasil."
+        "Terjemah" -> "Deteksi bahasa sumber secara otomatis. Jika sumber berbahasa Indonesia, terjemahkan secara natural ke bahasa Inggris. Jika sumber bukan bahasa Indonesia, terjemahkan secara natural ke bahasa Indonesia. Pertahankan maksud, nama, angka, dan nada. Keluarkan hanya terjemahan."
         else -> "Bantu tulis ulang teks dengan jelas. Keluarkan hanya hasil."
     }
 }

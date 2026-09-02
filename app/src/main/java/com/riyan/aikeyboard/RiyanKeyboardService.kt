@@ -53,6 +53,7 @@ class RiyanKeyboardService : InputMethodService() {
     private lateinit var utilityBar: LinearLayout
     private lateinit var resizePanel: LinearLayout
     private lateinit var suggestionBar: LinearLayout
+    private lateinit var bottomBrandBar: LinearLayout
     private lateinit var aiPanel: LinearLayout
     private lateinit var aiStatus: TextView
     private lateinit var aiAnswer: TextView
@@ -91,6 +92,9 @@ class RiyanKeyboardService : InputMethodService() {
 
     private val handler = Handler(Looper.getMainLooper())
     private val suggestionRefreshRunnable = Runnable { refreshSuggestions() }
+    private val suggestionAutoHideRunnable = Runnable {
+        if (::suggestionBar.isInitialized) suggestionBar.visibility = View.GONE
+    }
     private val bg = Color.rgb(18, 18, 23)
     private val keyBg = Color.rgb(50, 50, 60)
     private val specialKeyBg = Color.rgb(43, 68, 80)
@@ -162,6 +166,7 @@ class RiyanKeyboardService : InputMethodService() {
             setPadding(0, dp(1), 0, 0)
         }
         root.addView(keyboardPanel, LinearLayout.LayoutParams(-1, 0, 1f))
+        addBottomBrandBar()
         applyRootHeight()
         renderKeyboard()
         refreshSuggestionsSoon()
@@ -233,8 +238,23 @@ class RiyanKeyboardService : InputMethodService() {
     }
 
     private fun updateRootPadding(target: LinearLayout) {
-        val bottom = if (isLandscape()) 7 else 11
-        target.setPadding(dp(4), dp(3), dp(4), dp(bottom))
+        target.setPadding(dp(4), dp(3), dp(4), dp(2))
+    }
+
+    private fun addBottomBrandBar() {
+        bottomBrandBar = LinearLayout(this).apply {
+            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            setPadding(0, dp(2), 0, 0)
+            setBackgroundColor(bg)
+            addView(TextView(this@RiyanKeyboardService).apply {
+                text = "AI Ads Kyboard · v0.7"
+                textSize = 9f
+                setTextColor(Color.rgb(145, 137, 190))
+                gravity = Gravity.CENTER
+                setTypeface(typeface, Typeface.BOLD)
+            }, LinearLayout.LayoutParams(-2, dp(17)))
+        }
+        root.addView(bottomBrandBar, LinearLayout.LayoutParams(-1, dp(brandBarHeightDp())))
     }
 
     private fun addAiConversationPanel() {
@@ -316,7 +336,7 @@ class RiyanKeyboardService : InputMethodService() {
         aiPanel.addView(composeCard, LinearLayout.LayoutParams(-1, dp(70)).apply { topMargin = dp(4) })
 
         val quickActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        listOf("Perbaiki", "Balas", "Santai", "Sopan").forEach { action ->
+        listOf("Perbaiki", "Balas", "Terjemah", "Ringkas", "Santai", "Sopan").forEach { action ->
             quickActions.addView(compactButton(action) { runAi(action) }, LinearLayout.LayoutParams(0, dp(31), 1f).apply {
                 setMargins(dp(2), dp(3), dp(2), 0)
             })
@@ -467,12 +487,16 @@ class RiyanKeyboardService : InputMethodService() {
         if (::resizePanel.isInitialized) resizePanel.layoutParams = resizePanel.layoutParams.apply {
             height = dp(resizePanelHeightDp())
         }
+        if (::bottomBrandBar.isInitialized) bottomBrandBar.layoutParams = bottomBrandBar.layoutParams.apply {
+            height = dp(brandBarHeightDp())
+        }
         if (::aiPanel.isInitialized) {
             aiPanel.layoutParams = (aiPanel.layoutParams ?: LinearLayout.LayoutParams(-1, dp(currentAiPanelHeightDp()))).apply {
                 height = dp(currentAiPanelHeightDp())
             }
         }
-        val extra = (if (aiPanelVisible) currentAiPanelHeightDp() else 0) +
+        val extra = brandBarHeightDp() +
+            (if (aiPanelVisible) currentAiPanelHeightDp() else 0) +
             (if (resizePanelVisible) resizePanelHeightDp() else 0)
         val height = dp(baseKeyboardHeightDp + extra)
         root.minimumHeight = height
@@ -509,6 +533,7 @@ class RiyanKeyboardService : InputMethodService() {
 
     private fun refreshSuggestions() {
         if (!::suggestionBar.isInitialized) return
+        handler.removeCallbacks(suggestionAutoHideRunnable)
         suggestionBar.removeAllViews()
         if (!suggestionsEnabled || isSensitiveEditor() || (mode != KeyboardMode.LETTERS && !aiComposeActive)) {
             suggestionBar.visibility = View.GONE
@@ -536,6 +561,7 @@ class RiyanKeyboardService : InputMethodService() {
                 setOnClickListener { acceptPrediction(candidate) }
             }, LinearLayout.LayoutParams(0, -1, 1f).apply { setMargins(dp(2), 0, dp(2), 0) })
         }
+        handler.postDelayed(suggestionAutoHideRunnable, SUGGESTION_AUTO_HIDE_MS)
     }
 
     private fun textBeforeTypingCursor(): String {
@@ -932,6 +958,8 @@ class RiyanKeyboardService : InputMethodService() {
 
     private fun resizePanelHeightDp(): Int = if (isLandscape()) 34 else 38
 
+    private fun brandBarHeightDp(): Int = if (isLandscape()) 24 else 30
+
     private fun currentAiPanelHeightDp(): Int = if (isLandscape()) 158 else 211
 
     private fun addCurrentClipboardToHistory() {
@@ -1072,7 +1100,7 @@ class RiyanKeyboardService : InputMethodService() {
         runCatching {
             startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }.onFailure {
-            if (::aiStatus.isInitialized) aiStatus.text = "Buka aplikasi Riyan AI Keyboard untuk pengaturan"
+            if (::aiStatus.isInitialized) aiStatus.text = "Buka aplikasi AI Ads Kyboard untuk pengaturan"
         }
     }
 
@@ -1226,9 +1254,13 @@ class RiyanKeyboardService : InputMethodService() {
             ?.coerceToText(this)
             ?.toString()
             .orEmpty()
-        val saved = getSharedPreferences(PREFS, MODE_PRIVATE).getString("shared_context", "").orEmpty()
+        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        val savedAt = prefs.getLong("shared_context_updated_at", 0L)
+        val saved = prefs.getString("shared_context", "").orEmpty()
+            .takeIf { System.currentTimeMillis() - savedAt <= SHARED_CONTEXT_MAX_AGE_MS }
+            .orEmpty()
         return listOf(
-            "Pesan yang disalin" to copied,
+            "Pesan terbaru yang disalin" to copied,
             "Teks yang dipilih" to selected,
             "Teks di kolom balasan" to editor,
             "Konteks tersimpan" to saved
@@ -1341,6 +1373,8 @@ class RiyanKeyboardService : InputMethodService() {
         private const val MIN_KEYBOARD_HEIGHT_LANDSCAPE_DP = 135
         private const val MAX_KEYBOARD_HEIGHT_LANDSCAPE_DP = 220
         private const val DOUBLE_TAP_SHIFT_MS = 420L
+        private const val SUGGESTION_AUTO_HIDE_MS = 2_600L
+        private const val SHARED_CONTEXT_MAX_AGE_MS = 30L * 60L * 1000L
         private const val MAX_CLIPS = 12
         private const val MAX_CLIP_LENGTH = 1200
         private const val MAX_LEARNED_SUGGESTIONS = 180

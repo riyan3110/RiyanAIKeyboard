@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Riyan AI Keyboard</string>
+    <string name="app_name">AI Ads Kyboard</string>
+    <string name="subtype_label">AI Ads Kyboard · Indonesia</string>
+    <string name="import_text_label">Kirim ke AI Ads Kyboard</string>
 </resources>

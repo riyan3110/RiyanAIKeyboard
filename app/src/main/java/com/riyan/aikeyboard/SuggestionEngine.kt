@@ -49,18 +49,6 @@ object SuggestionEngine {
         "saya kirim sekarang", "saya sudah terima", "semoga cepat selesai", "terima kasih atas bantuannya"
     )
 
-    private val nextWords = mapOf(
-        "apa" to listOf("kabar", "bisa", "yang"),
-        "belum" to listOf("selesai", "bisa", "ada"),
-        "boleh" to listOf("minta tolong", "saya tahu", "saya tanya"),
-        "saya" to listOf("sudah", "akan", "bisa"),
-        "selamat" to listOf("pagi", "siang", "sore", "malam"),
-        "sudah" to listOf("selesai", "bisa", "saya kirim"),
-        "terima" to listOf("kasih", "kasih banyak"),
-        "tidak" to listOf("apa-apa", "bisa", "masalah"),
-        "tolong" to listOf("kirim", "bantu", "cek")
-    )
-
     fun suggest(
         beforeCursor: String,
         learned: List<LearnedSuggestion>,
@@ -71,9 +59,7 @@ object SuggestionEngine {
         val segment = currentSegment(tail)
         val token = segment.takeLastWhile(::isSuggestionCharacter)
         val normalizedToken = normalize(token)
-        val endsWithSpace = tail.lastOrNull()?.isWhitespace() == true
-
-        if (normalizedToken.length < 2 && !endsWithSpace) return emptyList()
+        if (normalizedToken.length < 2) return emptyList()
 
         val learnedRank = learned
             .sortedWith(compareByDescending<LearnedSuggestion> { it.uses }.thenByDescending { it.lastUsedAt })
@@ -89,34 +75,29 @@ object SuggestionEngine {
             results += KeyboardSuggestion(matchCase(cleaned, if (replaceLength == segment.length) segment else token), replaceLength)
         }
 
-        if (endsWithSpace) {
-            val previousWord = tail.trimEnd().takeLastWhile { it.isLetter() || it == '-' || it == '\'' }.lowercase(Locale.ROOT)
-            nextWords[previousWord].orEmpty().forEach { add(it, 0) }
-        } else {
-            val normalizedSegment = normalize(segment)
-            if (normalizedSegment.length >= 2) {
-                allPhrases.asSequence()
-                    .filter { normalize(it.text).startsWith(normalizedSegment) && normalize(it.text) != normalizedSegment }
-                    .forEach { add(it.text, segment.length) }
-            }
+        val normalizedSegment = normalize(segment)
+        if (normalizedSegment.length >= 2) {
+            allPhrases.asSequence()
+                .filter { normalize(it.text).startsWith(normalizedSegment) && normalize(it.text) != normalizedSegment }
+                .forEach { add(it.text, segment.length) }
+        }
 
-            personal.asSequence()
-                .filter { normalize(it.text).startsWith(normalizedToken) && normalize(it.text) != normalizedToken }
-                .forEach { add(it.text, token.length) }
+        personal.asSequence()
+            .filter { normalize(it.text).startsWith(normalizedToken) && normalize(it.text) != normalizedToken }
+            .forEach { add(it.text, token.length) }
 
-            (words.asSequence() + phrases.asSequence())
-                .filter { normalize(it).startsWith(normalizedToken) && normalize(it) != normalizedToken }
-                .forEach { add(it, token.length) }
+        (words.asSequence() + phrases.asSequence())
+            .filter { normalize(it).startsWith(normalizedToken) && normalize(it) != normalizedToken }
+            .forEach { add(it, token.length) }
 
-            if (!token.contains('@') && normalizedToken.length >= 3) {
-                words.asSequence()
-                    .map { candidate -> candidate to editDistance(normalizedToken, candidate, 2) }
-                    .filter { (candidate, distance) ->
-                        candidate != normalizedToken && distance in 1..allowedDistance(normalizedToken.length)
-                    }
-                    .sortedWith(compareBy<Pair<String, Int>> { it.second }.thenBy { it.first.length })
-                    .forEach { (candidate, _) -> add(candidate, token.length) }
-            }
+        if (!token.contains('@') && normalizedToken.length >= 3) {
+            words.asSequence()
+                .map { candidate -> candidate to editDistance(normalizedToken, candidate, 2) }
+                .filter { (candidate, distance) ->
+                    candidate != normalizedToken && distance in 1..allowedDistance(normalizedToken.length)
+                }
+                .sortedWith(compareBy<Pair<String, Int>> { it.second }.thenBy { it.first.length })
+                .forEach { (candidate, _) -> add(candidate, token.length) }
         }
 
         return results.take(limit)

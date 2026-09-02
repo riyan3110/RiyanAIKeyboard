@@ -1,6 +1,7 @@
 package com.riyan.aikeyboard
 
 import android.content.Intent
+import android.content.ComponentName
 import android.graphics.Typeface
 import android.os.Bundle
 import android.provider.Settings
@@ -27,6 +28,7 @@ import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 class MainActivity : AppCompatActivity() {
     private val prefs by lazy { getSharedPreferences("riyan_ai", MODE_PRIVATE) }
     private lateinit var contextText: EditText
+    private lateinit var accessibilityStatus: TextView
 
     private val imagePicker = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri == null) return@registerForActivityResult
@@ -35,7 +37,10 @@ class MainActivity : AppCompatActivity() {
         TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS).process(image)
             .addOnSuccessListener {
                 contextText.setText(it.text)
-                prefs.edit().putString("shared_context", it.text).apply()
+                prefs.edit()
+                    .putString("shared_context", it.text)
+                    .putLong("shared_context_updated_at", System.currentTimeMillis())
+                    .apply()
                 Toast.makeText(this, "Teks gambar siap dipakai keyboard.", Toast.LENGTH_SHORT).show()
             }
             .addOnFailureListener { Toast.makeText(this, it.message ?: "OCR gagal", Toast.LENGTH_LONG).show() }
@@ -51,12 +56,12 @@ class MainActivity : AppCompatActivity() {
             setPadding(pad, pad, pad, dp(40))
         }
         root.addView(TextView(this).apply {
-            text = "Riyan AI Keyboard"
+            text = "AI Ads Kyboard"
             textSize = 27f
             setTypeface(typeface, Typeface.BOLD)
         })
         root.addView(TextView(this).apply {
-            text = "Keyboard lengkap dengan AI, emoji, simbol, clipboard, serta ukuran yang dapat diubah langsung dari toolbar ↕."
+            text = "Versi ${BuildConfig.VERSION_NAME} · Keyboard lengkap dengan AI, emoji, simbol, clipboard, serta ukuran yang dapat diubah langsung dari toolbar ↕."
             textSize = 14f
             setPadding(0, dp(7), 0, dp(14))
         })
@@ -72,6 +77,19 @@ class MainActivity : AppCompatActivity() {
                     .showInputMethodPicker()
             }
         })
+
+        root.addView(sectionTitle("Pemeriksaan Aksesibilitas"))
+        accessibilityStatus = TextView(this).apply {
+            textSize = 13f
+            setPadding(dp(10), dp(10), dp(10), dp(10))
+        }
+        root.addView(accessibilityStatus, ViewGroup.LayoutParams(-1, -2))
+        root.addView(description("AI Ads Kyboard v0.7 tidak memiliki layanan Aksesibilitas. Namun aplikasi bank dapat tetap menolak jika TalkBack, aplikasi otomatisasi, perekam layar, atau layanan dari aplikasi lain masih aktif."))
+        root.addView(Button(this).apply {
+            text = "Buka pengaturan Aksesibilitas"
+            setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+        })
+        updateAccessibilityStatus()
 
         root.addView(sectionTitle("Ukuran dan respons"))
         root.addView(description("Tinggi potret dan lanskap disimpan terpisah. Rentang lanskap dibuat lebih rendah dan keduanya dapat diubah langsung lewat tombol ↕ pada keyboard."))
@@ -149,8 +167,8 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
-        root.addView(sectionTitle("Balasan AI tanpa Aksesibilitas"))
-        root.addView(description("Salin pesan yang ingin dibalas, buka kolom balasan, lalu tekan Balas di panel AI. Keyboard membaca clipboard saat tombol ditekan sehingga teks tidak perlu ditempel. Versi ini tidak lagi menyediakan layanan Aksesibilitas yang dapat memicu peringatan aplikasi bank."))
+        root.addView(sectionTitle("Balasan dan bahasa otomatis"))
+        root.addView(description("Salin atau bagikan teks ke AI Ads Kyboard, buka kolom balasan, lalu tekan Balas. AI mengenali bahasa pesan dan membalas dengan bahasa serta gaya yang sesuai tanpa layanan Aksesibilitas."))
 
         root.addView(sectionTitle("Provider AI utama"))
         val provider = Spinner(this)
@@ -214,7 +232,10 @@ class MainActivity : AppCompatActivity() {
         root.addView(Button(this).apply {
             text = "Simpan konteks untuk keyboard"
             setOnClickListener {
-                prefs.edit().putString("shared_context", contextText.text.toString()).apply()
+                prefs.edit()
+                    .putString("shared_context", contextText.text.toString())
+                    .putLong("shared_context_updated_at", System.currentTimeMillis())
+                    .apply()
                 Toast.makeText(this@MainActivity, "Konteks tersimpan.", Toast.LENGTH_SHORT).show()
             }
         })
@@ -233,6 +254,52 @@ class MainActivity : AppCompatActivity() {
             .putInt("keyboard_height_landscape_dp", migratedLandscape.coerceIn(135, 220))
             .putInt("keyboard_layout_version", 6)
             .apply()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::accessibilityStatus.isInitialized) updateAccessibilityStatus()
+    }
+
+    private fun updateAccessibilityStatus() {
+        val accessibilityMasterEnabled = Settings.Secure.getInt(
+            contentResolver,
+            Settings.Secure.ACCESSIBILITY_ENABLED,
+            0
+        ) == 1
+        val enabled = Settings.Secure.getString(
+            contentResolver,
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        ).orEmpty().split(':').map { it.trim() }.filter { it.isNotBlank() }
+
+        accessibilityStatus.text = if (enabled.isEmpty()) {
+            if (accessibilityMasterEnabled) {
+                "Sistem masih menandai Aksesibilitas aktif, tetapi nama layanannya tidak terbaca. Buka pengaturan di bawah dan nonaktifkan layanan yang masih menyala."
+            } else {
+                "✓ Tidak ada layanan Aksesibilitas yang tercatat aktif."
+            }
+        } else {
+            buildString {
+                append("Layanan Aksesibilitas yang masih aktif di HP:\n")
+                enabled.forEach { flattened ->
+                    val component = ComponentName.unflattenFromString(flattened)
+                    val packageId = component?.packageName.orEmpty()
+                    val label = when {
+                        packageId == packageName -> "AI Ads Kyboard (layanan versi lama)"
+                        packageId.isBlank() -> flattened
+                        else -> runCatching {
+                            val app = packageManager.getApplicationInfo(packageId, 0)
+                            packageManager.getApplicationLabel(app).toString()
+                        }.getOrDefault(packageId)
+                    }
+                    append("\n• ").append(label)
+                }
+                append("\n\nMatikan layanan di atas agar aplikasi bank tidak lagi mendeteksinya.")
+                if (enabled.any { ComponentName.unflattenFromString(it)?.packageName == packageName }) {
+                    append("\nJika layanan versi lama AI Ads Kyboard tidak dapat dimatikan, catat API key lalu hapus aplikasi lama satu kali sebelum memasang v0.7.")
+                }
+            }
+        }
     }
 
     private fun sectionTitle(label: String) = TextView(this).apply {
