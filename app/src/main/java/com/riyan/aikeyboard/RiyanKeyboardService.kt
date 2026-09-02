@@ -87,13 +87,14 @@ class RiyanKeyboardService : InputMethodService() {
     private var clipboardHistoryEnabled = true
     private var suggestionsEnabled = true
     private var personalizedLearningEnabled = true
+    private var enterActionEnabled = false
     private var lastSpaceAt = 0L
     private val conversationHistory = mutableListOf<Pair<String, String>>()
 
     private val handler = Handler(Looper.getMainLooper())
     private val suggestionRefreshRunnable = Runnable { refreshSuggestions() }
     private val suggestionAutoHideRunnable = Runnable {
-        if (::suggestionBar.isInitialized) suggestionBar.visibility = View.GONE
+        if (::suggestionBar.isInitialized) suggestionBar.visibility = View.INVISIBLE
     }
     private val bg = Color.rgb(18, 18, 23)
     private val keyBg = Color.rgb(50, 50, 60)
@@ -203,7 +204,7 @@ class RiyanKeyboardService : InputMethodService() {
             prefs.edit()
                 .putInt(HEIGHT_PORTRAIT_KEY, portrait)
                 .putInt(HEIGHT_LANDSCAPE_KEY, DEFAULT_KEYBOARD_HEIGHT_LANDSCAPE_DP)
-                .putInt("keyboard_layout_version", 6)
+                .putInt("keyboard_layout_version", KEYBOARD_LAYOUT_VERSION)
                 .apply()
         }
         if (layoutVersion < 6) {
@@ -214,7 +215,22 @@ class RiyanKeyboardService : InputMethodService() {
             }.coerceIn(MIN_KEYBOARD_HEIGHT_LANDSCAPE_DP, MAX_KEYBOARD_HEIGHT_LANDSCAPE_DP)
             prefs.edit()
                 .putInt(HEIGHT_LANDSCAPE_KEY, migratedLandscape)
-                .putInt("keyboard_layout_version", 6)
+                .putInt("keyboard_layout_version", KEYBOARD_LAYOUT_VERSION)
+                .apply()
+        }
+        if (layoutVersion < KEYBOARD_LAYOUT_VERSION) {
+            val oldPortrait = prefs.getInt(HEIGHT_PORTRAIT_KEY, 250)
+            val oldLandscape = prefs.getInt(HEIGHT_LANDSCAPE_KEY, 155)
+            prefs.edit()
+                .putInt(
+                    HEIGHT_PORTRAIT_KEY,
+                    if (oldPortrait <= 210) 185 else oldPortrait.coerceIn(MIN_KEYBOARD_HEIGHT_PORTRAIT_DP, MAX_KEYBOARD_HEIGHT_PORTRAIT_DP)
+                )
+                .putInt(
+                    HEIGHT_LANDSCAPE_KEY,
+                    if (oldLandscape <= 135) 105 else oldLandscape.coerceIn(MIN_KEYBOARD_HEIGHT_LANDSCAPE_DP, MAX_KEYBOARD_HEIGHT_LANDSCAPE_DP)
+                )
+                .putInt("keyboard_layout_version", KEYBOARD_LAYOUT_VERSION)
                 .apply()
         }
         baseKeyboardHeightDp = prefs.getInt(heightPreferenceKey, defaultHeight)
@@ -234,11 +250,12 @@ class RiyanKeyboardService : InputMethodService() {
         clipboardHistoryEnabled = prefs.getBoolean("clipboard_history_enabled", true)
         suggestionsEnabled = prefs.getBoolean("suggestions_enabled", true)
         personalizedLearningEnabled = prefs.getBoolean("personalized_learning_enabled", true)
+        enterActionEnabled = prefs.getBoolean("enter_action_enabled", false)
         if (::root.isInitialized) updateRootPadding(root)
     }
 
     private fun updateRootPadding(target: LinearLayout) {
-        target.setPadding(dp(4), dp(3), dp(4), dp(2))
+        target.setPadding(dp(1), dp(2), dp(1), dp(1))
     }
 
     private fun addBottomBrandBar() {
@@ -247,7 +264,7 @@ class RiyanKeyboardService : InputMethodService() {
             setPadding(0, dp(2), 0, 0)
             setBackgroundColor(bg)
             addView(TextView(this@RiyanKeyboardService).apply {
-                text = "AI Ads Kyboard · v0.7"
+                text = "AI Ads Keyboard · v0.8"
                 textSize = 9f
                 setTextColor(Color.rgb(145, 137, 190))
                 gravity = Gravity.CENTER
@@ -260,7 +277,7 @@ class RiyanKeyboardService : InputMethodService() {
     private fun addAiConversationPanel() {
         aiPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(8), dp(6), dp(8), dp(6))
+            setPadding(dp(4), dp(6), dp(4), dp(6))
             background = roundedBackground(Color.rgb(31, 31, 36), 14f)
             visibility = View.GONE
         }
@@ -380,7 +397,7 @@ class RiyanKeyboardService : InputMethodService() {
             gravity = Gravity.CENTER
             setPadding(dp(3), dp(2), dp(3), dp(2))
             setBackgroundColor(bg)
-            visibility = View.GONE
+            visibility = View.INVISIBLE
         }
         root.addView(suggestionBar, LinearLayout.LayoutParams(-1, dp(suggestionHeightDp())))
         refreshSuggestions()
@@ -466,7 +483,7 @@ class RiyanKeyboardService : InputMethodService() {
     private fun saveKeyboardHeight() {
         getSharedPreferences(PREFS, MODE_PRIVATE).edit()
             .putInt(heightPreferenceKey, baseKeyboardHeightDp)
-            .putInt("keyboard_layout_version", 6)
+            .putInt("keyboard_layout_version", KEYBOARD_LAYOUT_VERSION)
             .apply()
     }
 
@@ -536,13 +553,13 @@ class RiyanKeyboardService : InputMethodService() {
         handler.removeCallbacks(suggestionAutoHideRunnable)
         suggestionBar.removeAllViews()
         if (!suggestionsEnabled || isSensitiveEditor() || (mode != KeyboardMode.LETTERS && !aiComposeActive)) {
-            suggestionBar.visibility = View.GONE
+            suggestionBar.visibility = View.INVISIBLE
             return
         }
         val before = textBeforeTypingCursor()
         val candidates = SuggestionEngine.suggest(before, loadLearnedSuggestions(), savedSuggestionEntries())
         if (candidates.isEmpty()) {
-            suggestionBar.visibility = View.GONE
+            suggestionBar.visibility = View.INVISIBLE
             return
         }
         suggestionBar.visibility = View.VISIBLE
@@ -952,15 +969,15 @@ class RiyanKeyboardService : InputMethodService() {
     private fun isLandscape(): Boolean =
         resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
-    private fun utilityHeightDp(): Int = if (isLandscape()) 34 else 41
+    private fun utilityHeightDp(): Int = if (isLandscape()) 30 else 39
 
-    private fun suggestionHeightDp(): Int = if (isLandscape()) 31 else 37
+    private fun suggestionHeightDp(): Int = if (isLandscape()) 25 else 34
 
-    private fun resizePanelHeightDp(): Int = if (isLandscape()) 34 else 38
+    private fun resizePanelHeightDp(): Int = if (isLandscape()) 30 else 36
 
-    private fun brandBarHeightDp(): Int = if (isLandscape()) 24 else 30
+    private fun brandBarHeightDp(): Int = if (isLandscape()) 18 else 24
 
-    private fun currentAiPanelHeightDp(): Int = if (isLandscape()) 158 else 211
+    private fun currentAiPanelHeightDp(): Int = if (isLandscape()) 178 else 232
 
     private fun addCurrentClipboardToHistory() {
         if (!clipboardHistoryEnabled || !clipboardManager.hasPrimaryClip() || isSensitiveEditor() || clipboardMarkedSensitive()) return
@@ -1100,7 +1117,7 @@ class RiyanKeyboardService : InputMethodService() {
         runCatching {
             startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }.onFailure {
-            if (::aiStatus.isInitialized) aiStatus.text = "Buka aplikasi AI Ads Kyboard untuk pengaturan"
+            if (::aiStatus.isInitialized) aiStatus.text = "Buka aplikasi AI Ads Keyboard untuk pengaturan"
         }
     }
 
@@ -1161,7 +1178,7 @@ class RiyanKeyboardService : InputMethodService() {
         }
         learnCurrentBoundary()
         val action = currentInputEditorInfo?.imeOptions?.and(EditorInfo.IME_MASK_ACTION) ?: EditorInfo.IME_ACTION_NONE
-        if (action != EditorInfo.IME_ACTION_NONE && action != EditorInfo.IME_ACTION_UNSPECIFIED) {
+        if (enterActionEnabled && action != EditorInfo.IME_ACTION_NONE && action != EditorInfo.IME_ACTION_UNSPECIFIED) {
             currentInputConnection?.performEditorAction(action)
         } else {
             currentInputConnection?.commitText("\n", 1)
@@ -1234,18 +1251,22 @@ class RiyanKeyboardService : InputMethodService() {
         val extracted = runCatching {
             ic.getExtractedText(ExtractedTextRequest(), 0)?.text?.toString().orEmpty()
         }.getOrDefault("")
-        if (extracted.isNotBlank()) return extracted.takeLast(3000)
-        val before = ic.getTextBeforeCursor(1800, 0)?.toString().orEmpty()
-        return before
+        if (extracted.isNotBlank()) return extracted.takeLast(MAX_AI_CONTEXT_CHARS)
+        val before = ic.getTextBeforeCursor(MAX_AI_CONTEXT_CHARS / 2, 0)?.toString().orEmpty()
+        val after = ic.getTextAfterCursor(MAX_AI_CONTEXT_CHARS / 2, 0)?.toString().orEmpty()
+        return (before + after).takeLast(MAX_AI_CONTEXT_CHARS)
     }
 
     private fun context(ic: InputConnection): String {
         val editor = editorContext(ic)
         if (editor.isNotBlank()) return editor
-        return getSharedPreferences(PREFS, MODE_PRIVATE).getString("shared_context", "").orEmpty()
+        val screen = screenContextNow()
+        if (screen != null) return screen.text
+        return recentSharedContext()
     }
 
     private fun automaticReplyContext(ic: InputConnection): String {
+        val screen = screenContextNow()
         val selected = ic.getSelectedText(0)?.toString().orEmpty()
         val editor = editorContext(ic)
         val copied = if (clipboardMarkedSensitive()) "" else clipboardManager.primaryClip
@@ -1254,22 +1275,47 @@ class RiyanKeyboardService : InputMethodService() {
             ?.coerceToText(this)
             ?.toString()
             .orEmpty()
-        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
-        val savedAt = prefs.getLong("shared_context_updated_at", 0L)
-        val saved = prefs.getString("shared_context", "").orEmpty()
-            .takeIf { System.currentTimeMillis() - savedAt <= SHARED_CONTEXT_MAX_AGE_MS }
-            .orEmpty()
+        val saved = recentSharedContext()
         return listOf(
-            "Pesan terbaru yang disalin" to copied,
-            "Teks yang dipilih" to selected,
-            "Teks di kolom balasan" to editor,
-            "Konteks tersimpan" to saved
+            "TEKS LAYAR TERBARU — sumber utama percakapan" to screen?.text.orEmpty(),
+            "Teks yang sengaja dipilih atau dibagikan" to saved,
+            "Teks yang dipilih di kolom aktif" to selected,
+            "Clipboard — gunakan hanya jika cocok dengan percakapan" to copied,
+            "Draf pengguna di kolom balasan — jangan dianggap pesan lawan bicara" to editor
         )
             .map { (label, value) -> label to value.trim() }
             .filter { (_, value) -> value.isNotBlank() }
             .distinctBy { (_, value) -> value }
-            .joinToString("\n\n") { (label, value) -> "$label:\n$value" }
-            .takeLast(6000)
+            .joinToString("\n\n") { (label, value) -> "[$label]\n$value" }
+            .takeLast(MAX_REPLY_CONTEXT_CHARS)
+    }
+
+    private fun conversationContext(ic: InputConnection?): String {
+        val screen = screenContextNow()
+        val editor = ic?.let(::editorContext).orEmpty()
+        val shared = recentSharedContext()
+        return listOf(
+            "Teks layar aplikasi saat ini" to screen?.text.orEmpty(),
+            "Isi kolom tulisan saat ini" to editor,
+            "Teks yang dipilih, dibagikan, atau dibaca dari gambar" to shared
+        )
+            .filter { (_, value) -> value.isNotBlank() }
+            .distinctBy { (_, value) -> value }
+            .joinToString("\n\n") { (label, value) -> "[$label]\n$value" }
+            .takeLast(MAX_AI_CONTEXT_CHARS)
+    }
+
+    private fun screenContextNow(): ScreenTextSnapshot? {
+        if (isSensitiveEditor()) return null
+        return ScreenTextAccessibilityService.captureNow(currentInputEditorInfo?.packageName)
+    }
+
+    private fun recentSharedContext(): String {
+        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        val savedAt = prefs.getLong("shared_context_updated_at", 0L)
+        return prefs.getString("shared_context", "").orEmpty()
+            .takeIf { System.currentTimeMillis() - savedAt <= SHARED_CONTEXT_MAX_AGE_MS }
+            .orEmpty()
     }
 
     private fun aiSettings() = getSharedPreferences(PREFS, MODE_PRIVATE).let { prefs ->
@@ -1280,7 +1326,13 @@ class RiyanKeyboardService : InputMethodService() {
             tabiApiKey = prefs.getString("tabi_api_key", "").orEmpty(),
             tabiBaseUrl = prefs.getString("tabi_base_url", "https://tabitoken.com").orEmpty(),
             tabiModel = prefs.getString("tabi_model", "claude-opus-5").orEmpty(),
-            fallbackEnabled = prefs.getBoolean("fallback_enabled", false)
+            fallbackEnabled = prefs.getBoolean("fallback_enabled", false),
+            referenceUrls = prefs.getString("reference_urls", "").orEmpty()
+                .lineSequence()
+                .map(String::trim)
+                .filter(String::isNotBlank)
+                .take(MAX_REFERENCE_URLS)
+                .toList()
         )
     }
 
@@ -1297,10 +1349,10 @@ class RiyanKeyboardService : InputMethodService() {
         val input = if (action == "Balas") automaticReplyContext(ic) else context(ic)
         if (action == "Balas" && input.isBlank()) {
             aiStatus.text = "Belum ada pesan untuk dibalas."
-            aiAnswer.text = "Salin pesan lawan bicara, buka kolom balasan, lalu tekan Balas. Pesan tidak perlu ditempel."
+            aiAnswer.text = "Aktifkan Akses Teks Layar, pilih atau salin pesan, lalu tekan Balas lagi."
             return
         }
-        aiStatus.text = if (action == "Balas") "Membaca teks tersalin dan menyiapkan balasan…" else "$action sedang diproses…"
+        aiStatus.text = if (action == "Balas") "Membaca percakapan layar dan menyiapkan balasan…" else "$action sedang diproses…"
         thread {
             val result = AiClient.transform(aiSettings(), action, input)
             aiStatus.post {
@@ -1325,7 +1377,7 @@ class RiyanKeyboardService : InputMethodService() {
             return
         }
         val ic = currentInputConnection
-        val appContext = ic?.let(::context).orEmpty()
+        val appContext = conversationContext(ic)
         val history = conversationHistory.takeLast(4).joinToString("\n") { (role, text) -> "$role: $text" }
         aiStatus.text = "AI sedang menjawab…"
         aiAnswer.text = "Menunggu jawaban…"
@@ -1365,16 +1417,20 @@ class RiyanKeyboardService : InputMethodService() {
         private const val PREFS = "riyan_ai"
         private const val HEIGHT_PORTRAIT_KEY = "keyboard_height_portrait_dp"
         private const val HEIGHT_LANDSCAPE_KEY = "keyboard_height_landscape_dp"
-        private const val DEFAULT_KEYBOARD_HEIGHT_PORTRAIT_DP = 250
-        private const val DEFAULT_KEYBOARD_HEIGHT_LANDSCAPE_DP = 155
+        private const val DEFAULT_KEYBOARD_HEIGHT_PORTRAIT_DP = 220
+        private const val DEFAULT_KEYBOARD_HEIGHT_LANDSCAPE_DP = 120
         private const val OLD_DEFAULT_KEYBOARD_HEIGHT_DP = 350
-        private const val MIN_KEYBOARD_HEIGHT_PORTRAIT_DP = 210
-        private const val MAX_KEYBOARD_HEIGHT_PORTRAIT_DP = 360
-        private const val MIN_KEYBOARD_HEIGHT_LANDSCAPE_DP = 135
-        private const val MAX_KEYBOARD_HEIGHT_LANDSCAPE_DP = 220
+        private const val MIN_KEYBOARD_HEIGHT_PORTRAIT_DP = 170
+        private const val MAX_KEYBOARD_HEIGHT_PORTRAIT_DP = 330
+        private const val MIN_KEYBOARD_HEIGHT_LANDSCAPE_DP = 90
+        private const val MAX_KEYBOARD_HEIGHT_LANDSCAPE_DP = 190
+        private const val KEYBOARD_LAYOUT_VERSION = 8
         private const val DOUBLE_TAP_SHIFT_MS = 420L
         private const val SUGGESTION_AUTO_HIDE_MS = 2_600L
         private const val SHARED_CONTEXT_MAX_AGE_MS = 30L * 60L * 1000L
+        private const val MAX_AI_CONTEXT_CHARS = 12_000
+        private const val MAX_REPLY_CONTEXT_CHARS = 16_000
+        private const val MAX_REFERENCE_URLS = 6
         private const val MAX_CLIPS = 12
         private const val MAX_CLIP_LENGTH = 1200
         private const val MAX_LEARNED_SUGGESTIONS = 180

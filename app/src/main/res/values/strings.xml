@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">AI Ads Kyboard</string>
-    <string name="subtype_label">AI Ads Kyboard · Indonesia</string>
-    <string name="import_text_label">Kirim ke AI Ads Kyboard</string>
+    <string name="app_name">AI Ads Keyboard</string>
+    <string name="subtype_label">AI Ads Keyboard · Indonesia</string>
+    <string name="import_text_label">Kirim ke AI Ads Keyboard</string>
+    <string name="screen_access_name">Akses Teks Layar AI Ads Keyboard</string>
+    <string name="screen_access_description">Membaca teks yang sedang terlihat hanya ketika pengguna menekan fungsi AI untuk membalas, menerjemahkan, meringkas, atau memperbaiki tulisan.</string>
 </resources>

@@ -20,7 +20,7 @@ class TextImportActivity : Activity() {
                 .putString("shared_context", text.takeLast(6000))
                 .putLong("shared_context_updated_at", System.currentTimeMillis())
                 .apply()
-            Toast.makeText(this, "Teks siap dibalas di AI Ads Kyboard.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Teks siap dibalas di AI Ads Keyboard.", Toast.LENGTH_SHORT).show()
         } else {
             Toast.makeText(this, "Tidak ada teks yang dapat dibaca.", Toast.LENGTH_SHORT).show()
         }

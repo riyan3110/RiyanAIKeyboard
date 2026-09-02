@@ -56,12 +56,12 @@ class MainActivity : AppCompatActivity() {
             setPadding(pad, pad, pad, dp(40))
         }
         root.addView(TextView(this).apply {
-            text = "AI Ads Kyboard"
+            text = "AI Ads Keyboard"
             textSize = 27f
             setTypeface(typeface, Typeface.BOLD)
         })
         root.addView(TextView(this).apply {
-            text = "Versi 0.7.0 · Keyboard lengkap dengan AI, emoji, simbol, clipboard, serta ukuran yang dapat diubah langsung dari toolbar ↕."
+            text = "Versi 0.8.0 · Keyboard lengkap dengan AI, akses teks layar, sumber URL, koreksi stabil, emoji, simbol, clipboard, dan ukuran yang dapat diubah langsung dari toolbar ↕."
             textSize = 14f
             setPadding(0, dp(7), 0, dp(14))
         })
@@ -78,23 +78,23 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
-        root.addView(sectionTitle("Pemeriksaan Aksesibilitas"))
+        root.addView(sectionTitle("Akses teks layar"))
         accessibilityStatus = TextView(this).apply {
             textSize = 13f
             setPadding(dp(10), dp(10), dp(10), dp(10))
         }
         root.addView(accessibilityStatus, ViewGroup.LayoutParams(-1, -2))
-        root.addView(description("AI Ads Kyboard v0.7 tidak memiliki layanan Aksesibilitas. Namun aplikasi bank dapat tetap menolak jika TalkBack, aplikasi otomatisasi, perekam layar, atau layanan dari aplikasi lain masih aktif."))
+        root.addView(description("Jika diaktifkan, AI dapat mengambil teks yang sedang terlihat saat tombol Balas, Terjemah, Ringkas, atau Perbaiki ditekan. Teks layar tidak direkam terus-menerus. Aplikasi bank tertentu dapat tetap menampilkan peringatan selama layanan Aksesibilitas aktif."))
         root.addView(Button(this).apply {
-            text = "Buka pengaturan Aksesibilitas"
+            text = "Aktifkan Akses Teks Layar"
             setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
         })
         updateAccessibilityStatus()
 
         root.addView(sectionTitle("Ukuran dan respons"))
-        root.addView(description("Tinggi potret dan lanskap disimpan terpisah. Rentang lanskap dibuat lebih rendah dan keduanya dapat diubah langsung lewat tombol ↕ pada keyboard."))
-        val portraitHeight = settingSlider(root, "Tinggi mode potret", 210, 360, prefs.getInt("keyboard_height_portrait_dp", 250), " dp")
-        val landscapeHeight = settingSlider(root, "Tinggi mode lanskap", 135, 220, prefs.getInt("keyboard_height_landscape_dp", 155), " dp")
+        root.addView(description("Tinggi potret dan lanskap disimpan terpisah. Batas minimum kembali diturunkan dan keduanya dapat diubah langsung lewat tombol ↕ pada keyboard."))
+        val portraitHeight = settingSlider(root, "Tinggi mode potret", 170, 330, prefs.getInt("keyboard_height_portrait_dp", 220), " dp")
+        val landscapeHeight = settingSlider(root, "Tinggi mode lanskap", 90, 190, prefs.getInt("keyboard_height_landscape_dp", 120), " dp")
         val keyTextSize = settingSlider(root, "Ukuran huruf tombol", 16, 28, prefs.getInt("key_text_size_sp", 21), " sp")
         val touchSensitivity = settingSlider(root, "Sensitivitas sentuhan", 20, 100, prefs.getInt("touch_sensitivity", 65), "%")
         val longPressDuration = settingSlider(root, "Penundaan tekan lama", 200, 900, prefs.getInt("long_press_ms", 450), " ms")
@@ -105,6 +105,7 @@ class MainActivity : AppCompatActivity() {
         val automaticCapitalization = switchSetting(root, "Kapitalisasi otomatis", "Gunakan huruf besar di awal kalimat.", prefs.getBoolean("automatic_capitalization_enabled", true))
         val punctuationSpace = switchSetting(root, "Spasi otomatis setelah tanda baca", "Tambahkan spasi setelah tanda baca utama.", prefs.getBoolean("punctuation_space_enabled", false))
         val doubleSpacePeriod = switchSetting(root, "Titik dengan spasi ganda", "Mengetuk spasi dua kali memasukkan titik dan spasi.", prefs.getBoolean("double_space_period_enabled", false))
+        val enterAction = switchSetting(root, "Enter menjalankan aksi aplikasi", "Matikan agar Enter selalu membuat baris baru dan tidak menutup keyboard. Aktifkan hanya jika Enter ingin dipakai sebagai Kirim/Selesai.", prefs.getBoolean("enter_action_enabled", false))
 
         root.addView(sectionTitle("Suara dan getaran"))
         val sound = switchSetting(root, "Suara saat tombol ditekan", "Putar suara klik saat mengetik.", prefs.getBoolean("sound_enabled", false))
@@ -144,9 +145,9 @@ class MainActivity : AppCompatActivity() {
             text = "Simpan pengaturan keyboard"
             setOnClickListener {
                 prefs.edit()
-                    .putInt("keyboard_height_portrait_dp", portraitHeight.progress + 210)
-                    .putInt("keyboard_height_landscape_dp", landscapeHeight.progress + 135)
-                    .putInt("keyboard_layout_version", 6)
+                    .putInt("keyboard_height_portrait_dp", portraitHeight.progress + 170)
+                    .putInt("keyboard_height_landscape_dp", landscapeHeight.progress + 90)
+                    .putInt("keyboard_layout_version", KEYBOARD_LAYOUT_VERSION)
                     .putInt("key_text_size_sp", keyTextSize.progress + 16)
                     .putInt("touch_sensitivity", touchSensitivity.progress + 20)
                     .putInt("long_press_ms", longPressDuration.progress + 200)
@@ -155,6 +156,7 @@ class MainActivity : AppCompatActivity() {
                     .putBoolean("automatic_capitalization_enabled", automaticCapitalization.isChecked)
                     .putBoolean("punctuation_space_enabled", punctuationSpace.isChecked)
                     .putBoolean("double_space_period_enabled", doubleSpacePeriod.isChecked)
+                    .putBoolean("enter_action_enabled", enterAction.isChecked)
                     .putBoolean("sound_enabled", sound.isChecked)
                     .putBoolean("vibration_enabled", vibration.isChecked)
                     .putInt("vibration_duration_ms", vibrationDuration.progress + 5)
@@ -168,7 +170,7 @@ class MainActivity : AppCompatActivity() {
         })
 
         root.addView(sectionTitle("Balasan dan bahasa otomatis"))
-        root.addView(description("Salin atau bagikan teks ke AI Ads Kyboard, buka kolom balasan, lalu tekan Balas. AI mengenali bahasa pesan dan membalas dengan bahasa serta gaya yang sesuai tanpa layanan Aksesibilitas."))
+        root.addView(description("Dengan Akses Teks Layar aktif, tekan Balas agar AI membaca percakapan yang terlihat, mengabaikan tombol UI dan draf pengguna, lalu membalas dengan bahasa serta gaya yang sesuai. Teks pilihan, Bagikan, dan clipboard tetap menjadi cadangan."))
 
         root.addView(sectionTitle("Provider AI utama"))
         val provider = Spinner(this)
@@ -180,6 +182,17 @@ class MainActivity : AppCompatActivity() {
         )
         provider.setSelection(providerOptions.indexOf(AiProvider.fromId(prefs.getString("provider", null))))
         root.addView(provider, ViewGroup.LayoutParams(-1, -2))
+
+        root.addView(sectionTitle("Sumber URL untuk pencarian AI"))
+        root.addView(description("Masukkan hingga 6 URL HTTPS, satu per baris. Gunakan {query} pada URL pencarian agar kata tersebut otomatis diganti dengan pertanyaanmu. Contoh: https://contoh.com/search?q={query}"))
+        val referenceUrls = EditText(this).apply {
+            hint = "https://sumber-1.com/search?q={query}\nhttps://sumber-2.com/"
+            minLines = 3
+            maxLines = 8
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_VARIATION_URI
+            setText(prefs.getString("reference_urls", ""))
+        }
+        root.addView(referenceUrls, ViewGroup.LayoutParams(-1, -2))
 
         root.addView(sectionTitle("OpenRouter"))
         val openRouterKey = secretField("API key OpenRouter", prefs.getString("openrouter_api_key", prefs.getString("api_key", "")))
@@ -212,6 +225,7 @@ class MainActivity : AppCompatActivity() {
                     .putString("tabi_api_key", tabiKey.text.toString().trim())
                     .putString("tabi_base_url", tabiBaseUrl.text.toString().trim().ifBlank { "https://tabitoken.com" })
                     .putString("tabi_model", tabiModel.text.toString().trim().ifBlank { "claude-opus-5" })
+                    .putString("reference_urls", referenceUrls.text.toString().trim())
                     .putBoolean("fallback_enabled", fallback.isChecked)
                     .apply()
                 Toast.makeText(this@MainActivity, "Pengaturan AI tersimpan.", Toast.LENGTH_SHORT).show()
@@ -244,15 +258,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun migrateOldHeight() {
-        if (prefs.getInt("keyboard_layout_version", 0) >= 6) return
+        if (prefs.getInt("keyboard_layout_version", 0) >= KEYBOARD_LAYOUT_VERSION) return
         val old = prefs.getInt("keyboard_height_dp", 350)
-        val migrated = if (old == 350) 250 else old.coerceIn(210, 360)
-        val oldLandscape = prefs.getInt("keyboard_height_landscape_dp", 205)
-        val migratedLandscape = if (oldLandscape >= 175) oldLandscape - 30 else oldLandscape
+        val currentPortrait = prefs.getInt("keyboard_height_portrait_dp", if (old == 350) 220 else old)
+        val currentLandscape = prefs.getInt("keyboard_height_landscape_dp", 155)
+        val migratedPortrait = if (currentPortrait <= 210) 185 else currentPortrait.coerceIn(170, 330)
+        val migratedLandscape = if (currentLandscape <= 135) 105 else currentLandscape.coerceIn(90, 190)
         prefs.edit()
-            .putInt("keyboard_height_portrait_dp", migrated)
-            .putInt("keyboard_height_landscape_dp", migratedLandscape.coerceIn(135, 220))
-            .putInt("keyboard_layout_version", 6)
+            .putInt("keyboard_height_portrait_dp", migratedPortrait)
+            .putInt("keyboard_height_landscape_dp", migratedLandscape)
+            .putInt("keyboard_layout_version", KEYBOARD_LAYOUT_VERSION)
             .apply()
     }
 
@@ -262,43 +277,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateAccessibilityStatus() {
-        val accessibilityMasterEnabled = Settings.Secure.getInt(
-            contentResolver,
-            Settings.Secure.ACCESSIBILITY_ENABLED,
-            0
-        ) == 1
         val enabled = Settings.Secure.getString(
             contentResolver,
             Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
         ).orEmpty().split(':').map { it.trim() }.filter { it.isNotBlank() }
+        val expected = ComponentName(this, ScreenTextAccessibilityService::class.java)
+        val screenAccessEnabled = enabled.any { ComponentName.unflattenFromString(it) == expected }
 
-        accessibilityStatus.text = if (enabled.isEmpty()) {
-            if (accessibilityMasterEnabled) {
-                "Sistem masih menandai Aksesibilitas aktif, tetapi nama layanannya tidak terbaca. Buka pengaturan di bawah dan nonaktifkan layanan yang masih menyala."
-            } else {
-                "✓ Tidak ada layanan Aksesibilitas yang tercatat aktif."
-            }
+        accessibilityStatus.text = if (screenAccessEnabled || ScreenTextAccessibilityService.isRunning()) {
+            "✓ Akses Teks Layar aktif. AI dapat membaca teks aplikasi ketika kamu menekan fungsi AI. Jika aplikasi bank memberi peringatan, nonaktifkan layanan ini sementara saat memakai aplikasi bank."
         } else {
-            buildString {
-                append("Layanan Aksesibilitas yang masih aktif di HP:\n")
-                enabled.forEach { flattened ->
-                    val component = ComponentName.unflattenFromString(flattened)
-                    val packageId = component?.packageName.orEmpty()
-                    val label = when {
-                        packageId == packageName -> "AI Ads Kyboard (layanan versi lama)"
-                        packageId.isBlank() -> flattened
-                        else -> runCatching {
-                            val app = packageManager.getApplicationInfo(packageId, 0)
-                            packageManager.getApplicationLabel(app).toString()
-                        }.getOrDefault(packageId)
-                    }
-                    append("\n• ").append(label)
-                }
-                append("\n\nMatikan layanan di atas agar aplikasi bank tidak lagi mendeteksinya.")
-                if (enabled.any { ComponentName.unflattenFromString(it)?.packageName == packageName }) {
-                    append("\nJika layanan versi lama AI Ads Kyboard tidak dapat dimatikan, catat API key lalu hapus aplikasi lama satu kali sebelum memasang v0.7.")
-                }
-            }
+            "Akses Teks Layar belum aktif. Balas masih dapat memakai teks pilihan, Bagikan, atau clipboard, tetapi tidak dapat membaca percakapan langsung dari layar."
         }
     }
 
@@ -392,4 +381,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
+
+    companion object {
+        private const val KEYBOARD_LAYOUT_VERSION = 8
+    }
 }
