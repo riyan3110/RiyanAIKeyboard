@@ -81,7 +81,7 @@ class MainActivity : AppCompatActivity() {
             setTypeface(typeface, Typeface.BOLD)
         })
         root.addView(TextView(this).apply {
-            text = "Versi 0.13.0 · Bar prediksi mengikuti warna tombol; saran dibatasi satu kata dan mempelajari kata berikutnya."
+            text = "Versi 0.14.0 · Pembacaan layar lengkap, target balasan terakhir, dan terjemahan selalu ke Bahasa Indonesia."
             textSize = 14f
             setPadding(0, dp(7), 0, dp(14))
         })
@@ -104,7 +104,7 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(10), dp(10), dp(10), dp(10))
         }
         root.addView(accessibilityStatus, ViewGroup.LayoutParams(-1, -2))
-        root.addView(description("Jika diaktifkan, AI dapat mengambil teks yang sedang terlihat saat tombol Balas, Terjemah, Ringkas, atau Perbaiki ditekan. Teks layar tidak direkam terus-menerus. Aplikasi bank tertentu dapat tetap menampilkan peringatan selama layanan Aksesibilitas aktif."))
+        root.addView(description("Jika diaktifkan, AI menggabungkan struktur aplikasi dan OCR saat Balas, Terjemah, Ringkas, atau Perbaiki ditekan. Teks postingan/chat terbaru disimpan sangat singkat hanya di memori agar tetap terbaca setelah panel AI dibuka; tidak disimpan ke file dan kolom sandi diabaikan. Aplikasi bank tertentu dapat tetap menampilkan peringatan selama layanan Aksesibilitas aktif."))
         root.addView(Button(this).apply {
             text = "Aktifkan Akses Teks Layar"
             setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
@@ -267,7 +267,7 @@ class MainActivity : AppCompatActivity() {
         })
 
         root.addView(sectionTitle("Balasan dan bahasa otomatis"))
-        root.addView(description("Dengan Akses Teks Layar aktif, tekan Balas agar AI membaca percakapan yang terlihat, mengabaikan tombol UI dan draf pengguna, lalu membalas dengan bahasa serta gaya yang sesuai. Teks pilihan, Bagikan, dan clipboard tetap menjadi cadangan."))
+        root.addView(description("Dengan Akses Teks Layar aktif, Balas memprioritaskan pesan masuk terakhir yang belum dibalas. Terjemah selalu menghasilkan Bahasa Indonesia dari bahasa apa pun. Tombol UI dan draf pengguna disaring; teks pilihan, Bagikan, dan clipboard tetap menjadi cadangan."))
 
         root.addView(sectionTitle("Provider AI utama"))
         val provider = Spinner(this)

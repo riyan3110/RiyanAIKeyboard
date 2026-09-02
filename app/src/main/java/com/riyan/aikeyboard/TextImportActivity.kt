@@ -17,7 +17,7 @@ class TextImportActivity : Activity() {
 
         if (text.isNotBlank()) {
             getSharedPreferences("riyan_ai", MODE_PRIVATE).edit()
-                .putString("shared_context", text.takeLast(6000))
+                .putString("shared_context", text.takeLast(24_000))
                 .putLong("shared_context_updated_at", System.currentTimeMillis())
                 .apply()
             Toast.makeText(this, "Teks siap dibalas di AI Ads Keyboard.", Toast.LENGTH_SHORT).show()

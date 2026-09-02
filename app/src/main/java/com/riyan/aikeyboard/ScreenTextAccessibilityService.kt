@@ -4,6 +4,8 @@ import android.accessibilityservice.AccessibilityService
 import android.graphics.Bitmap
 import android.graphics.Rect
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.view.Display
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -22,31 +24,72 @@ import java.util.concurrent.atomic.AtomicReference
 data class ScreenTextSnapshot(
     val packageName: String,
     val text: String,
-    val capturedAt: Long
+    val capturedAt: Long,
+    val primaryText: String = text,
+    val latestIncomingText: String = ""
 )
 
 /**
- * Provides an on-demand snapshot of visible text for AI actions.
+ * Provides a complete, on-demand snapshot of post and conversation text for AI actions.
  *
- * Accessibility events are not recorded. The view tree and, on Android 11+, a screenshot are read
- * only after the user taps an AI action in the keyboard. Password editors are filtered by the IME
- * before captureNow() is called. Screenshot OCR is a fallback for apps such as X/Facebook that
- * render post bodies without exposing the real text through AccessibilityNodeInfo.
+ * Recent non-password view text is kept briefly in memory so opening the keyboard or its fullscreen
+ * AI panel does not erase the application context underneath it. Nothing is persisted to storage.
+ * On Android 11+, screenshot OCR is combined with the accessibility tree for apps such as X or
+ * Facebook that render only part of a post through AccessibilityNodeInfo.
  */
 class ScreenTextAccessibilityService : AccessibilityService() {
     private val ocrExecutor = Executors.newSingleThreadExecutor()
+    private val eventHandler = Handler(Looper.getMainLooper())
     @Volatile private var textRecognizer: TextRecognizer? = null
+    @Volatile private var pendingCachePackage = ""
+
+    private val cacheVisibleText = Runnable {
+        val targetPackage = pendingCachePackage
+        if (targetPackage.isBlank() || targetPackage == packageName) return@Runnable
+        val entries = collectApplicationEntries(targetPackage)
+        if (entries.none { !it.editable && isMeaningfulContent(it.normalized) }) return@Runnable
+        synchronized(recentSnapshots) {
+            recentSnapshots.removeAll {
+                it.packageName == targetPackage && sameEntrySet(it.entries, entries)
+            }
+            recentSnapshots.add(
+                CachedScreenText(
+                    packageName = targetPackage,
+                    entries = entries,
+                    capturedAt = System.currentTimeMillis()
+                )
+            )
+            trimRecentSnapshotsLocked()
+        }
+    }
 
     override fun onServiceConnected() {
         instance = this
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        val safeEvent = event ?: return
+        val eventPackage = safeEvent.packageName?.toString().orEmpty()
+        if (eventPackage.isBlank() || eventPackage == packageName) return
+
+        // Do not let text-change events from a password field enter the short-lived screen cache.
+        val source = safeEvent.source
+        if (source?.isPassword == true) return
+        if (safeEvent.eventType == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED && source?.isEditable == true) {
+            return
+        }
+
+        pendingCachePackage = eventPackage
+        eventHandler.removeCallbacks(cacheVisibleText)
+        eventHandler.postDelayed(cacheVisibleText, SCREEN_CACHE_DEBOUNCE_MS)
+    }
 
     override fun onInterrupt() = Unit
 
     override fun onDestroy() {
         if (instance === this) instance = null
+        eventHandler.removeCallbacksAndMessages(null)
+        synchronized(recentSnapshots) { recentSnapshots.clear() }
         runCatching { textRecognizer?.close() }
         ocrExecutor.shutdownNow()
         super.onDestroy()
@@ -54,6 +97,7 @@ class ScreenTextAccessibilityService : AccessibilityService() {
 
     override fun onUnbind(intent: android.content.Intent?): Boolean {
         if (instance === this) instance = null
+        synchronized(recentSnapshots) { recentSnapshots.clear() }
         return super.onUnbind(intent)
     }
 
@@ -65,44 +109,68 @@ class ScreenTextAccessibilityService : AccessibilityService() {
                 .firstOrNull { it.isNotBlank() && it != packageName }
             ?: rootInActiveWindow?.packageName?.toString().orEmpty()
 
-        val entries = mutableListOf<VisibleText>()
+        val accessibilityEntries = mutableListOf<VisibleText>()
         roots.forEach { candidate ->
             runCatching { candidate.root.refresh() }
-            collectVisibleText(candidate.root, entries, depth = 0, windowLayer = candidate.layer)
+            collectVisibleText(candidate.root, accessibilityEntries, depth = 0, windowLayer = candidate.layer)
         }
-
-        val accessibilityContent = entries
-            .sortedWith(
-                compareBy<VisibleText> { it.top }
-                    .thenBy { it.left }
-                    .thenByDescending { it.windowLayer }
-            )
-            .distinctBy { it.normalized.lowercase(Locale.ROOT) }
-            .take(MAX_VISIBLE_ITEMS)
-            .joinToString("\n") { entry ->
-                if (entry.editable) "[Kolom tulisan pengguna] ${entry.normalized}" else entry.normalized
-            }
-            .take(MAX_SCREEN_CONTEXT_CHARS)
-            .trim()
 
         // X, Facebook, and some Compose/custom-rendered apps expose only labels/buttons through the
         // accessibility tree. OCR the part of the display above the IME so the AI receives the text
         // the user can actually see instead of just controls such as "Balas", "Ikuti", etc.
-        val ocrContent = captureScreenshotText()
-        val content = when {
-            ocrContent.isNotBlank() -> ocrContent
-            accessibilityContent.isNotBlank() -> accessibilityContent
-            else -> return null
-        }
+        val ocrEntries = captureScreenshotEntries()
+        val cachedEntries = recentEntriesFor(packageId)
+        val currentEntries = mergeEntries(accessibilityEntries, ocrEntries)
+        val allEntries = mergeEntries(currentEntries, cachedEntries)
+        val primaryText = contentText(allEntries, includeEditable = false)
+        val fullContext = contentText(allEntries, includeEditable = true)
+        if (primaryText.isBlank() && fullContext.isBlank()) return null
 
-        return ScreenTextSnapshot(packageId, content, System.currentTimeMillis())
+        val latestIncoming = latestIncomingText(
+            packageId = packageId,
+            currentEntries = currentEntries,
+            fallbackEntries = cachedEntries,
+            primaryText = primaryText
+        )
+        val structuredText = buildString {
+            if (latestIncoming.isNotBlank()) {
+                append("[PESAN ATAU POSTINGAN UTAMA]\n")
+                append(latestIncoming)
+            }
+            if (primaryText.isNotBlank() && !equivalentText(primaryText, latestIncoming)) {
+                if (isNotEmpty()) append("\n\n")
+                append("[KONTEKS TEKS LAYAR LENGKAP]\n")
+                append(primaryText)
+            }
+            val editableText = allEntries
+                .asSequence()
+                .filter { it.editable && it.normalized.isNotBlank() }
+                .map { it.normalized }
+                .distinctBy { normalizeForComparison(it) }
+                .joinToString("\n")
+                .take(MAX_EDITABLE_CONTEXT_CHARS)
+            if (editableText.isNotBlank()) {
+                if (isNotEmpty()) append("\n\n")
+                append("[DRAF PENGGUNA — JANGAN DIANGGAP PESAN MASUK]\n")
+                append(editableText)
+            }
+        }.take(MAX_SCREEN_CONTEXT_CHARS).trim()
+
+        rememberSnapshot(packageId, currentEntries)
+        return ScreenTextSnapshot(
+            packageName = packageId,
+            text = structuredText.ifBlank { fullContext },
+            capturedAt = System.currentTimeMillis(),
+            primaryText = primaryText.ifBlank { fullContext },
+            latestIncomingText = latestIncoming
+        )
     }
 
-    private fun captureScreenshotText(): String {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return ""
+    private fun captureScreenshotEntries(): List<VisibleText> {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return emptyList()
 
         val latch = CountDownLatch(1)
-        val recognizedText = AtomicReference("")
+        val recognizedEntries = AtomicReference<List<VisibleText>>(emptyList())
 
         val callback = object : TakeScreenshotCallback {
             override fun onSuccess(screenshot: ScreenshotResult) {
@@ -137,10 +205,27 @@ class ScreenTextAccessibilityService : AccessibilityService() {
                 val image = InputImage.fromBitmap(visibleAppBitmap, 0)
                 recognizer().process(image)
                     .addOnSuccessListener(ocrExecutor) { result ->
-                        recognizedText.set(cleanOcrText(result.text))
+                        recognizedEntries.set(
+                            result.textBlocks.mapNotNull { block ->
+                                val normalized = cleanOcrText(block.text)
+                                val bounds = block.boundingBox ?: return@mapNotNull null
+                                normalized.takeIf(::isMeaningfulContent)?.let {
+                                    VisibleText(
+                                        normalized = it.take(MAX_ITEM_CHARS),
+                                        top = bounds.top,
+                                        left = bounds.left,
+                                        right = bounds.right,
+                                        bottom = bounds.bottom,
+                                        editable = false,
+                                        windowLayer = Int.MAX_VALUE,
+                                        source = TextSource.OCR
+                                    )
+                                }
+                            }
+                        )
                     }
                     .addOnFailureListener(ocrExecutor) {
-                        recognizedText.set("")
+                        recognizedEntries.set(emptyList())
                     }
                     .addOnCompleteListener(ocrExecutor) {
                         runCatching { visibleAppBitmap.recycle() }
@@ -160,7 +245,7 @@ class ScreenTextAccessibilityService : AccessibilityService() {
         }
 
         runCatching { latch.await(OCR_TIMEOUT_MS, TimeUnit.MILLISECONDS) }
-        return recognizedText.get().take(MAX_SCREEN_CONTEXT_CHARS).trim()
+        return recognizedEntries.get()
     }
 
     /**
@@ -192,6 +277,15 @@ class ScreenTextAccessibilityService : AccessibilityService() {
         .joinToString("\n")
         .take(MAX_SCREEN_CONTEXT_CHARS)
         .trim()
+
+    private fun collectApplicationEntries(targetPackage: String?): List<VisibleText> {
+        val entries = mutableListOf<VisibleText>()
+        findApplicationRoots(targetPackage).forEach { candidate ->
+            runCatching { candidate.root.refresh() }
+            collectVisibleText(candidate.root, entries, depth = 0, windowLayer = candidate.layer)
+        }
+        return entries
+    }
 
     private fun recognizer(): TextRecognizer {
         textRecognizer?.let { return it }
@@ -257,8 +351,11 @@ class ScreenTextAccessibilityService : AccessibilityService() {
                         normalized = normalized.take(MAX_ITEM_CHARS),
                         top = bounds.top,
                         left = bounds.left,
+                        right = bounds.right,
+                        bottom = bounds.bottom,
                         editable = node.isEditable,
-                        windowLayer = windowLayer
+                        windowLayer = windowLayer,
+                        source = TextSource.ACCESSIBILITY
                     )
                 }
             }
@@ -313,6 +410,151 @@ class ScreenTextAccessibilityService : AccessibilityService() {
         return value.length >= 2 && value.any { it.isLetterOrDigit() }
     }
 
+    private fun mergeEntries(primary: List<VisibleText>, secondary: List<VisibleText>): List<VisibleText> {
+        val merged = mutableListOf<VisibleText>()
+        (primary + secondary).forEach { candidate ->
+            val candidateKey = normalizeForComparison(candidate.normalized)
+            if (candidateKey.isBlank()) return@forEach
+            val duplicateIndex = merged.indexOfFirst { existing ->
+                val existingKey = normalizeForComparison(existing.normalized)
+                existingKey == candidateKey ||
+                    (candidateKey.length >= MIN_SUBSTRING_DEDUP_CHARS && existingKey.contains(candidateKey)) ||
+                    (existingKey.length >= MIN_SUBSTRING_DEDUP_CHARS && candidateKey.contains(existingKey))
+            }
+            if (duplicateIndex < 0) {
+                merged += candidate
+            } else if (candidate.normalized.length > merged[duplicateIndex].normalized.length) {
+                merged[duplicateIndex] = candidate
+            }
+        }
+        return merged
+            .sortedWith(compareBy<VisibleText> { it.top }.thenBy { it.left }.thenByDescending { it.windowLayer })
+            .take(MAX_VISIBLE_ITEMS)
+    }
+
+    private fun contentText(entries: List<VisibleText>, includeEditable: Boolean): String = entries
+        .asSequence()
+        .filter { includeEditable || !it.editable }
+        .filter { it.editable || isMeaningfulContent(it.normalized) }
+        .map { entry ->
+            if (entry.editable) "[Kolom tulisan pengguna] ${entry.normalized}" else entry.normalized
+        }
+        .distinctBy { normalizeForComparison(it) }
+        .joinToString("\n")
+        .take(MAX_SCREEN_CONTEXT_CHARS)
+        .trim()
+
+    private fun latestIncomingText(
+        packageId: String,
+        currentEntries: List<VisibleText>,
+        fallbackEntries: List<VisibleText>,
+        primaryText: String
+    ): String {
+        val entries = currentEntries.ifEmpty { fallbackEntries }
+        val bodyEntries = entries.filter {
+            !it.editable && isMessageBody(it.normalized) && it.bottom > 0 && it.right > it.left
+        }
+        if (bodyEntries.isEmpty()) return primaryText
+
+        val screenWidth = resources.displayMetrics.widthPixels.coerceAtLeast(1)
+        val incoming = bodyEntries.filter { entry ->
+            val center = (entry.left + entry.right) / 2f
+            center <= screenWidth * INCOMING_CENTER_RATIO && entry.right < screenWidth * OUTER_EDGE_RATIO
+        }
+        val outgoing = bodyEntries.filter { entry ->
+            val center = (entry.left + entry.right) / 2f
+            center >= screenWidth * OUTGOING_CENTER_RATIO && entry.left > screenWidth * INNER_EDGE_RATIO
+        }
+
+        val looksLikeChat = isChatPackage(packageId) || (incoming.isNotEmpty() && outgoing.isNotEmpty())
+        if (!looksLikeChat && isPostOrFeedPackage(packageId)) return primaryText
+
+        val lastOutgoingBottom = outgoing.maxOfOrNull { it.bottom } ?: Int.MIN_VALUE
+        val unansweredIncoming = incoming.filter { it.bottom > lastOutgoingBottom + MESSAGE_VERTICAL_TOLERANCE_PX }
+        val selected = (unansweredIncoming.ifEmpty { incoming }).maxWithOrNull(
+            compareBy<VisibleText> { it.bottom }
+                .thenBy { it.normalized.length }
+        ) ?: bodyEntries.maxWithOrNull(
+            compareBy<VisibleText> { it.bottom }
+                .thenBy { it.normalized.length }
+        )
+        return selected?.normalized.orEmpty().ifBlank { primaryText }
+    }
+
+    private fun isPostOrFeedPackage(packageId: String): Boolean {
+        val lower = packageId.lowercase(Locale.ROOT)
+        return POST_OR_FEED_PACKAGE_HINTS.any(lower::contains)
+    }
+
+    private fun isChatPackage(packageId: String): Boolean {
+        val lower = packageId.lowercase(Locale.ROOT)
+        return CHAT_PACKAGE_HINTS.any(lower::contains)
+    }
+
+    private fun isMessageBody(value: String): Boolean {
+        val clean = value.trim()
+        if (!isMeaningfulContent(clean)) return false
+        if (clean.startsWith("@") && !clean.contains(' ')) return false
+        if (clean.matches(Regex("^[0-9:. /+-]{2,20}$"))) return false
+        return clean.length >= MIN_MESSAGE_BODY_CHARS || clean.count(Char::isLetterOrDigit) >= 4
+    }
+
+    private fun isMeaningfulContent(value: String): Boolean {
+        val clean = value.replace(Regex("\\s+"), " ").trim()
+        if (clean.length < 2 || clean.none { it.isLetterOrDigit() }) return false
+        val comparison = clean.lowercase(Locale.ROOT)
+        if (comparison in UI_NOISE_EXACT) return false
+        if (comparison.startsWith("ai ads keyboard")) return false
+        if (STATUS_BAR_PATTERN.matches(comparison)) return false
+        return true
+    }
+
+    private fun normalizeForComparison(value: String): String = value
+        .lowercase(Locale.ROOT)
+        .replace(Regex("[^\\p{L}\\p{N}]+"), " ")
+        .replace(Regex("\\s+"), " ")
+        .trim()
+
+    private fun equivalentText(first: String, second: String): Boolean {
+        if (first.isBlank() || second.isBlank()) return false
+        val a = normalizeForComparison(first)
+        val b = normalizeForComparison(second)
+        return a == b || (a.length >= MIN_SUBSTRING_DEDUP_CHARS && b.contains(a)) ||
+            (b.length >= MIN_SUBSTRING_DEDUP_CHARS && a.contains(b))
+    }
+
+    private fun recentEntriesFor(packageId: String): List<VisibleText> = synchronized(recentSnapshots) {
+        trimRecentSnapshotsLocked()
+        recentSnapshots
+            .asReversed()
+            .asSequence()
+            .filter { it.packageName == packageId }
+            .take(MAX_CACHED_SNAPSHOTS_PER_PACKAGE)
+            .flatMap { it.entries.asSequence() }
+            .toList()
+    }
+
+    private fun rememberSnapshot(packageId: String, entries: List<VisibleText>) {
+        if (packageId.isBlank() || entries.isEmpty()) return
+        synchronized(recentSnapshots) {
+            recentSnapshots.removeAll { it.packageName == packageId && sameEntrySet(it.entries, entries) }
+            recentSnapshots.add(CachedScreenText(packageId, entries, System.currentTimeMillis()))
+            trimRecentSnapshotsLocked()
+        }
+    }
+
+    private fun sameEntrySet(first: List<VisibleText>, second: List<VisibleText>): Boolean {
+        val firstText = first.joinToString("\n") { normalizeForComparison(it.normalized) }
+        val secondText = second.joinToString("\n") { normalizeForComparison(it.normalized) }
+        return firstText == secondText
+    }
+
+    private fun trimRecentSnapshotsLocked() {
+        val oldestAllowed = System.currentTimeMillis() - SCREEN_CACHE_MAX_AGE_MS
+        recentSnapshots.removeAll { it.capturedAt < oldestAllowed }
+        while (recentSnapshots.size > MAX_CACHED_SNAPSHOTS) recentSnapshots.removeAt(0)
+    }
+
     private data class RootCandidate(
         val root: AccessibilityNodeInfo,
         val layer: Int
@@ -322,13 +564,25 @@ class ScreenTextAccessibilityService : AccessibilityService() {
         val normalized: String,
         val top: Int,
         val left: Int,
+        val right: Int,
+        val bottom: Int,
         val editable: Boolean,
-        val windowLayer: Int
+        val windowLayer: Int,
+        val source: TextSource
     )
+
+    private data class CachedScreenText(
+        val packageName: String,
+        val entries: List<VisibleText>,
+        val capturedAt: Long
+    )
+
+    private enum class TextSource { ACCESSIBILITY, OCR }
 
     companion object {
         @Volatile
         private var instance: ScreenTextAccessibilityService? = null
+        private val recentSnapshots = mutableListOf<CachedScreenText>()
 
         fun isRunning(): Boolean = instance != null
 
@@ -338,9 +592,40 @@ class ScreenTextAccessibilityService : AccessibilityService() {
         private const val MAX_TREE_DEPTH = 32
         private const val MAX_RAW_ITEMS = 320
         private const val MAX_VISIBLE_ITEMS = 160
-        private const val MAX_ITEM_CHARS = 1_200
-        private const val MAX_SCREEN_CONTEXT_CHARS = 16_000
+        private const val MAX_ITEM_CHARS = 6_000
+        private const val MAX_SCREEN_CONTEXT_CHARS = 24_000
+        private const val MAX_EDITABLE_CONTEXT_CHARS = 2_000
         private const val OCR_TIMEOUT_MS = 2_500L
         private const val FALLBACK_APP_AREA_RATIO = 0.60
+        private const val SCREEN_CACHE_DEBOUNCE_MS = 180L
+        private const val SCREEN_CACHE_MAX_AGE_MS = 2L * 60L * 1000L
+        private const val MAX_CACHED_SNAPSHOTS = 6
+        private const val MAX_CACHED_SNAPSHOTS_PER_PACKAGE = 3
+        private const val MIN_SUBSTRING_DEDUP_CHARS = 18
+        private const val MIN_MESSAGE_BODY_CHARS = 6
+        private const val INCOMING_CENTER_RATIO = 0.49f
+        private const val OUTGOING_CENTER_RATIO = 0.51f
+        private const val OUTER_EDGE_RATIO = 0.94f
+        private const val INNER_EDGE_RATIO = 0.06f
+        private const val MESSAGE_VERTICAL_TOLERANCE_PX = 2
+
+        private val POST_OR_FEED_PACKAGE_HINTS = listOf(
+            "twitter", "instagram", "facebook", "threads", "linkedin", "reddit",
+            "browser", "chrome", "firefox", "news", "medium"
+        )
+        private val CHAT_PACKAGE_HINTS = listOf(
+            "whatsapp", "telegram", "messenger", "orca", "signal", "discord", "line",
+            "messages", "messaging", "sms", "viber", "wechat", "kakao"
+        )
+        private val UI_NOISE_EXACT = setOf(
+            "balas", "kirim", "post", "postingan", "kembali", "back", "hapus", "simpan",
+            "bagikan", "share", "suka", "like", "ikuti", "follow", "selanjutnya", "next",
+            "tampilkan yang asli", "show original", "gif", "foto", "galeri", "menu",
+            "ketik pesan", "tulis balasan", "posting balasan anda"
+        )
+        private val STATUS_BAR_PATTERN = Regex(
+            "^(?:[0-2]?\\d[:.]\\d{2})(?:\\s+.*(?:kb/s|mb/s|lte|4g|5g|wifi|%|\\d{1,3}))?$",
+            RegexOption.IGNORE_CASE
+        )
     }
 }

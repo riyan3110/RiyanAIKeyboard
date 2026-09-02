@@ -310,7 +310,7 @@ class RiyanKeyboardService : InputMethodService() {
             setPadding(0, dp(2), 0, 0)
             setBackgroundColor(if (themeUsesPhoto) Color.TRANSPARENT else bg)
             addView(TextView(this@RiyanKeyboardService).apply {
-                text = "AI Ads Keyboard · v0.13"
+                text = "AI Ads Keyboard · v0.14"
                 textSize = 9f
                 setTextColor(Color.rgb(145, 137, 190))
                 gravity = Gravity.CENTER
@@ -449,7 +449,9 @@ class RiyanKeyboardService : InputMethodService() {
         }
         utilityBar.addView(suggestionBar, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
         utilityBar.addView(toolbarButton("⚙", dp(43)) { openSettings() })
-        root.addView(utilityBar, LinearLayout.LayoutParams(-1, dp(utilityHeightDp())))
+        root.addView(utilityBar, LinearLayout.LayoutParams(-1, dp(utilityHeightDp())).apply {
+            bottomMargin = dp(toolbarKeyboardGapDp())
+        })
     }
 
     private fun addSuggestionBar() {
@@ -594,8 +596,12 @@ class RiyanKeyboardService : InputMethodService() {
     private fun applyRootHeight() {
         if (!::root.isInitialized) return
         updateRootPadding(root)
-        if (::utilityBar.isInitialized) utilityBar.layoutParams = utilityBar.layoutParams.apply {
-            height = dp(utilityHeightDp())
+        if (::utilityBar.isInitialized) {
+            utilityBar.layoutParams = (utilityBar.layoutParams as? LinearLayout.LayoutParams
+                ?: LinearLayout.LayoutParams(-1, dp(utilityHeightDp()))).apply {
+                height = dp(utilityHeightDp())
+                bottomMargin = dp(toolbarKeyboardGapDp())
+            }
         }
         if (::suggestionBar.isInitialized) suggestionBar.layoutParams = suggestionBar.layoutParams.apply {
             height = ViewGroup.LayoutParams.MATCH_PARENT
@@ -1131,6 +1137,8 @@ class RiyanKeyboardService : InputMethodService() {
 
     private fun utilityHeightDp(): Int = if (isLandscape()) 30 else 39
 
+    private fun toolbarKeyboardGapDp(): Int = if (isLandscape()) 1 else 2
+
     private fun suggestionHeightDp(): Int = if (isLandscape()) 25 else 34
 
     private fun activeSuggestionHeightDp(): Int = if (suggestionsEnabled) suggestionHeightDp() else 0
@@ -1152,7 +1160,8 @@ class RiyanKeyboardService : InputMethodService() {
     private fun currentAiPanelHeightDp(): Int = if (isLandscape()) 162 else 204
 
     private fun fullscreenKeyboardPanelHeightDp(): Int =
-        (baseKeyboardHeightDp - utilityHeightDp() - brandBarHeightDp()).coerceAtLeast(if (isLandscape()) 72 else 105)
+        (baseKeyboardHeightDp - utilityHeightDp() - toolbarKeyboardGapDp() - brandBarHeightDp())
+            .coerceAtLeast(if (isLandscape()) 72 else 105)
 
     private fun addCurrentClipboardToHistory() {
         if (!clipboardHistoryEnabled || !clipboardManager.hasPrimaryClip() || isSensitiveEditor() || clipboardMarkedSensitive()) return
@@ -1462,7 +1471,7 @@ class RiyanKeyboardService : InputMethodService() {
         val editor = editorContext(ic)
         if (editor.isNotBlank()) return editor
         val screen = screenContextNow()
-        if (screen != null) return screen.text
+        if (screen != null) return screen.primaryText.ifBlank { screen.text }
         return recentSharedContext()
     }
 
@@ -1478,15 +1487,16 @@ class RiyanKeyboardService : InputMethodService() {
             .orEmpty()
         val saved = recentSharedContext()
         return listOf(
-            "TEKS LAYAR TERBARU — sumber utama percakapan" to screen?.text.orEmpty(),
+            "Konteks percakapan/postingan yang terlihat" to screen?.primaryText.orEmpty(),
             "Teks yang sengaja dipilih atau dibagikan" to saved,
             "Teks yang dipilih di kolom aktif" to selected,
             "Clipboard — gunakan hanya jika cocok dengan percakapan" to copied,
-            "Draf pengguna di kolom balasan — jangan dianggap pesan lawan bicara" to editor
+            "Draf pengguna di kolom balasan — jangan dianggap pesan lawan bicara" to editor,
+            "TARGET WAJIB DIBALAS — pesan masuk terakhir yang belum dibalas" to
+                screen?.latestIncomingText.orEmpty().ifBlank { screen?.primaryText.orEmpty() }
         )
             .map { (label, value) -> label to value.trim() }
             .filter { (_, value) -> value.isNotBlank() }
-            .distinctBy { (_, value) -> value }
             .joinToString("\n\n") { (label, value) -> "[$label]\n$value" }
             .takeLast(MAX_REPLY_CONTEXT_CHARS)
     }
@@ -1501,7 +1511,8 @@ class RiyanKeyboardService : InputMethodService() {
         val selected = ic.getSelectedText(0)?.toString().orEmpty().trim()
         if (selected.isNotBlank()) return selected.takeLast(MAX_AI_CONTEXT_CHARS)
 
-        val screen = screenContextNow()?.text.orEmpty().trim()
+        val snapshot = screenContextNow()
+        val screen = snapshot?.primaryText.orEmpty().ifBlank { snapshot?.text.orEmpty() }.trim()
         if (screen.isNotBlank()) return screen.takeLast(MAX_AI_CONTEXT_CHARS)
 
         val shared = recentSharedContext().trim()
@@ -1682,8 +1693,8 @@ class RiyanKeyboardService : InputMethodService() {
         private const val DOUBLE_TAP_SHIFT_MS = 420L
         private const val SUGGESTION_AUTO_HIDE_MS = 2_600L
         private const val SHARED_CONTEXT_MAX_AGE_MS = 30L * 60L * 1000L
-        private const val MAX_AI_CONTEXT_CHARS = 12_000
-        private const val MAX_REPLY_CONTEXT_CHARS = 16_000
+        private const val MAX_AI_CONTEXT_CHARS = 24_000
+        private const val MAX_REPLY_CONTEXT_CHARS = 28_000
         private const val MAX_REFERENCE_URLS = 6
         private const val MAX_CLIPS = 12
         private const val MAX_CLIP_LENGTH = 1200

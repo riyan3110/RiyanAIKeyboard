@@ -40,8 +40,12 @@ object AiClient {
             settings = settings,
             systemInstruction = instruction(action),
             text = text,
-            temperature = if (action == "Balas") 0.68 else 0.25,
-            maxTokens = if (action in setOf("Perbaiki", "Ringkas")) 4096 else 2048
+            temperature = when (action) {
+                "Balas" -> 0.62
+                "Perbaiki", "Ringkas", "Terjemah" -> 0.12
+                else -> 0.25
+            },
+            maxTokens = if (action == "Perbaiki") 6144 else if (action == "Ringkas") 4096 else 2048
         )
     }
 
@@ -231,7 +235,7 @@ object AiClient {
             readTimeout = 9_000
             instanceFollowRedirects = true
             setRequestProperty("Accept", "text/html,text/plain,application/json,application/xml;q=0.9,*/*;q=0.2")
-            setRequestProperty("User-Agent", "AI-Ads-Keyboard/0.11")
+            setRequestProperty("User-Agent", "AI-Ads-Keyboard/0.14")
         }
         return try {
             val status = connection.responseCode
@@ -323,12 +327,12 @@ object AiClient {
     }.getOrNull()
 
     private fun instruction(action: String) = when (action) {
-        "Perbaiki" -> "Deteksi bahasa teks. Periksa seluruh tulisan, termasuk tulisan panjang. Perbaiki typo, ejaan, tanda baca, tata bahasa, kalimat rancu, pengulangan yang tidak perlu, dan pilihan kata agar natural dalam bahasa yang sama. Pertahankan maksud, fakta, nama, angka, susunan paragraf, serta gaya penulis; jangan memendekkan isi kecuali diperlukan untuk menghapus pengulangan. Keluarkan hanya teks hasil lengkap."
-        "Balas" -> "Tentukan pesan masuk terbaru dari bagian TEKS LAYAR atau teks yang sengaja dibagikan. Abaikan tombol navigasi, label antarmuka, status bar, iklan, dan bagian Draf pengguna. Gunakan clipboard hanya jika jelas cocok dengan percakapan. Pahami hubungan dan maksud percakapan, lalu buat satu balasan yang masuk akal, natural seperti penutur asli, dan tidak mengarang fakta. Pakai bahasa, dialek ringan, panjang, emoji, serta tingkat formalitas yang sesuai dengan pesan terbaru. Jika bahasa pesan berbeda dari bahasa pengguna, balas dengan bahasa pesan tersebut. Keluarkan hanya teks balasannya."
+        "Perbaiki" -> "Bertindak sebagai editor bahasa yang sangat teliti. Baca teks lengkap dari awal sampai akhir dan pahami maksudnya sebelum mengubah apa pun. Lakukan pemeriksaan internal dua tahap: pertama perbaiki typo, ejaan, kapitalisasi, tanda baca, tata bahasa, dan kata yang tidak tepat; kedua periksa kembali alur logika, hubungan antarkalimat, transisi, pembagian paragraf, serta pengulangan. Buat kalimat rapi, natural, jelas, dan masuk akal dalam bahasa sumber yang sama. Pertahankan seluruh maksud, fakta, nama, angka, tanggal, tautan, nada, serta detail penting. Jangan mengarang informasi, mengubah klaim, menambah kesimpulan, atau memendekkan isi kecuali hanya untuk menghapus pengulangan nyata. Jika bagian tertentu ambigu, pilih perubahan paling minimal yang aman. Pastikan hasil akhir sudah dibaca ulang dan tidak ada kalimat terpotong. Keluarkan hanya teks final lengkap tanpa penjelasan."
+        "Balas" -> "Gunakan bagian TARGET WAJIB DIBALAS sebagai pesan atau postingan utama. Itu adalah pesan masuk terakhir yang belum dibalas dan harus selalu lebih diprioritaskan daripada pesan lama, clipboard, teks UI, atau draf pengguna. Gunakan bagian konteks hanya untuk memahami percakapan. Abaikan tombol navigasi, label antarmuka, status bar, iklan, dan bagian Draf pengguna. Pahami maksud target dengan teliti, lalu buat satu balasan yang relevan, masuk akal, natural seperti penutur asli, dan tidak mengarang fakta. Pakai bahasa, dialek ringan, panjang, emoji, serta tingkat formalitas yang sesuai dengan target. Jika bahasa target berbeda dari bahasa pengguna, balas dengan bahasa target tersebut. Jangan membalas pesan lama bila target tersedia. Keluarkan hanya teks balasannya."
         "Santai" -> "Deteksi bahasa teks lalu ubah menjadi gaya yang lebih santai dan natural dalam bahasa yang sama tanpa mengubah arti. Keluarkan hanya hasil."
         "Sopan" -> "Deteksi bahasa teks lalu ubah menjadi lebih sopan dan natural dalam bahasa yang sama. Keluarkan hanya hasil."
-        "Ringkas" -> "Baca seluruh teks termasuk jika panjang, identifikasi gagasan utama, lalu ringkas dalam bahasa yang sama. Pertahankan fakta, angka, nama, kesimpulan, dan konteks penting; hapus pengulangan dan detail yang tidak perlu. Gunakan paragraf atau poin sesuai bentuk teks. Keluarkan hanya hasil ringkasan."
-        "Terjemah" -> "Teks dapat berasal dari tampilan aplikasi. Temukan isi utama yang bermakna dan abaikan status bar, tombol navigasi, menu, label antarmuka, placeholder kolom, iklan, serta teks AI Ads Keyboard. Jika ada beberapa potongan, utamakan paragraf atau pesan utuh yang sedang dibaca pengguna dan jangan menerjemahkan label UI. Deteksi bahasa sumber secara otomatis. Jika sumber berbahasa Indonesia, terjemahkan secara natural ke bahasa Inggris. Jika sumber bukan bahasa Indonesia, terjemahkan secara natural ke bahasa Indonesia. Pertahankan seluruh maksud, nama, angka, susunan paragraf, dan nada. Keluarkan hanya terjemahan tanpa penjelasan."
+        "Ringkas" -> "Bertindak sebagai penyunting ringkasan yang teliti. Baca seluruh teks dari awal sampai akhir sebelum menulis hasil. Identifikasi topik, gagasan utama, hubungan sebab-akibat, kesimpulan, dan semua fakta yang wajib dipertahankan. Buat ringkasan yang rapi, runtut, natural, dan mudah dipahami dalam bahasa sumber yang sama. Pertahankan nama, angka, tanggal, syarat, peringatan, serta konteks yang dapat mengubah makna. Hapus pengulangan, contoh berlebih, dan detail yang benar-benar tidak penting. Jangan mengarang, menebak, mengubah fakta, atau membuat kalimat menggantung. Gunakan paragraf singkat atau poin hanya jika memang lebih jelas. Periksa kembali hasil terhadap teks sumber sebelum menjawab. Keluarkan hanya ringkasan final tanpa penjelasan."
+        "Terjemah" -> "Teks berasal dari postingan atau chat yang dibaca dari layar. Temukan semua isi utama yang bermakna dan abaikan status bar, tombol navigasi, menu, label antarmuka, placeholder kolom, iklan, serta teks AI Ads Keyboard. Deteksi bahasa sumber secara otomatis, termasuk bila ada beberapa bahasa. Bahasa keluaran WAJIB Bahasa Indonesia untuk setiap bahasa sumber. Jika sumber sudah berbahasa Indonesia, pertahankan dalam Bahasa Indonesia dan rapikan hanya bila diperlukan; jangan pernah mengubahnya ke bahasa Inggris atau bahasa lain. Terjemahkan secara lengkap, natural, dan akurat. Pertahankan maksud, nama, angka, tanggal, tautan, susunan paragraf, nada, dan emoji. Jangan meringkas atau menambah penjelasan. Keluarkan hanya teks Bahasa Indonesia hasil akhir."
         else -> "Bantu tulis ulang teks dengan jelas. Keluarkan hanya hasil."
     }
 

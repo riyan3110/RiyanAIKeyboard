@@ -7,7 +7,9 @@ Keyboard Android dengan OpenRouter/TabiAI, obrolan AI, akses teks layar sesuai p
 - Nama aplikasi dan label bawah keyboard sudah seragam menjadi **AI Ads Keyboard**.
 - Layanan **Akses Teks Layar** tersedia lagi. Isi layar dibaca saat pengguna menekan fungsi AI, bukan direkam terus-menerus; node sandi selalu dilewati.
 - `Balas` memprioritaskan percakapan yang terlihat, mengabaikan tombol UI dan draf pengguna, kemudian menyesuaikan bahasa serta gaya pesan terbaru.
-- `Terjemah` otomatis memakai teks yang disorot atau langsung membaca isi layar saat tombol ditekan, tanpa perlu menempel teks. Tombol dan label UI disaring; Bagikan, editor, dan clipboard menjadi cadangan.
+- `Terjemah` otomatis memakai teks yang disorot atau membaca postingan/chat layar saat tombol ditekan, tanpa perlu menempel teks. Semua bahasa sumber diterjemahkan ke Bahasa Indonesia; tombol dan label UI disaring.
+- `Balas` memprioritaskan pesan masuk terakhir yang belum dibalas, dengan percakapan lain hanya sebagai konteks pendukung.
+- `Perbaiki` dan `Ringkas` membaca ulang teks secara teliti agar hasilnya rapi, runtut, dan tidak mengubah fakta.
 - `Perbaiki` dan `Ringkas` dapat memakai teks pilihan, tulisan panjang di editor, teks layar, teks yang dibagikan, clipboard, atau OCR sesuai konteks.
 - Halaman pengaturan menerima hingga enam sumber URL HTTPS. URL pencarian dapat memakai placeholder `{query}`.
 - Isi situs diperlakukan sebagai referensi tidak tepercaya dan tidak boleh mengubah instruksi AI.
