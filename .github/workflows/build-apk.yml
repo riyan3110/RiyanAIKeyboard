@@ -55,6 +55,9 @@ jobs:
       - name: Apply full-screen OCR cache patch
         run: python3 tools/apply_fullscreen_ocr_cache_patch.py
 
+      - name: Apply delete compatibility patch
+        run: python3 tools/apply_delete_compat_patch.py
+
       - name: Build debug APK
         run: RIYAN_KEYSTORE_PATH="$HOME/.riyan-ai-keyboard/debug.keystore" gradle --no-daemon :app:assembleDebug
 
