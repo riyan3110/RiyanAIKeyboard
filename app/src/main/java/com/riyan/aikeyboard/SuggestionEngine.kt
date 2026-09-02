@@ -66,13 +66,15 @@ object SuggestionEngine {
         beforeCursor: String,
         learned: List<LearnedSuggestion>,
         savedEntries: List<String>,
-        limit: Int = 3
+        limit: Int = 2
     ): List<KeyboardSuggestion> {
-        val tail = beforeCursor.takeLast(180)
+        val safeLimit = limit.coerceIn(1, 2)
+        val tail = beforeCursor.takeLast(220)
         val segment = currentSegment(tail)
         val token = segment.takeLastWhile(::isSuggestionCharacter)
         val normalizedToken = normalize(token)
-        if (normalizedToken.length < 2) return emptyList()
+        val normalizedSegment = normalize(segment)
+        val seed = stableSeed(tail)
 
         val learnedRank = learned
             .asSequence()
@@ -81,12 +83,14 @@ object SuggestionEngine {
             .toList()
         val personal = (
             savedEntries.filter(::isSafeMemoryValue).map { LearnedSuggestion(it, Int.MAX_VALUE / 4) } + learnedRank
-        ).filter { it.text.isNotBlank() }
+        )
+            .filter { it.text.isNotBlank() }
+            .distinctBy { normalize(it.text) }
         val allPhrases = personal + phrases.map { LearnedSuggestion(it) }
         val results = mutableListOf<KeyboardSuggestion>()
 
         fun add(text: String, replaceLength: Int) {
-            val cleaned = text.trim()
+            val cleaned = text.trim().replace(Regex("\\s+"), " ")
             if (cleaned.isBlank() || !isSafeMemoryValue(cleaned)) return
             if (results.any { normalize(it.text) == normalize(cleaned) }) return
             results += KeyboardSuggestion(
@@ -95,32 +99,75 @@ object SuggestionEngine {
             )
         }
 
-        val normalizedSegment = normalize(segment)
-        if (normalizedSegment.length >= 2) {
-            allPhrases.asSequence()
-                .filter { normalize(it.text).startsWith(normalizedSegment) && normalize(it.text) != normalizedSegment }
-                .forEach { add(it.text, segment.length) }
-        }
-
-        personal.asSequence()
-            .filter { normalize(it.text).startsWith(normalizedToken) && normalize(it.text) != normalizedToken }
-            .forEach { add(it.text, token.length) }
-
-        (words.asSequence() + phrases.asSequence())
-            .filter { normalize(it).startsWith(normalizedToken) && normalize(it) != normalizedToken }
-            .forEach { add(it, token.length) }
-
-        if (!token.contains('@') && normalizedToken.length >= 3 && token.any(Char::isLetter)) {
-            words.asSequence()
-                .map { candidate -> candidate to editDistance(normalizedToken, candidate, 2) }
-                .filter { (candidate, distance) ->
-                    candidate != normalizedToken && distance in 1..allowedDistance(normalizedToken.length)
+        // When the user has just pressed space, predict the next word/phrase from personal and
+        // built-in phrase patterns. It looks at up to the last four words, so suggestions can
+        // appear before the next character is typed.
+        if (tail.lastOrNull()?.isWhitespace() == true) {
+            val contextWords = normalizedWords(segment.trimEnd()).takeLast(8)
+            if (contextWords.isNotEmpty()) {
+                val continuations = allPhrases
+                    .mapNotNull { entry ->
+                        continuationAfterContext(entry.text, contextWords)?.let { continuation ->
+                            Triple(continuation, entry.uses, entry.lastUsedAt)
+                        }
+                    }
+                    .distinctBy { normalize(it.first) }
+                    .sortedWith(
+                        compareByDescending<Triple<String, Int, Long>> { it.second }
+                            .thenByDescending { it.third }
+                    )
+                    .take(10)
+                rotateStable(continuations, seed).forEach { (continuation, _, _) ->
+                    add(continuation, 0)
                 }
-                .sortedWith(compareBy<Pair<String, Int>> { it.second }.thenBy { it.first.length })
-                .forEach { (candidate, _) -> add(candidate, token.length) }
+            }
+            if (results.size >= safeLimit) return results.take(safeLimit)
         }
 
-        return results.take(limit)
+        if (normalizedToken.length >= 2) {
+            // Complete the whole current phrase first when it matches a known phrase.
+            if (normalizedSegment.length >= 2) {
+                val matchingPhrases = allPhrases
+                    .filter {
+                        normalize(it.text).startsWith(normalizedSegment) &&
+                            normalize(it.text) != normalizedSegment
+                    }
+                    .take(10)
+                rotateStable(matchingPhrases, seed).forEach { add(it.text, segment.length) }
+            }
+
+            // Personal completions are preferred, but rotate among the best matches so the first
+            // suggestion is not permanently the same every time the same prefix is used.
+            val matchingPersonal = personal
+                .filter {
+                    normalize(it.text).startsWith(normalizedToken) &&
+                        normalize(it.text) != normalizedToken
+                }
+                .take(10)
+            rotateStable(matchingPersonal, seed xor 0x5F3759DF).forEach { add(it.text, token.length) }
+
+            (words.asSequence() + phrases.asSequence())
+                .filter { normalize(it).startsWith(normalizedToken) && normalize(it) != normalizedToken }
+                .forEach { add(it, token.length) }
+
+            // Typo correction is kept as a fallback; at most two total items are shown by the UI.
+            if (!token.contains('@') && normalizedToken.length >= 3 && token.any(Char::isLetter)) {
+                words.asSequence()
+                    .map { candidate -> candidate to editDistance(normalizedToken, candidate, 2) }
+                    .filter { (candidate, distance) ->
+                        candidate != normalizedToken && distance in 1..allowedDistance(normalizedToken.length)
+                    }
+                    .sortedWith(compareBy<Pair<String, Int>> { it.second }.thenBy { it.first.length })
+                    .forEach { (candidate, _) -> add(candidate, token.length) }
+            }
+            return results.take(safeLimit)
+        }
+
+        // Empty/one-character state: show a rotating pair from useful personal memory instead of
+        // pinning the same highest-frequency phrase forever. Built-in phrases fill an empty memory.
+        val idlePool = personal.take(10).map { it.text } + phrases.take(10)
+        rotateStable(idlePool.distinctBy(::normalize), seed).forEach { add(it, 0) }
+        return results.take(safeLimit)
     }
 
     fun learnableEntries(beforeCursor: String): List<String> {
@@ -178,6 +225,40 @@ object SuggestionEngine {
 
         return true
     }
+
+    private fun continuationAfterContext(phrase: String, contextWords: List<String>): String? {
+        val phraseWords = normalizedWords(phrase)
+        if (phraseWords.size < 2 || contextWords.isEmpty()) return null
+        val maxContext = minOf(4, contextWords.size, phraseWords.size - 1)
+        for (size in maxContext downTo 1) {
+            val suffix = contextWords.takeLast(size)
+            for (start in 0..phraseWords.size - size) {
+                if (phraseWords.subList(start, start + size) == suffix && start + size < phraseWords.size) {
+                    return phraseWords.drop(start + size).take(7).joinToString(" ")
+                }
+            }
+        }
+        return null
+    }
+
+    private fun <T> rotateStable(values: List<T>, seed: Int): List<T> {
+        if (values.size <= 1) return values
+        val offset = Math.floorMod(seed, values.size)
+        if (offset == 0) return values
+        return values.drop(offset) + values.take(offset)
+    }
+
+    private fun stableSeed(context: String): Int {
+        val normalized = normalize(context.takeLast(120))
+        val timeBucket = (System.currentTimeMillis() / 60_000L).toInt()
+        return normalized.hashCode() xor timeBucket
+    }
+
+    private fun normalizedWords(value: String): List<String> =
+        normalize(value)
+            .split(' ')
+            .map { it.trim(' ', ',', ':', ';', '"', '\'', '(', ')') }
+            .filter { it.isNotBlank() }
 
     private fun isEmail(value: String): Boolean = emailRegex.matches(value.trim())
 
