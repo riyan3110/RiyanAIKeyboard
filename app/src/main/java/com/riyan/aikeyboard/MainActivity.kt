@@ -29,6 +29,26 @@ class MainActivity : AppCompatActivity() {
     private val prefs by lazy { getSharedPreferences("riyan_ai", MODE_PRIVATE) }
     private lateinit var contextText: EditText
     private lateinit var accessibilityStatus: TextView
+    private lateinit var themeModeSpinner: Spinner
+    private lateinit var themeImageStatus: TextView
+
+    private val themeImagePicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        runCatching {
+            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        prefs.edit()
+            .putString("keyboard_theme_image_uri", uri.toString())
+            .putString("keyboard_theme_mode", KeyboardTheme.MODE_PHOTO)
+            .apply()
+        if (::themeModeSpinner.isInitialized) {
+            themeModeSpinner.setSelection(KeyboardTheme.modes.indexOfFirst { it.first == KeyboardTheme.MODE_PHOTO })
+        }
+        if (::themeImageStatus.isInitialized) {
+            themeImageStatus.text = "✓ Foto galeri dipilih dan akan dipakai sebagai latar keyboard."
+        }
+        Toast.makeText(this, "Foto tema tersimpan.", Toast.LENGTH_SHORT).show()
+    }
 
     private val imagePicker = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri == null) return@registerForActivityResult
@@ -61,7 +81,7 @@ class MainActivity : AppCompatActivity() {
             setTypeface(typeface, Typeface.BOLD)
         })
         root.addView(TextView(this).apply {
-            text = "Versi 0.9.0 · Panel AI lebih lapang, bar koreksi dapat hilang penuh, respons sentuhan lebih luas, dan AI dapat mengikuti gaya ketikan pemakai."
+            text = "Versi 0.10.0 · Obrolan AI layar penuh, tema warna atau foto galeri, dan respons tombol tanpa jeda saat sensitivitas tinggi."
             textSize = 14f
             setPadding(0, dp(7), 0, dp(14))
         })
@@ -91,13 +111,67 @@ class MainActivity : AppCompatActivity() {
         })
         updateAccessibilityStatus()
 
+        root.addView(sectionTitle("Tema keyboard"))
+        root.addView(description("Pilih warna siap pakai, warna sendiri, atau gunakan foto dari galeri sebagai latar. Foto tetap tersimpan setelah HP dimulai ulang."))
+        themeModeSpinner = Spinner(this)
+        themeModeSpinner.adapter = ArrayAdapter(
+            this,
+            android.R.layout.simple_spinner_dropdown_item,
+            KeyboardTheme.modes.map { it.second }
+        )
+        val currentTheme = prefs.getString("keyboard_theme_mode", KeyboardTheme.MODE_DARK)
+        themeModeSpinner.setSelection(KeyboardTheme.modes.indexOfFirst { it.first == currentTheme }.coerceAtLeast(0))
+        root.addView(themeModeSpinner, ViewGroup.LayoutParams(-1, -2))
+
+        val customThemeColor = EditText(this).apply {
+            hint = "Warna sendiri, contoh #5D4AC4"
+            setText(prefs.getString("keyboard_theme_color", "#5D4AC4"))
+            inputType = InputType.TYPE_CLASS_TEXT
+        }
+        root.addView(customThemeColor, ViewGroup.LayoutParams(-1, -2))
+        val photoDim = settingSlider(root, "Kegelapan foto agar huruf terbaca", 10, 85, prefs.getInt("keyboard_theme_photo_dim", 48), "%")
+        themeImageStatus = TextView(this).apply {
+            text = if (prefs.getString("keyboard_theme_image_uri", "").isNullOrBlank()) {
+                "Belum ada foto tema yang dipilih."
+            } else {
+                "✓ Foto galeri sudah tersimpan."
+            }
+            textSize = 13f
+            setPadding(0, dp(5), 0, dp(5))
+        }
+        root.addView(themeImageStatus, ViewGroup.LayoutParams(-1, -2))
+        root.addView(Button(this).apply {
+            text = "Pilih foto dari galeri"
+            setOnClickListener { themeImagePicker.launch(arrayOf("image/*")) }
+        })
+        root.addView(Button(this).apply {
+            text = "Hapus foto tema"
+            setOnClickListener {
+                val oldUri = prefs.getString("keyboard_theme_image_uri", "").orEmpty()
+                if (oldUri.isNotBlank()) {
+                    runCatching {
+                        contentResolver.releasePersistableUriPermission(
+                            android.net.Uri.parse(oldUri),
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        )
+                    }
+                }
+                prefs.edit()
+                    .remove("keyboard_theme_image_uri")
+                    .putString("keyboard_theme_mode", KeyboardTheme.MODE_DARK)
+                    .apply()
+                themeModeSpinner.setSelection(0)
+                themeImageStatus.text = "Foto tema dihapus."
+            }
+        })
+
         root.addView(sectionTitle("Ukuran dan respons"))
         root.addView(description("Tinggi potret dan lanskap disimpan terpisah. Batas minimum kembali diturunkan dan keduanya dapat diubah langsung lewat tombol ↕ pada keyboard."))
         val portraitHeight = settingSlider(root, "Tinggi mode potret", 170, 330, prefs.getInt("keyboard_height_portrait_dp", 220), " dp")
         val landscapeHeight = settingSlider(root, "Tinggi mode lanskap", 90, 190, prefs.getInt("keyboard_height_landscape_dp", 120), " dp")
         val keyTextSize = settingSlider(root, "Ukuran huruf tombol", 16, 28, prefs.getInt("key_text_size_sp", 21), " sp")
-        val touchSensitivity = settingSlider(root, "Sensitivitas sentuhan", 20, 250, prefs.getInt("touch_sensitivity", 100), "%")
-        root.addView(description("Rentang kini sampai 250%. Nilai tinggi membuat tombol tetap terbaca walau jari sedikit bergeser saat dilepas, sehingga ketukan tidak terasa terlewat."))
+        val touchSensitivity = settingSlider(root, "Sensitivitas dan kecepatan tombol", 20, 400, prefs.getInt("touch_sensitivity", 100), "%")
+        root.addView(description("Mulai 150%, huruf langsung masuk saat tombol disentuh tanpa menunggu jari dilepas. Rentang gerakan juga diperluas sampai 400% agar ketukan cepat tidak terlewat."))
         val longPressDuration = settingSlider(root, "Penundaan tekan lama", 200, 900, prefs.getInt("long_press_ms", 450), " ms")
 
         root.addView(sectionTitle("Masukan"))
@@ -167,6 +241,9 @@ class MainActivity : AppCompatActivity() {
                     .putInt("key_text_size_sp", keyTextSize.progress + 16)
                     .putInt("touch_sensitivity", touchSensitivity.progress + 20)
                     .putInt("long_press_ms", longPressDuration.progress + 200)
+                    .putString("keyboard_theme_mode", KeyboardTheme.modes[themeModeSpinner.selectedItemPosition].first)
+                    .putString("keyboard_theme_color", KeyboardTheme.normalizeColor(customThemeColor.text.toString()))
+                    .putInt("keyboard_theme_photo_dim", photoDim.progress + 10)
                     .putBoolean("number_row_enabled", numberRow.isChecked)
                     .putBoolean("long_press_symbols_enabled", longPressSymbols.isChecked)
                     .putBoolean("automatic_capitalization_enabled", automaticCapitalization.isChecked)

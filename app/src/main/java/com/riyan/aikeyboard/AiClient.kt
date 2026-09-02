@@ -231,7 +231,7 @@ object AiClient {
             readTimeout = 9_000
             instanceFollowRedirects = true
             setRequestProperty("Accept", "text/html,text/plain,application/json,application/xml;q=0.9,*/*;q=0.2")
-            setRequestProperty("User-Agent", "AI-Ads-Keyboard/0.9")
+            setRequestProperty("User-Agent", "AI-Ads-Keyboard/0.10")
         }
         return try {
             val status = connection.responseCode

@@ -2,7 +2,7 @@
 
 Keyboard Android dengan OpenRouter/TabiAI, obrolan AI, akses teks layar sesuai permintaan pengguna, prediksi lokal, clipboard, emoji, simbol, Caps Lock dua ketukan, dan tinggi potret/lanskap terpisah.
 
-## Fitur versi 0.9
+## Fitur versi 0.10
 
 - Nama aplikasi dan label bawah keyboard sudah seragam menjadi **AI Ads Keyboard**.
 - Layanan **Akses Teks Layar** tersedia lagi. Isi layar dibaca saat pengguna menekan fungsi AI, bukan direkam terus-menerus; node sandi selalu dilewati.
@@ -15,7 +15,9 @@ Keyboard Android dengan OpenRouter/TabiAI, obrolan AI, akses teks layar sesuai p
 - Rentang tinggi potret `170–330 dp` dan lanskap `90–190 dp`, dengan migrasi otomatis dari batas minimum lama.
 - Panel obrolan AI memakai lebar keyboard hingga ke tepi, area jawaban diperbesar, dan ruang kosong di bawah tombol tindakan dipotong.
 - Tombol penutup keyboard di toolbar dihapus dan tombol pengaturan ditempatkan di ujung kanan.
-- Sensitivitas sentuhan dapat diatur sampai `250%` agar ketukan yang sedikit bergeser tidak terlewat.
+- Obrolan AI dapat diperbesar menjadi layar penuh tanpa kehilangan keyboard untuk mengetik.
+- Tema keyboard dapat memakai warna siap pakai, warna sendiri, atau foto dari galeri.
+- Sensitivitas dapat diatur sampai `400%`; mulai `150%`, tombol merespons saat disentuh tanpa menunggu jari dilepas.
 - Memori gaya lokal mempelajari pilihan kata, sapaan, singkatan, panjang kalimat, dan formalitas agar hasil AI mengikuti gaya pemakai. Fitur dapat dimatikan atau dihapus.
 
 ## Provider AI
