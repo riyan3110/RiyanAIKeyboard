@@ -87,6 +87,7 @@ class RiyanKeyboardService : InputMethodService() {
     private var clipboardHistoryEnabled = true
     private var suggestionsEnabled = true
     private var personalizedLearningEnabled = true
+    private var styleMemoryEnabled = true
     private var enterActionEnabled = false
     private var lastSpaceAt = 0L
     private val conversationHistory = mutableListOf<Pair<String, String>>()
@@ -94,7 +95,9 @@ class RiyanKeyboardService : InputMethodService() {
     private val handler = Handler(Looper.getMainLooper())
     private val suggestionRefreshRunnable = Runnable { refreshSuggestions() }
     private val suggestionAutoHideRunnable = Runnable {
-        if (::suggestionBar.isInitialized) suggestionBar.visibility = View.INVISIBLE
+        if (::suggestionBar.isInitialized) {
+            suggestionBar.visibility = if (suggestionsEnabled) View.INVISIBLE else View.GONE
+        }
     }
     private val bg = Color.rgb(18, 18, 23)
     private val keyBg = Color.rgb(50, 50, 60)
@@ -236,8 +239,8 @@ class RiyanKeyboardService : InputMethodService() {
         baseKeyboardHeightDp = prefs.getInt(heightPreferenceKey, defaultHeight)
             .coerceIn(minKeyboardHeightDp, maxKeyboardHeightDp)
         keyTextSizeSp = prefs.getInt("key_text_size_sp", 21).coerceIn(16, 28).toFloat()
-        val sensitivity = prefs.getInt("touch_sensitivity", 65).coerceIn(20, 100)
-        touchTolerancePx = dpFloat(8f + sensitivity * 0.28f)
+        val sensitivity = prefs.getInt("touch_sensitivity", 100).coerceIn(20, 250)
+        touchTolerancePx = dpFloat(12f + sensitivity * 0.34f)
         longPressDurationMs = prefs.getInt("long_press_ms", 450).coerceIn(200, 900).toLong()
         numberRowEnabled = prefs.getBoolean("number_row_enabled", true)
         longPressSymbolsEnabled = prefs.getBoolean("long_press_symbols_enabled", true)
@@ -250,12 +253,13 @@ class RiyanKeyboardService : InputMethodService() {
         clipboardHistoryEnabled = prefs.getBoolean("clipboard_history_enabled", true)
         suggestionsEnabled = prefs.getBoolean("suggestions_enabled", true)
         personalizedLearningEnabled = prefs.getBoolean("personalized_learning_enabled", true)
+        styleMemoryEnabled = prefs.getBoolean("style_memory_enabled", true)
         enterActionEnabled = prefs.getBoolean("enter_action_enabled", false)
         if (::root.isInitialized) updateRootPadding(root)
     }
 
     private fun updateRootPadding(target: LinearLayout) {
-        target.setPadding(dp(1), dp(2), dp(1), dp(1))
+        target.setPadding(0, dp(1), 0, dp(1))
     }
 
     private fun addBottomBrandBar() {
@@ -264,7 +268,7 @@ class RiyanKeyboardService : InputMethodService() {
             setPadding(0, dp(2), 0, 0)
             setBackgroundColor(bg)
             addView(TextView(this@RiyanKeyboardService).apply {
-                text = "AI Ads Keyboard · v0.8"
+                text = "AI Ads Keyboard · v0.9"
                 textSize = 9f
                 setTextColor(Color.rgb(145, 137, 190))
                 gravity = Gravity.CENTER
@@ -277,8 +281,8 @@ class RiyanKeyboardService : InputMethodService() {
     private fun addAiConversationPanel() {
         aiPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(4), dp(6), dp(4), dp(6))
-            background = roundedBackground(Color.rgb(31, 31, 36), 14f)
+            setPadding(dp(1), dp(3), dp(1), dp(2))
+            background = roundedBackground(Color.rgb(31, 31, 36), 9f)
             visibility = View.GONE
         }
 
@@ -291,31 +295,31 @@ class RiyanKeyboardService : InputMethodService() {
             textSize = 14f
             setTextColor(Color.WHITE)
             setTypeface(typeface, Typeface.BOLD)
-        }, LinearLayout.LayoutParams(0, dp(28), 1f))
+        }, LinearLayout.LayoutParams(0, dp(aiHeaderHeightDp()), 1f))
         header.addView(compactButton("Hapus") {
             conversationHistory.clear()
             pendingText = null
             aiAnswer.text = "Jawaban AI akan muncul di sini."
             aiStatus.text = activeProviderLabel()
-        }, LinearLayout.LayoutParams(dp(58), dp(28)))
-        header.addView(compactButton("✕") { toggleAiPanel(false) }, LinearLayout.LayoutParams(dp(38), dp(28)))
+        }, LinearLayout.LayoutParams(dp(58), dp(aiHeaderHeightDp())))
+        header.addView(compactButton("✕") { toggleAiPanel(false) }, LinearLayout.LayoutParams(dp(38), dp(aiHeaderHeightDp())))
         aiPanel.addView(header)
 
         aiAnswer = TextView(this).apply {
             text = "Jawaban AI akan muncul di sini."
             textSize = 13f
             setTextColor(Color.LTGRAY)
-            setPadding(dp(8), dp(5), dp(8), dp(5))
+            setPadding(dp(5), dp(4), dp(5), dp(4))
             setOnClickListener { insertPendingResult() }
         }
         aiPanel.addView(ScrollView(this).apply {
             background = roundedBackground(Color.rgb(38, 38, 43), 10f)
             addView(aiAnswer, ViewGroup.LayoutParams(-1, -2))
-        }, LinearLayout.LayoutParams(-1, dp(58)).apply { topMargin = dp(2) })
+        }, LinearLayout.LayoutParams(-1, dp(aiAnswerHeightDp())).apply { topMargin = dp(1) })
 
         val composeCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(5), dp(2), dp(5), dp(3))
+            setPadding(dp(3), dp(1), dp(3), dp(1))
             background = roundedBackground(Color.rgb(45, 45, 51), 15f)
         }
         aiInput = EditText(this).apply {
@@ -331,7 +335,7 @@ class RiyanKeyboardService : InputMethodService() {
             setOnClickListener { aiComposeActive = true }
             setOnFocusChangeListener { _, hasFocus -> aiComposeActive = hasFocus }
         }
-        composeCard.addView(aiInput, LinearLayout.LayoutParams(-1, dp(36)))
+        composeCard.addView(aiInput, LinearLayout.LayoutParams(-1, dp(aiInputHeightDp())))
 
         val composeFooter = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -350,12 +354,12 @@ class RiyanKeyboardService : InputMethodService() {
         composeFooter.addView(compactButton("Pakai") { insertPendingResult() }, LinearLayout.LayoutParams(dp(55), dp(29)))
         composeFooter.addView(compactButton("↑") { runAiConversation() }, LinearLayout.LayoutParams(dp(38), dp(29)).apply { leftMargin = dp(4) })
         composeCard.addView(composeFooter)
-        aiPanel.addView(composeCard, LinearLayout.LayoutParams(-1, dp(70)).apply { topMargin = dp(4) })
+        aiPanel.addView(composeCard, LinearLayout.LayoutParams(-1, dp(aiComposeHeightDp())).apply { topMargin = dp(2) })
 
         val quickActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         listOf("Perbaiki", "Balas", "Terjemah", "Ringkas", "Santai", "Sopan").forEach { action ->
-            quickActions.addView(compactButton(action) { runAi(action) }, LinearLayout.LayoutParams(0, dp(31), 1f).apply {
-                setMargins(dp(2), dp(3), dp(2), 0)
+            quickActions.addView(compactButton(action) { runAi(action) }, LinearLayout.LayoutParams(0, dp(aiQuickActionHeightDp()), 1f).apply {
+                setMargins(dp(1), dp(2), dp(1), 0)
             })
         }
         aiPanel.addView(quickActions)
@@ -387,7 +391,6 @@ class RiyanKeyboardService : InputMethodService() {
         utilityBar.addView(toolbarButton("↕", dp(43)) { toggleResizePanel() })
         utilityBar.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
         utilityBar.addView(toolbarButton("⚙", dp(43)) { openSettings() })
-        utilityBar.addView(toolbarButton("⌄", dp(43)) { requestHideSelf(0) })
         root.addView(utilityBar, LinearLayout.LayoutParams(-1, dp(utilityHeightDp())))
     }
 
@@ -397,9 +400,9 @@ class RiyanKeyboardService : InputMethodService() {
             gravity = Gravity.CENTER
             setPadding(dp(3), dp(2), dp(3), dp(2))
             setBackgroundColor(bg)
-            visibility = View.INVISIBLE
+            visibility = if (suggestionsEnabled) View.INVISIBLE else View.GONE
         }
-        root.addView(suggestionBar, LinearLayout.LayoutParams(-1, dp(suggestionHeightDp())))
+        root.addView(suggestionBar, LinearLayout.LayoutParams(-1, dp(activeSuggestionHeightDp())))
         refreshSuggestions()
     }
 
@@ -499,7 +502,7 @@ class RiyanKeyboardService : InputMethodService() {
             height = dp(utilityHeightDp())
         }
         if (::suggestionBar.isInitialized) suggestionBar.layoutParams = suggestionBar.layoutParams.apply {
-            height = dp(suggestionHeightDp())
+            height = dp(activeSuggestionHeightDp())
         }
         if (::resizePanel.isInitialized) resizePanel.layoutParams = resizePanel.layoutParams.apply {
             height = dp(resizePanelHeightDp())
@@ -512,10 +515,11 @@ class RiyanKeyboardService : InputMethodService() {
                 height = dp(currentAiPanelHeightDp())
             }
         }
+        val suggestionReduction = if (suggestionsEnabled) 0 else suggestionHeightDp()
         val extra = brandBarHeightDp() +
             (if (aiPanelVisible) currentAiPanelHeightDp() else 0) +
             (if (resizePanelVisible) resizePanelHeightDp() else 0)
-        val height = dp(baseKeyboardHeightDp + extra)
+        val height = dp((baseKeyboardHeightDp - suggestionReduction).coerceAtLeast(1) + extra)
         root.minimumHeight = height
         root.layoutParams = (root.layoutParams ?: ViewGroup.LayoutParams(-1, height)).apply {
             width = ViewGroup.LayoutParams.MATCH_PARENT
@@ -553,7 +557,7 @@ class RiyanKeyboardService : InputMethodService() {
         handler.removeCallbacks(suggestionAutoHideRunnable)
         suggestionBar.removeAllViews()
         if (!suggestionsEnabled || isSensitiveEditor() || (mode != KeyboardMode.LETTERS && !aiComposeActive)) {
-            suggestionBar.visibility = View.INVISIBLE
+            suggestionBar.visibility = if (suggestionsEnabled) View.INVISIBLE else View.GONE
             return
         }
         val before = textBeforeTypingCursor()
@@ -973,11 +977,23 @@ class RiyanKeyboardService : InputMethodService() {
 
     private fun suggestionHeightDp(): Int = if (isLandscape()) 25 else 34
 
+    private fun activeSuggestionHeightDp(): Int = if (suggestionsEnabled) suggestionHeightDp() else 0
+
     private fun resizePanelHeightDp(): Int = if (isLandscape()) 30 else 36
 
     private fun brandBarHeightDp(): Int = if (isLandscape()) 18 else 24
 
-    private fun currentAiPanelHeightDp(): Int = if (isLandscape()) 178 else 232
+    private fun aiHeaderHeightDp(): Int = if (isLandscape()) 23 else 27
+
+    private fun aiAnswerHeightDp(): Int = if (isLandscape()) 43 else 70
+
+    private fun aiInputHeightDp(): Int = if (isLandscape()) 27 else 34
+
+    private fun aiComposeHeightDp(): Int = if (isLandscape()) 60 else 65
+
+    private fun aiQuickActionHeightDp(): Int = if (isLandscape()) 25 else 30
+
+    private fun currentAiPanelHeightDp(): Int = if (isLandscape()) 162 else 204
 
     private fun addCurrentClipboardToHistory() {
         if (!clipboardHistoryEnabled || !clipboardManager.hasPrimaryClip() || isSensitiveEditor() || clipboardMarkedSensitive()) return
@@ -1088,9 +1104,20 @@ class RiyanKeyboardService : InputMethodService() {
             .apply()
     }
 
-    private fun learnCurrentBoundary() {
-        if (!personalizedLearningEnabled || isSensitiveEditor()) return
-        SuggestionEngine.learnableEntries(textBeforeTypingCursor()).forEach(::learnSuggestion)
+    private fun learnCurrentBoundary(completed: Boolean = false, terminalMark: String = "") {
+        if (isSensitiveEditor()) return
+        val before = textBeforeTypingCursor()
+        if (personalizedLearningEnabled) {
+            SuggestionEngine.learnableEntries(before).forEach(::learnSuggestion)
+        }
+        if (styleMemoryEnabled) {
+            TypingStyleMemory.observeBoundary(
+                getSharedPreferences(PREFS, MODE_PRIVATE),
+                before,
+                completed,
+                terminalMark
+            )
+        }
     }
 
     private fun isSensitiveEditor(): Boolean {
@@ -1176,7 +1203,7 @@ class RiyanKeyboardService : InputMethodService() {
             runAiConversation()
             return
         }
-        learnCurrentBoundary()
+        learnCurrentBoundary(completed = true)
         val action = currentInputEditorInfo?.imeOptions?.and(EditorInfo.IME_MASK_ACTION) ?: EditorInfo.IME_ACTION_NONE
         if (enterActionEnabled && action != EditorInfo.IME_ACTION_NONE && action != EditorInfo.IME_ACTION_UNSPECIFIED) {
             currentInputConnection?.performEditorAction(action)
@@ -1231,7 +1258,7 @@ class RiyanKeyboardService : InputMethodService() {
     }
 
     private fun commitPunctuation(mark: String) {
-        learnCurrentBoundary()
+        learnCurrentBoundary(completed = mark in listOf(".", "?", "!"), terminalMark = mark)
         commit(if (!aiComposeActive && punctuationSpaceEnabled) "$mark " else mark)
         if (automaticCapitalizationEnabled && mark in listOf(".", "?", "!")) {
             shift = true
@@ -1332,7 +1359,12 @@ class RiyanKeyboardService : InputMethodService() {
                 .map(String::trim)
                 .filter(String::isNotBlank)
                 .take(MAX_REFERENCE_URLS)
-                .toList()
+                .toList(),
+            writingStyleProfile = if (prefs.getBoolean("style_memory_enabled", true)) {
+                TypingStyleMemory.prompt(prefs)
+            } else {
+                ""
+            }
         )
     }
 
@@ -1377,6 +1409,9 @@ class RiyanKeyboardService : InputMethodService() {
             return
         }
         val ic = currentInputConnection
+        if (styleMemoryEnabled && prompt.isNotBlank()) {
+            TypingStyleMemory.observeCompletedText(getSharedPreferences(PREFS, MODE_PRIVATE), prompt)
+        }
         val appContext = conversationContext(ic)
         val history = conversationHistory.takeLast(4).joinToString("\n") { (role, text) -> "$role: $text" }
         aiStatus.text = "AI sedang menjawab…"
@@ -1424,7 +1459,7 @@ class RiyanKeyboardService : InputMethodService() {
         private const val MAX_KEYBOARD_HEIGHT_PORTRAIT_DP = 330
         private const val MIN_KEYBOARD_HEIGHT_LANDSCAPE_DP = 90
         private const val MAX_KEYBOARD_HEIGHT_LANDSCAPE_DP = 190
-        private const val KEYBOARD_LAYOUT_VERSION = 8
+        private const val KEYBOARD_LAYOUT_VERSION = 9
         private const val DOUBLE_TAP_SHIFT_MS = 420L
         private const val SUGGESTION_AUTO_HIDE_MS = 2_600L
         private const val SHARED_CONTEXT_MAX_AGE_MS = 30L * 60L * 1000L

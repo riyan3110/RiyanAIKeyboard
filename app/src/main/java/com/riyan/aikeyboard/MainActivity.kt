@@ -61,7 +61,7 @@ class MainActivity : AppCompatActivity() {
             setTypeface(typeface, Typeface.BOLD)
         })
         root.addView(TextView(this).apply {
-            text = "Versi 0.8.0 · Keyboard lengkap dengan AI, akses teks layar, sumber URL, koreksi stabil, emoji, simbol, clipboard, dan ukuran yang dapat diubah langsung dari toolbar ↕."
+            text = "Versi 0.9.0 · Panel AI lebih lapang, bar koreksi dapat hilang penuh, respons sentuhan lebih luas, dan AI dapat mengikuti gaya ketikan pemakai."
             textSize = 14f
             setPadding(0, dp(7), 0, dp(14))
         })
@@ -96,7 +96,8 @@ class MainActivity : AppCompatActivity() {
         val portraitHeight = settingSlider(root, "Tinggi mode potret", 170, 330, prefs.getInt("keyboard_height_portrait_dp", 220), " dp")
         val landscapeHeight = settingSlider(root, "Tinggi mode lanskap", 90, 190, prefs.getInt("keyboard_height_landscape_dp", 120), " dp")
         val keyTextSize = settingSlider(root, "Ukuran huruf tombol", 16, 28, prefs.getInt("key_text_size_sp", 21), " sp")
-        val touchSensitivity = settingSlider(root, "Sensitivitas sentuhan", 20, 100, prefs.getInt("touch_sensitivity", 65), "%")
+        val touchSensitivity = settingSlider(root, "Sensitivitas sentuhan", 20, 250, prefs.getInt("touch_sensitivity", 100), "%")
+        root.addView(description("Rentang kini sampai 250%. Nilai tinggi membuat tombol tetap terbaca walau jari sedikit bergeser saat dilepas, sehingga ketukan tidak terasa terlewat."))
         val longPressDuration = settingSlider(root, "Penundaan tekan lama", 200, 900, prefs.getInt("long_press_ms", 450), " ms")
 
         root.addView(sectionTitle("Masukan"))
@@ -125,6 +126,13 @@ class MainActivity : AppCompatActivity() {
         root.addView(sectionTitle("Koreksi dan kalimat tersimpan"))
         val suggestions = switchSetting(root, "Prediksi dan koreksi otomatis", "Bar koreksi hanya muncul setelah ada 2–3 huruf yang cocok, lalu tersembunyi lagi saat tidak diperlukan.", prefs.getBoolean("suggestions_enabled", true))
         val personalizedLearning = switchSetting(root, "Pelajari tulisan yang sering dipakai", "Simpan kata, email, dan frasa yang sering diketik hanya di perangkat. Kolom sandi tidak pernah dipelajari.", prefs.getBoolean("personalized_learning_enabled", true))
+        val styleMemory = switchSetting(root, "Memori gaya untuk AI", "Pelajari pilihan kata, sapaan, singkatan, panjang kalimat, dan tingkat formalitas secara lokal agar hasil AI mengikuti gaya ketikanmu. Kolom sandi tidak dipelajari.", prefs.getBoolean("style_memory_enabled", true))
+        val styleMemoryStatus = TextView(this).apply {
+            text = TypingStyleMemory.summary(prefs)
+            textSize = 13f
+            setPadding(dp(10), dp(7), dp(10), dp(7))
+        }
+        root.addView(styleMemoryStatus, ViewGroup.LayoutParams(-1, -2))
         val personalPhrases = EditText(this).apply {
             hint = "Email atau kalimat tersimpan, satu per baris"
             minLines = 3
@@ -138,6 +146,14 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener {
                 prefs.edit().remove("learned_suggestions").remove("learned_words").apply()
                 Toast.makeText(this@MainActivity, "Kata dan kalimat yang dipelajari telah dihapus.", Toast.LENGTH_SHORT).show()
+            }
+        })
+        root.addView(Button(this).apply {
+            text = "Hapus memori gaya AI"
+            setOnClickListener {
+                TypingStyleMemory.clear(prefs)
+                styleMemoryStatus.text = TypingStyleMemory.summary(prefs)
+                Toast.makeText(this@MainActivity, "Memori gaya AI telah dihapus.", Toast.LENGTH_SHORT).show()
             }
         })
 
@@ -163,6 +179,7 @@ class MainActivity : AppCompatActivity() {
                     .putBoolean("clipboard_history_enabled", clipboardHistory.isChecked)
                     .putBoolean("suggestions_enabled", suggestions.isChecked)
                     .putBoolean("personalized_learning_enabled", personalizedLearning.isChecked)
+                    .putBoolean("style_memory_enabled", styleMemory.isChecked)
                     .putString("personal_phrases", personalPhrases.text.toString().trim())
                     .apply()
                 Toast.makeText(this@MainActivity, "Pengaturan keyboard tersimpan.", Toast.LENGTH_SHORT).show()
@@ -383,6 +400,6 @@ class MainActivity : AppCompatActivity() {
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 
     companion object {
-        private const val KEYBOARD_LAYOUT_VERSION = 8
+        private const val KEYBOARD_LAYOUT_VERSION = 9
     }
 }

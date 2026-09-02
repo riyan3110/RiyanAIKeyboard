@@ -2,7 +2,7 @@
 
 Keyboard Android dengan OpenRouter/TabiAI, obrolan AI, akses teks layar sesuai permintaan pengguna, prediksi lokal, clipboard, emoji, simbol, Caps Lock dua ketukan, dan tinggi potret/lanskap terpisah.
 
-## Fitur versi 0.8
+## Fitur versi 0.9
 
 - Nama aplikasi dan label bawah keyboard sudah seragam menjadi **AI Ads Keyboard**.
 - Layanan **Akses Teks Layar** tersedia lagi. Isi layar dibaca saat pengguna menekan fungsi AI, bukan direkam terus-menerus; node sandi selalu dilewati.
@@ -10,10 +10,13 @@ Keyboard Android dengan OpenRouter/TabiAI, obrolan AI, akses teks layar sesuai p
 - `Terjemah`, `Perbaiki`, dan `Ringkas` dapat memakai teks pilihan, tulisan panjang di editor, teks layar, teks yang dibagikan, clipboard, atau OCR sesuai konteks.
 - Halaman pengaturan menerima hingga enam sumber URL HTTPS. URL pencarian dapat memakai placeholder `{query}`.
 - Isi situs diperlakukan sebagai referensi tidak tepercaya dan tidak boleh mengubah instruksi AI.
-- Bar koreksi tetap memiliki ruang yang sama ketika tampil atau tersembunyi, sehingga susunan tombol tidak meloncat naik-turun.
+- Saat prediksi aktif, bar koreksi mempertahankan ruangnya agar tombol tidak meloncat. Saat prediksi dimatikan dari pengaturan, bar beserta seluruh ruangnya dihapus.
 - Enter membuat baris baru secara default. Aksi `Kirim/Selesai` dari aplikasi dapat diaktifkan sebagai opsi.
 - Rentang tinggi potret `170–330 dp` dan lanskap `90–190 dp`, dengan migrasi otomatis dari batas minimum lama.
-- Panel obrolan AI memakai hampir seluruh lebar keyboard dan memiliki ruang vertikal yang lebih besar.
+- Panel obrolan AI memakai lebar keyboard hingga ke tepi, area jawaban diperbesar, dan ruang kosong di bawah tombol tindakan dipotong.
+- Tombol penutup keyboard di toolbar dihapus dan tombol pengaturan ditempatkan di ujung kanan.
+- Sensitivitas sentuhan dapat diatur sampai `250%` agar ketukan yang sedikit bergeser tidak terlewat.
+- Memori gaya lokal mempelajari pilihan kata, sapaan, singkatan, panjang kalimat, dan formalitas agar hasil AI mengikuti gaya pemakai. Fitur dapat dimatikan atau dihapus.
 
 ## Provider AI
 
@@ -42,6 +45,6 @@ Android dan aplikasi keamanan dapat mengetahui bahwa layanan Aksesibilitas aktif
 
 - Teks layar diambil saat fungsi AI ditekan dan dikirim hanya ke provider AI yang dipilih.
 - Kolom sandi tidak dibaca, dipelajari, atau dimasukkan ke riwayat clipboard.
-- Prediksi, email, frasa, konteks, dan API key disimpan lokal pada perangkat.
+- Prediksi, email, frasa, memori gaya, konteks, dan API key disimpan lokal pada perangkat. Ringkasan gaya hanya dikirim saat fungsi AI digunakan.
 - OCR dilakukan di perangkat memakai ML Kit.
 - URL sumber dibatasi ke HTTPS publik; alamat lokal dan jaringan privat ditolak.

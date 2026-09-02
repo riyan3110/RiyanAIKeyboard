@@ -24,7 +24,8 @@ data class AiSettings(
     val tabiBaseUrl: String,
     val tabiModel: String,
     val fallbackEnabled: Boolean,
-    val referenceUrls: List<String>
+    val referenceUrls: List<String>,
+    val writingStyleProfile: String
 )
 
 data class AiResponse(val text: String, val provider: AiProvider)
@@ -90,6 +91,14 @@ object AiClient {
         maxTokens: Int
     ): Result<AiResponse> {
 
+        val personalizedInstruction = buildString {
+            append(systemInstruction)
+            if (settings.writingStyleProfile.isNotBlank()) {
+                append("\n\n")
+                append(settings.writingStyleProfile)
+            }
+        }
+
         val providers = buildList {
             add(settings.primaryProvider)
             if (settings.fallbackEnabled) {
@@ -101,8 +110,8 @@ object AiClient {
         providers.forEach { provider ->
             val attempt = runCatching {
                 val output = when (provider) {
-                    AiProvider.OPENROUTER -> requestOpenRouter(settings, systemInstruction, text, temperature, maxTokens)
-                    AiProvider.TABIAI -> requestTabiAi(settings, systemInstruction, text, temperature, maxTokens)
+                    AiProvider.OPENROUTER -> requestOpenRouter(settings, personalizedInstruction, text, temperature, maxTokens)
+                    AiProvider.TABIAI -> requestTabiAi(settings, personalizedInstruction, text, temperature, maxTokens)
                 }
                 AiResponse(output, provider)
             }
@@ -222,7 +231,7 @@ object AiClient {
             readTimeout = 9_000
             instanceFollowRedirects = true
             setRequestProperty("Accept", "text/html,text/plain,application/json,application/xml;q=0.9,*/*;q=0.2")
-            setRequestProperty("User-Agent", "AI-Ads-Keyboard/0.8")
+            setRequestProperty("User-Agent", "AI-Ads-Keyboard/0.9")
         }
         return try {
             val status = connection.responseCode
