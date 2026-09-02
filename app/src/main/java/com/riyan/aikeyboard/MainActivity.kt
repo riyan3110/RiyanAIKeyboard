@@ -81,7 +81,7 @@ class MainActivity : AppCompatActivity() {
             setTypeface(typeface, Typeface.BOLD)
         })
         root.addView(TextView(this).apply {
-            text = "Versi 0.12.0 · Bar prediksi hitam tetap menyatu dengan toolbar; hanya teks saran yang muncul dan menghilang otomatis."
+            text = "Versi 0.13.0 · Bar prediksi mengikuti warna tombol; saran dibatasi satu kata dan mempelajari kata berikutnya."
             textSize = 14f
             setPadding(0, dp(7), 0, dp(14))
         })

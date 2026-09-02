@@ -16,6 +16,7 @@ import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.text.InputType
+import android.text.TextUtils
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
@@ -174,7 +175,7 @@ class RiyanKeyboardService : InputMethodService() {
 
         keyboardPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(0, dp(1), 0, 0)
+            setPadding(0, 0, 0, 0)
         }
         root.addView(keyboardPanel, LinearLayout.LayoutParams(-1, 0, 1f))
         addBottomBrandBar()
@@ -284,8 +285,15 @@ class RiyanKeyboardService : InputMethodService() {
         val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
         val palette = KeyboardTheme.palette(prefs)
         root.background = KeyboardTheme.background(this, prefs, palette)
+        if (::utilityBar.isInitialized) {
+            utilityBar.setBackgroundColor(keyBg)
+            for (index in 0 until utilityBar.childCount) {
+                val child = utilityBar.getChildAt(index)
+                if (child !== suggestionBar) child.setBackgroundColor(keyBg)
+            }
+        }
         if (::suggestionBar.isInitialized) {
-            suggestionBar.setBackgroundColor(Color.BLACK)
+            suggestionBar.setBackgroundColor(keyBg)
         }
         if (::bottomBrandBar.isInitialized) {
             bottomBrandBar.setBackgroundColor(if (themeUsesPhoto) Color.TRANSPARENT else bg)
@@ -293,7 +301,7 @@ class RiyanKeyboardService : InputMethodService() {
     }
 
     private fun updateRootPadding(target: LinearLayout) {
-        target.setPadding(0, dp(1), 0, dp(1))
+        target.setPadding(0, 0, 0, 0)
     }
 
     private fun addBottomBrandBar() {
@@ -302,7 +310,7 @@ class RiyanKeyboardService : InputMethodService() {
             setPadding(0, dp(2), 0, 0)
             setBackgroundColor(if (themeUsesPhoto) Color.TRANSPARENT else bg)
             addView(TextView(this@RiyanKeyboardService).apply {
-                text = "AI Ads Keyboard · v0.12"
+                text = "AI Ads Keyboard · v0.13"
                 textSize = 9f
                 setTextColor(Color.rgb(145, 137, 190))
                 gravity = Gravity.CENTER
@@ -410,7 +418,8 @@ class RiyanKeyboardService : InputMethodService() {
         utilityBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setBackgroundColor(Color.BLACK)
+            setPadding(0, 0, 0, 0)
+            setBackgroundColor(keyBg)
         }
         utilityBar.addView(toolbarButton("✦ AI", dp(57)) { toggleAiPanel() })
         utilityBar.addView(toolbarButton("⌨", dp(43)) {
@@ -435,10 +444,10 @@ class RiyanKeyboardService : InputMethodService() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(2), 0, dp(2), 0)
-            setBackgroundColor(Color.BLACK)
+            setBackgroundColor(keyBg)
             visibility = View.VISIBLE
         }
-        utilityBar.addView(suggestionBar, LinearLayout.LayoutParams(0, dp(utilityHeightDp()), 1f))
+        utilityBar.addView(suggestionBar, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
         utilityBar.addView(toolbarButton("⚙", dp(43)) { openSettings() })
         root.addView(utilityBar, LinearLayout.LayoutParams(-1, dp(utilityHeightDp())))
     }
@@ -589,7 +598,7 @@ class RiyanKeyboardService : InputMethodService() {
             height = dp(utilityHeightDp())
         }
         if (::suggestionBar.isInitialized) suggestionBar.layoutParams = suggestionBar.layoutParams.apply {
-            height = dp(utilityHeightDp())
+            height = ViewGroup.LayoutParams.MATCH_PARENT
         }
         if (::resizePanel.isInitialized) resizePanel.layoutParams = resizePanel.layoutParams.apply {
             height = dp(resizePanelHeightDp())
@@ -677,6 +686,7 @@ class RiyanKeyboardService : InputMethodService() {
                 text = candidate.text
                 textSize = 11f
                 maxLines = 1
+                ellipsize = TextUtils.TruncateAt.END
                 gravity = Gravity.CENTER
                 setPadding(dp(3), 0, dp(3), 0)
                 setTextColor(Color.WHITE)
@@ -1076,7 +1086,7 @@ class RiyanKeyboardService : InputMethodService() {
         minimumWidth = 0
         setPadding(0, 0, 0, 0)
         setTextColor(Color.WHITE)
-        setBackgroundColor(Color.BLACK)
+        setBackgroundColor(keyBg)
         setOnClickListener { action() }
         layoutParams = LinearLayout.LayoutParams(widthPx, dp(utilityHeightDp()))
     }

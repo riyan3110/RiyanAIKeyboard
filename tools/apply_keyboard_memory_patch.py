@@ -34,7 +34,7 @@ service = replace_required(
 )
 
 # Put the prediction bar in the exact empty toolbar area between resize and Settings.
-# The black host is permanent and exactly as tall as the utility bar. Only its text children
+# The key-colored host is permanent and exactly as tall as the utility bar. Only its text children
 # appear and disappear, so the toolbar never changes size or looks visually disconnected.
 service = replace_required(
     service,
@@ -43,14 +43,14 @@ service = replace_required(
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(2), 0, dp(2), 0)
-            setBackgroundColor(Color.BLACK)
+            setBackgroundColor(keyBg)
             visibility = View.VISIBLE
         }
-        utilityBar.addView(suggestionBar, LinearLayout.LayoutParams(0, dp(utilityHeightDp()), 1f))''',
+        utilityBar.addView(suggestionBar, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))''',
     "prediction toolbar host",
 )
 
-# Make the toolbar and prediction host one continuous black strip, independent of theme.
+# Keep the toolbar and prediction host connected using the current normal-key color.
 service = service.replace(
     '''        utilityBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -59,14 +59,14 @@ service = service.replace(
     '''        utilityBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setBackgroundColor(Color.BLACK)
+            setBackgroundColor(keyBg)
         }''',
 )
 service = service.replace(
     '''        setBackgroundColor(bg)
         setOnClickListener { action() }
         layoutParams = LinearLayout.LayoutParams(widthPx, dp(utilityHeightDp()))''',
-    '''        setBackgroundColor(Color.BLACK)
+    '''        setBackgroundColor(keyBg)
         setOnClickListener { action() }
         layoutParams = LinearLayout.LayoutParams(widthPx, dp(utilityHeightDp()))''',
 )
@@ -89,13 +89,13 @@ if "root.addView(suggestionBar, LinearLayout.LayoutParams(-1, dp(activeSuggestio
     if count != 1:
         raise RuntimeError("Patch target not found: move suggestion bar into toolbar")
 
-# applyTheme must not turn the prediction host transparent/purple when a theme changes.
+# applyTheme keeps the prediction host synchronized with the normal keys when a theme changes.
 service = service.replace(
     'suggestionBar.setBackgroundColor(if (themeUsesPhoto) Color.TRANSPARENT else bg)',
-    'suggestionBar.setBackgroundColor(Color.BLACK)',
+    'suggestionBar.setBackgroundColor(keyBg)',
 )
 
-# Hiding suggestions clears only their text; the black toolbar host remains visible.
+# Hiding suggestions clears only their text; the key-colored toolbar host remains visible.
 service = service.replace(
     '''    private val suggestionAutoHideRunnable = Runnable {
         if (::suggestionBar.isInitialized) {
@@ -127,7 +127,7 @@ service = service.replace(
             height = dp(activeSuggestionHeightDp())
         }''',
     '''        if (::suggestionBar.isInitialized) suggestionBar.layoutParams = suggestionBar.layoutParams.apply {
-            height = dp(utilityHeightDp())
+            height = ViewGroup.LayoutParams.MATCH_PARENT
         }''',
 )
 service = service.replace(
@@ -136,7 +136,7 @@ service = service.replace(
 )
 
 # Prediction items are text-only and maximum two. Their text hides automatically while the
-# permanent black host stays in place.
+# permanent key-colored host stays in place.
 old_prediction_ui = '''        val before = textBeforeTypingCursor()
         val candidates = SuggestionEngine.suggest(before, loadLearnedSuggestions(), savedSuggestionEntries())
         if (candidates.isEmpty()) {
@@ -174,6 +174,7 @@ new_prediction_ui = '''        val before = textBeforeTypingCursor()
                 text = candidate.text
                 textSize = 11f
                 maxLines = 1
+                ellipsize = TextUtils.TruncateAt.END
                 gravity = Gravity.CENTER
                 setPadding(dp(3), 0, dp(3), 0)
                 setTextColor(Color.WHITE)
@@ -316,7 +317,7 @@ SERVICE.write_text(service, encoding="utf-8")
 # SuggestionEngine now contains filtered personal memory, dynamic ordering, and contextual
 # next-word/next-phrase prediction directly in source. Ensure the expected implementation exists.
 suggestions = SUGGESTIONS.read_text(encoding="utf-8")
-if "continuationAfterContext" not in suggestions or "limit: Int = 2" not in suggestions:
+if "nextWordAfterContext" not in suggestions or "limit: Int = 2" not in suggestions:
     raise RuntimeError("Contextual prediction engine is missing")
 SUGGESTIONS.write_text(suggestions, encoding="utf-8")
 
@@ -343,4 +344,4 @@ activity = replace_required(
 )
 ACTIVITY.write_text(activity, encoding="utf-8")
 
-print("Applied black text-only prediction bar, contextual next phrase prediction, recent emoji, dynamic enter, and key-box scaling patches.")
+print("Applied key-colored text-only prediction bar, contextual next-word prediction, recent emoji, dynamic enter, and key-box scaling patches.")
