@@ -1,10 +1,10 @@
 package com.riyan.aikeyboard
 
 import android.accessibilityservice.AccessibilityService
-import android.accessibilityservice.AccessibilityWindowInfo
 import android.graphics.Rect
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 import java.util.Locale
 
 data class ScreenTextSnapshot(
