@@ -91,6 +91,9 @@ jobs:
       - name: Route physical object search through native Lens
         run: python3 tools/apply_v018_native_lens_search_v4.py
 
+      - name: Keep Lens upload and result in the embedded WebView session
+        run: python3 tools/apply_v018_embedded_lens_session_v5.py
+
       - name: Build debug APK
         run: RIYAN_KEYSTORE_PATH="$HOME/.riyan-ai-keyboard/debug.keystore" gradle --no-daemon :app:assembleDebug
 
