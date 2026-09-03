@@ -100,6 +100,9 @@ jobs:
       - name: Submit camera image to Lens with embedded multipart form
         run: python3 tools/apply_v018_embedded_lens_form_submit_v6.py
 
+      - name: Use official Chromium Lens v3 upload parameters
+        run: python3 tools/apply_v018_lens_official_upload_v7.py
+
       - name: Build debug APK
         run: RIYAN_KEYSTORE_PATH="$HOME/.riyan-ai-keyboard/debug.keystore" gradle --no-daemon :app:assembleDebug
 
