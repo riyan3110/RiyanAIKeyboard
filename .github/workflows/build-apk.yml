@@ -94,6 +94,9 @@ jobs:
       - name: Add local object vision pipeline
         run: python3 tools/apply_v018_local_vision_v9.py
 
+      - name: Restore local vision ROI helpers
+        run: python3 tools/apply_v018_local_vision_v9_compile_fix.py
+
       - name: Build debug APK
         run: RIYAN_KEYSTORE_PATH="$HOME/.riyan-ai-keyboard/debug.keystore" gradle --no-daemon :app:assembleDebug
 
