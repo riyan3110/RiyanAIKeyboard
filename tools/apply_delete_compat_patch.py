@@ -51,17 +51,12 @@ replacement = r'''    private fun deleteOne() {
     }
 
     /**
-     * Some browser/WebView/OTP fields ignore deleteSurroundingText even though normal editors do not.
-     * Send a real DEL key event first, then fall back to InputConnection deletion when the editor
-     * rejects the key event or when readable cursor text proves that nothing changed.
+     * Some browser/WebView/OTP fields need a real DEL event. Trust the event result and never
+     * immediately follow it with deleteSurroundingText: many editors apply the key event
+     * asynchronously, and doing both can delete two characters for a single tap.
      */
     private fun deletePreviousCharacterCompat(ic: InputConnection): Boolean {
-        val before = runCatching { ic.getTextBeforeCursor(24, 0)?.toString().orEmpty() }.getOrDefault("")
-        val keyAccepted = sendDeleteKeyEvent(ic)
-        val afterKey = runCatching { ic.getTextBeforeCursor(24, 0)?.toString().orEmpty() }.getOrDefault("")
-        val keyVerified = before.isNotEmpty() && afterKey != before
-        if (keyAccepted && (before.isEmpty() || keyVerified)) return true
-
+        if (sendDeleteKeyEvent(ic)) return true
         return runCatching {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                 ic.deleteSurroundingTextInCodePoints(1, 0)
@@ -78,6 +73,39 @@ replacement = r'''    private fun deleteOne() {
         down || up
     }.getOrDefault(false)
 
+    /**
+     * When instant response is enabled, the normal letter is committed on ACTION_DOWN before a
+     * long-press can fire. Replacing it with the alternate symbol must delete exactly that one
+     * freshly committed character. Do not use the general backspace compatibility path here,
+     * because a hardware DEL event can race with commitText and remove the previous character too.
+     */
+    private fun deleteInstantCommittedCharacter(): Boolean {
+        if (aiComposeActive && ::aiInput.isInitialized) {
+            val editable = aiInput.text
+            val start = aiInput.selectionStart.coerceAtLeast(0)
+            val end = aiInput.selectionEnd.coerceAtLeast(0)
+            return when {
+                start != end -> {
+                    editable.delete(minOf(start, end), maxOf(start, end))
+                    true
+                }
+                start > 0 -> {
+                    editable.delete(start - 1, start)
+                    true
+                }
+                else -> false
+            }
+        }
+        val ic = currentInputConnection ?: return false
+        return runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                ic.deleteSurroundingTextInCodePoints(1, 0)
+            } else {
+                ic.deleteSurroundingText(1, 0)
+            }
+        }.getOrDefault(false)
+    }
+
     private fun deleteSelectedText'''
 
 pattern = re.compile(
@@ -88,5 +116,11 @@ new_text, count = pattern.subn(replacement, text, count=1)
 if count != 1:
     raise SystemExit("Could not locate deleteOne/deleteWord block")
 
+old_long_press = "if (actionTriggered && spec.alternate != null) deleteOne()"
+new_long_press = "if (actionTriggered && spec.alternate != null) deleteInstantCommittedCharacter()"
+if old_long_press not in new_text and new_long_press not in new_text:
+    raise SystemExit("Could not locate instant long-press replacement")
+new_text = new_text.replace(old_long_press, new_long_press, 1)
+
 path.write_text(new_text, encoding="utf-8")
-print("Applied compatible delete/backspace handling")
+print("Applied single-fire backspace handling and safe long-press symbol replacement")
