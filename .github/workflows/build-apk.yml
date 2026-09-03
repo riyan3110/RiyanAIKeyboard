@@ -97,6 +97,9 @@ jobs:
       - name: Fix embedded Lens Cari compilation
         run: python3 tools/apply_v018_embedded_lens_compile_fix_v5.py
 
+      - name: Submit camera image to Lens with embedded multipart form
+        run: python3 tools/apply_v018_embedded_lens_form_submit_v6.py
+
       - name: Build debug APK
         run: RIYAN_KEYSTORE_PATH="$HOME/.riyan-ai-keyboard/debug.keystore" gradle --no-daemon :app:assembleDebug
 
