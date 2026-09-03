@@ -16,6 +16,13 @@ def replace_required(text: str, old: str, new: str, label: str) -> str:
 
 service = SERVICE.read_text(encoding="utf-8")
 
+# Older committed sources may already contain the first key-size patch. Upgrade that applied
+# form before the idempotent insertion checks below.
+service = service.replace(
+    'keyBoxScale = prefs.getInt("key_box_scale_percent", 100).coerceIn(65, 100) / 100f',
+    'keyBoxScale = prefs.getInt("key_box_scale_percent", 100).coerceIn(65, 110) / 100f',
+)
+
 # Always open the emoji keyboard on page 1, where recent emojis are shown first.
 service = replace_required(
     service,
@@ -264,7 +271,7 @@ service = replace_required(
     '''        keyTextSizeSp = prefs.getInt("key_text_size_sp", 21).coerceIn(16, 28).toFloat()
         val sensitivity = prefs.getInt("touch_sensitivity", 100).coerceIn(20, 400)''',
     '''        keyTextSizeSp = prefs.getInt("key_text_size_sp", 21).coerceIn(16, 28).toFloat()
-        keyBoxScale = prefs.getInt("key_box_scale_percent", 100).coerceIn(65, 100) / 100f
+        keyBoxScale = prefs.getInt("key_box_scale_percent", 100).coerceIn(65, 110) / 100f
         val sensitivity = prefs.getInt("touch_sensitivity", 100).coerceIn(20, 400)''',
     "load key box scale",
 )
@@ -323,13 +330,21 @@ SUGGESTIONS.write_text(suggestions, encoding="utf-8")
 
 # Add a Settings slider for visual key-box size.
 activity = ACTIVITY.read_text(encoding="utf-8")
+activity = activity.replace(
+    'val keyBoxScale = settingSlider(root, "Ukuran kotak tombol", 65, 100, prefs.getInt("key_box_scale_percent", 100), "%")',
+    'val keyBoxScale = settingSlider(root, "Ukuran kotak tombol", 65, 110, prefs.getInt("key_box_scale_percent", 100), "%")',
+)
+activity = activity.replace(
+    'root.addView(description("Turunkan sampai 65% untuk memperkecil tampilan kotak tombol tanpa membuat area sentuh ikut terlalu kecil."))',
+    'root.addView(description("Naikkan sampai 110% agar badan tombol lebih besar. Area sentuh tetap dipisahkan supaya tombol di sebelahnya tidak mudah ikut tertekan."))',
+)
 activity = replace_required(
     activity,
     '''        val keyTextSize = settingSlider(root, "Ukuran huruf tombol", 16, 28, prefs.getInt("key_text_size_sp", 21), " sp")
         val touchSensitivity = settingSlider(root, "Sensitivitas dan kecepatan tombol", 20, 400, prefs.getInt("touch_sensitivity", 100), "%")''',
     '''        val keyTextSize = settingSlider(root, "Ukuran huruf tombol", 16, 28, prefs.getInt("key_text_size_sp", 21), " sp")
-        val keyBoxScale = settingSlider(root, "Ukuran kotak tombol", 65, 100, prefs.getInt("key_box_scale_percent", 100), "%")
-        root.addView(description("Turunkan sampai 65% untuk memperkecil tampilan kotak tombol tanpa membuat area sentuh ikut terlalu kecil."))
+        val keyBoxScale = settingSlider(root, "Ukuran kotak tombol", 65, 110, prefs.getInt("key_box_scale_percent", 100), "%")
+        root.addView(description("Naikkan sampai 110% agar badan tombol lebih besar. Area sentuh tetap dipisahkan supaya tombol di sebelahnya tidak mudah ikut tertekan."))
         val touchSensitivity = settingSlider(root, "Sensitivitas dan kecepatan tombol", 20, 400, prefs.getInt("touch_sensitivity", 100), "%")''',
     "key box size slider",
 )
