@@ -2,7 +2,7 @@ name: Build APK
 
 on:
   push:
-    branches: [main]
+    branches: [main, codex/key-size-preview-v015]
   workflow_dispatch:
 
 permissions:
@@ -63,6 +63,15 @@ jobs:
 
       - name: Apply reference bubble key styling
         run: python3 tools/apply_bubble_keys_patch.py
+
+      - name: Finish v0.18 panel frame
+        run: python3 tools/apply_v018_frame_fix.py
+
+      - name: Finish v0.18 web input routing
+        run: python3 tools/apply_v018_web_input_fix.py
+
+      - name: Finish v0.18 camera accuracy
+        run: python3 tools/apply_v018_camera_accuracy_fix.py
 
       - name: Build debug APK
         run: RIYAN_KEYSTORE_PATH="$HOME/.riyan-ai-keyboard/debug.keystore" gradle --no-daemon :app:assembleDebug
