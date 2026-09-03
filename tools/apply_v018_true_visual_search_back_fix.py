@@ -21,17 +21,14 @@ def insert_before(marker, text, label):
         raise RuntimeError(f'{label}: marker not found')
     s = s.replace(marker, text.rstrip() + '\n\n' + marker, 1)
 
-# Imports for actual pixel-based visual search upload.
 rep('import android.graphics.Color\n', 'import android.graphics.Bitmap\nimport android.graphics.Color\n', 'Bitmap import')
 rep('import java.util.concurrent.Executors\n', 'import java.io.ByteArrayOutputStream\nimport java.net.HttpURLConnection\nimport java.net.URL\nimport java.util.UUID\nimport java.util.concurrent.Executors\n', 'network imports')
 
-# State: when the physical object is dominant, Cari must use the actual camera pixels instead of
-# a generic image-label string.
 rep(
 '''    private var scannerSelectedUrl = ""
     private var scannerBestScore = 0''',
 '''    private var scannerSelectedUrl = ""
-    private var scannerVisualSearchPreferred = false
+    private var scannerVisualSearchPreferred = true
     private var scannerBestScore = 0''',
 'visual state'
 )
@@ -39,12 +36,12 @@ rep(
 '''            scannerSelectedUrl = ""
             scannerLastCandidateAt = 0L''',
 '''            scannerSelectedUrl = ""
-            scannerVisualSearchPreferred = false
+            scannerVisualSearchPreferred = true
             scannerLastCandidateAt = 0L''',
 'visual state reset'
 )
 
-# Barcode/structured content should not trigger a Lens upload.
+# Barcode/QR/URL has exact structured meaning, so keep normal structured search for it.
 rep(
 '''        setScannerCandidate(query, directUrl, 1_000, label)
     }''',
@@ -54,22 +51,42 @@ rep(
 'barcode visual override'
 )
 
-# Camera Cari button now chooses true visual search for physical objects.
+# Camera Cari is always enabled: a physical object does not need readable text or a known ML label.
 rep(
-'''        scannerSearchButton = compactButton("Cari") { openSearchResults(scannerSelectedQuery, scannerSelectedUrl) }.apply {''',
-'''        scannerSearchButton = compactButton("Cari") { performScannerSearch() }.apply {''',
+'''        scannerSearchButton = compactButton("Cari") { openSearchResults(scannerSelectedQuery, scannerSelectedUrl) }.apply {
+            isEnabled = scannerSelectedQuery.isNotBlank() || scannerSelectedUrl.isNotBlank()
+        }''',
+'''        scannerSearchButton = compactButton("Cari") { performScannerSearch() }.apply {
+            isEnabled = true
+        }''',
 'camera search action'
 )
 
-# The button immediately to the right of Cari is Back, not Camera.
+# The button immediately after Cari becomes embedded Back.
 rep(
 '''        header.addView(compactButton("📷") { launchScanner() }, LinearLayout.LayoutParams(dp(38), dp(searchHeaderHeightDp())).apply { leftMargin = dp(2) })''',
 '''        header.addView(compactButton("←") { navigateEmbeddedSearchBack() }, LinearLayout.LayoutParams(dp(38), dp(searchHeaderHeightDp())).apply { leftMargin = dp(2) })''',
 'web back button'
 )
 
-# Decide physical dominance after OCR/label analysis. Short accidental OCR such as "50MP"/"SOMP"
-# must not prevent visual matching of a case, shoe, tool, bottle, device, etc.
+# If OCR and image-labeling do not know the object, that is exactly when pixel visual search is
+# needed. Do not return with an empty result and disable the user.
+rep(
+'''        if (queryParts.isEmpty() && directUrl.isBlank()) return
+        val query = directUrl.ifBlank { queryParts.joinToString(" ").take(180) }''',
+'''        if (queryParts.isEmpty() && directUrl.isBlank()) {
+            scannerVisualSearchPreferred = true
+            handler.post {
+                scannerStatusText?.text = "Objek fisik siap · tekan Cari untuk pencarian visual"
+                scannerResultText?.text = "Cari bentuk/model objek yang sama"
+                scannerSearchButton?.isEnabled = true
+            }
+            return
+        }
+        val query = directUrl.ifBlank { queryParts.joinToString(" ").take(180) }''',
+'unknown object visual fallback'
+)
+
 needle = '''        val source = when {
             directUrl.isNotBlank() -> "Tautan di dalam area bidik terdeteksi"
             ranked.isNotEmpty() && usefulLabels.isNotEmpty() -> "Teks dan objek fisik di area bidik terdeteksi"
@@ -79,13 +96,13 @@ needle = '''        val source = when {
         setScannerCandidate(query, directUrl, score, source)'''
 replacement = '''        val strongestText = ranked.firstOrNull()?.first?.text.orEmpty()
         val strongestTextScore = ranked.firstOrNull()?.second ?: 0
-        val physicalDominant = directUrl.isBlank() && usefulLabels.isNotEmpty() && (
+        val physicalDominant = directUrl.isBlank() && (
             ranked.isEmpty() || strongestText.length <= 8 || strongestTextScore < 58
         )
         scannerVisualSearchPreferred = physicalDominant
         val source = when {
             directUrl.isNotBlank() -> "Tautan di dalam area bidik terdeteksi"
-            physicalDominant -> "Objek fisik dikenali · pencarian visual siap"
+            physicalDominant -> "Objek fisik siap · pencarian visual berdasarkan bentuk/model"
             ranked.isNotEmpty() && usefulLabels.isNotEmpty() -> "Teks dan objek fisik di area bidik terdeteksi"
             ranked.isNotEmpty() -> if (structured) "Data di area bidik terdeteksi" else "Tulisan utama di area bidik terdeteksi"
             else -> "Objek fisik di area bidik terdeteksi"
@@ -94,12 +111,12 @@ replacement = '''        val strongestText = ranked.firstOrNull()?.first?.text.o
 rep(needle, replacement, 'physical dominance')
 
 helpers = r'''    private fun performScannerSearch() {
-        if (!scannerVisualSearchPreferred) {
+        if (!scannerVisualSearchPreferred && (scannerSelectedQuery.isNotBlank() || scannerSelectedUrl.isNotBlank())) {
             openSearchResults(scannerSelectedQuery, scannerSelectedUrl)
             return
         }
         val preview = scannerPreviewView ?: run {
-            openSearchResults(scannerSelectedQuery, scannerSelectedUrl)
+            scannerStatusText?.text = "Kamera belum siap · coba lagi"
             return
         }
         scannerStatusText?.text = "Mengambil bentuk objek untuk pencarian visual…"
@@ -111,21 +128,20 @@ helpers = r'''    private fun performScannerSearch() {
             }
             val crop = cropScannerVisualTarget(frame)
             val out = ByteArrayOutputStream()
-            crop.compress(Bitmap.CompressFormat.JPEG, 90, out)
+            crop.compress(Bitmap.CompressFormat.JPEG, 92, out)
             val jpeg = out.toByteArray()
             val width = crop.width
             val height = crop.height
             if (crop !== frame) crop.recycle()
             frame.recycle()
-            scannerStatusText?.text = "Mencari bentuk/model yang mirip…"
+            scannerStatusText?.text = "Mencari bentuk/model yang paling mirip…"
             thread {
                 val resultUrl = uploadToLensVisualSearch(jpeg, width, height)
                 handler.post {
                     if (resultUrl.isNullOrBlank()) {
-                        scannerStatusText?.text = "Pencarian visual gagal · memakai hasil pengenalan objek"
-                        openSearchResults(scannerSelectedQuery, scannerSelectedUrl)
+                        scannerStatusText?.text = "Pencarian visual gagal tersambung · coba Cari lagi"
                     } else {
-                        searchQuery = scannerSelectedQuery.ifBlank { "Pencarian visual" }
+                        searchQuery = scannerSelectedQuery.ifBlank { "Pencarian visual objek" }
                         searchUrl = resultUrl
                         stopEmbeddedScanner()
                         showSearchWebPanel()
@@ -143,10 +159,7 @@ helpers = r'''    private fun performScannerSearch() {
         return Bitmap.createBitmap(frame, left, top, right - left, bottom - top)
     }
 
-    /**
-     * Sends the actual cropped camera pixels to the same Lens upload endpoint used by Chromium's
-     * image-search UI. This is a real visual-match search, not a text label lookup.
-     */
+    /** Uploads the actual cropped camera pixels for visual matching, not only OCR/labels. */
     private fun uploadToLensVisualSearch(jpeg: ByteArray, width: Int, height: Int): String? = runCatching {
         val boundary = "----AIAdsKeyboard${UUID.randomUUID().toString().replace("-", "")}" 
         val endpoint = URL("https://lens.google.com/v3/upload?ep=ccm&s=&st=${System.currentTimeMillis()}")
@@ -194,4 +207,4 @@ helpers = r'''    private fun performScannerSearch() {
 insert_before('    private fun performSearchFromInput() {', helpers, 'visual search helpers')
 
 p.write_text(s, encoding='utf-8')
-print('Applied true pixel-based visual search and Back button fix.')
+print('Applied true pixel visual search for any physical object plus Back button.')
