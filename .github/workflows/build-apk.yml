@@ -2,7 +2,7 @@ name: Build APK
 
 on:
   push:
-    branches: [ main, codex/webview-ai-panel-v020 ]
+    branches: [ main ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
