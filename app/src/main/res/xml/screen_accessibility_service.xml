@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
-    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged|typeViewScrolled|typeViewFocused|typeViewTextChanged"
+    android:accessibilityEventTypes="typeWindowStateChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
-    android:accessibilityFlags="flagReportViewIds|flagRetrieveInteractiveWindows|flagIncludeNotImportantViews|flagRequestEnhancedWebAccessibility"
-    android:canRequestEnhancedWebAccessibility="true"
+    android:accessibilityFlags="flagReportViewIds|flagRetrieveInteractiveWindows"
+    android:canRequestEnhancedWebAccessibility="false"
     android:canRetrieveWindowContent="true"
     android:canTakeScreenshot="true"
     android:description="@string/screen_access_description"
-    android:notificationTimeout="120"
+    android:notificationTimeout="1000"
     android:settingsActivity="com.riyan.aikeyboard.MainActivity" />

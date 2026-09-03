@@ -1,7 +1,6 @@
 package com.riyan.aikeyboard
 
 import android.content.Intent
-import android.content.ComponentName
 import android.graphics.Typeface
 import android.os.Bundle
 import android.provider.Settings
@@ -28,7 +27,6 @@ import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 class MainActivity : AppCompatActivity() {
     private val prefs by lazy { getSharedPreferences("riyan_ai", MODE_PRIVATE) }
     private lateinit var contextText: EditText
-    private lateinit var accessibilityStatus: TextView
     private lateinit var themeModeSpinner: Spinner
     private lateinit var themeImageStatus: TextView
 
@@ -81,7 +79,7 @@ class MainActivity : AppCompatActivity() {
             setTypeface(typeface, Typeface.BOLD)
         })
         root.addView(TextView(this).apply {
-            text = "Versi 0.14.0 · Pembacaan layar lengkap, target balasan terakhir, dan terjemahan selalu ke Bahasa Indonesia."
+            text = "Versi 0.18.0 · Kamera dan web di panel atas, AI manual, dan mode coding."
             textSize = 14f
             setPadding(0, dp(7), 0, dp(14))
         })
@@ -97,19 +95,6 @@ class MainActivity : AppCompatActivity() {
                     .showInputMethodPicker()
             }
         })
-
-        root.addView(sectionTitle("Akses teks layar"))
-        accessibilityStatus = TextView(this).apply {
-            textSize = 13f
-            setPadding(dp(10), dp(10), dp(10), dp(10))
-        }
-        root.addView(accessibilityStatus, ViewGroup.LayoutParams(-1, -2))
-        root.addView(description("Jika diaktifkan, AI menggabungkan struktur aplikasi dan OCR saat Balas, Terjemah, Ringkas, atau Perbaiki ditekan. Teks postingan/chat terbaru disimpan sangat singkat hanya di memori agar tetap terbaca setelah panel AI dibuka; tidak disimpan ke file dan kolom sandi diabaikan. Aplikasi bank tertentu dapat tetap menampilkan peringatan selama layanan Aksesibilitas aktif."))
-        root.addView(Button(this).apply {
-            text = "Aktifkan Akses Teks Layar"
-            setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
-        })
-        updateAccessibilityStatus()
 
         root.addView(sectionTitle("Tema keyboard"))
         root.addView(description("Pilih warna siap pakai, warna sendiri, atau gunakan foto dari galeri sebagai latar. Foto tetap tersimpan setelah HP dimulai ulang."))
@@ -170,8 +155,8 @@ class MainActivity : AppCompatActivity() {
         val portraitHeight = settingSlider(root, "Tinggi mode potret", 170, 330, prefs.getInt("keyboard_height_portrait_dp", 220), " dp")
         val landscapeHeight = settingSlider(root, "Tinggi mode lanskap", 90, 190, prefs.getInt("keyboard_height_landscape_dp", 120), " dp")
         val keyTextSize = settingSlider(root, "Ukuran huruf tombol", 16, 28, prefs.getInt("key_text_size_sp", 21), " sp")
-        val keyBoxScale = settingSlider(root, "Ukuran kotak tombol", 65, 100, prefs.getInt("key_box_scale_percent", 100), "%")
-        root.addView(description("Turunkan sampai 65% untuk memperkecil tampilan kotak tombol tanpa membuat area sentuh ikut terlalu kecil."))
+        val keyBoxScale = settingSlider(root, "Ukuran kotak tombol", 65, 110, prefs.getInt("key_box_scale_percent", 100), "%")
+        root.addView(description("Naikkan sampai 110% agar badan tombol lebih besar. Area sentuh tetap dipisahkan supaya tombol di sebelahnya tidak mudah ikut tertekan."))
         val touchSensitivity = settingSlider(root, "Sensitivitas dan kecepatan tombol", 20, 400, prefs.getInt("touch_sensitivity", 100), "%")
         root.addView(description("Mulai 150%, huruf langsung masuk saat tombol disentuh tanpa menunggu jari dilepas. Rentang gerakan juga diperluas sampai 400% agar ketukan cepat tidak terlewat."))
         val longPressDuration = settingSlider(root, "Penundaan tekan lama", 200, 900, prefs.getInt("long_press_ms", 450), " ms")
@@ -266,8 +251,8 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
-        root.addView(sectionTitle("Balasan dan bahasa otomatis"))
-        root.addView(description("Dengan Akses Teks Layar aktif, Balas memprioritaskan pesan masuk terakhir yang belum dibalas. Terjemah selalu menghasilkan Bahasa Indonesia dari bahasa apa pun. Tombol UI dan draf pengguna disaring; teks pilihan, Bagikan, dan clipboard tetap menjadi cadangan."))
+        root.addView(sectionTitle("AI dari teks manual"))
+        root.addView(description("Tempel atau ketik teks langsung di kotak Obrolan AI. Perbaiki, Balas, Terjemah, Ringkas, Santai, dan Sopan hanya memproses teks di kotak AI dan tidak membaca layar aplikasi."))
 
         root.addView(sectionTitle("Provider AI utama"))
         val provider = Spinner(this)
@@ -275,7 +260,13 @@ class MainActivity : AppCompatActivity() {
         provider.adapter = ArrayAdapter(
             this,
             android.R.layout.simple_spinner_dropdown_item,
-            providerOptions.map { if (it == AiProvider.TABIAI) "TabiAI (tabitoken.com)" else it.label }
+            providerOptions.map {
+                when (it) {
+                    AiProvider.TABIAI -> "TabiAI (tabitoken.com)"
+                    AiProvider.NINEROUTER -> "9Router (OpenAI-compatible)"
+                    else -> it.label
+                }
+            }
         )
         provider.setSelection(providerOptions.indexOf(AiProvider.fromId(prefs.getString("provider", null))))
         root.addView(provider, ViewGroup.LayoutParams(-1, -2))
@@ -306,6 +297,15 @@ class MainActivity : AppCompatActivity() {
         root.addView(tabiModel, ViewGroup.LayoutParams(-1, -2))
         root.addView(description("Endpoint Claude: /v1/messages · header: x-api-key"))
 
+        root.addView(sectionTitle("9Router"))
+        val nineRouterKey = secretField("API key 9Router", prefs.getString("9router_api_key", ""))
+        val nineRouterBaseUrl = textField("Base URL 9Router (Gateway API)", prefs.getString("9router_base_url", "http://43.159.50.231:20130/v1"))
+        val nineRouterModel = textField("Model 9Router", prefs.getString("9router_model", "cc/claude-sonnet-4-20250514"))
+        root.addView(nineRouterKey, ViewGroup.LayoutParams(-1, -2))
+        root.addView(nineRouterBaseUrl, ViewGroup.LayoutParams(-1, -2))
+        root.addView(nineRouterModel, ViewGroup.LayoutParams(-1, -2))
+        root.addView(description("OpenAI-compatible · dashboard :20128 otomatis dialihkan ke gateway API :20130. Nama Combo seperti My2 dipakai persis. Untuk kamera, aktifkan Vision Adapter/model vision di 9Router."))
+
         val fallback = CheckBox(this).apply {
             text = "Coba provider lain jika provider utama gagal"
             isChecked = prefs.getBoolean("fallback_enabled", false)
@@ -322,6 +322,9 @@ class MainActivity : AppCompatActivity() {
                     .putString("tabi_api_key", tabiKey.text.toString().trim())
                     .putString("tabi_base_url", tabiBaseUrl.text.toString().trim().ifBlank { "https://tabitoken.com" })
                     .putString("tabi_model", tabiModel.text.toString().trim().ifBlank { "claude-opus-5" })
+                    .putString("9router_api_key", nineRouterKey.text.toString().trim())
+                    .putString("9router_base_url", nineRouterBaseUrl.text.toString().trim().ifBlank { "http://43.159.50.231:20130/v1" })
+                    .putString("9router_model", nineRouterModel.text.toString().trim().ifBlank { "cc/claude-sonnet-4-20250514" })
                     .putString("reference_urls", referenceUrls.text.toString().trim())
                     .putBoolean("fallback_enabled", fallback.isChecked)
                     .apply()
@@ -368,25 +371,6 @@ class MainActivity : AppCompatActivity() {
             .apply()
     }
 
-    override fun onResume() {
-        super.onResume()
-        if (::accessibilityStatus.isInitialized) updateAccessibilityStatus()
-    }
-
-    private fun updateAccessibilityStatus() {
-        val enabled = Settings.Secure.getString(
-            contentResolver,
-            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-        ).orEmpty().split(':').map { it.trim() }.filter { it.isNotBlank() }
-        val expected = ComponentName(this, ScreenTextAccessibilityService::class.java)
-        val screenAccessEnabled = enabled.any { ComponentName.unflattenFromString(it) == expected }
-
-        accessibilityStatus.text = if (screenAccessEnabled || ScreenTextAccessibilityService.isRunning()) {
-            "✓ Akses Teks Layar aktif. AI dapat membaca teks aplikasi ketika kamu menekan fungsi AI. Jika aplikasi bank memberi peringatan, nonaktifkan layanan ini sementara saat memakai aplikasi bank."
-        } else {
-            "Akses Teks Layar belum aktif. Balas masih dapat memakai teks pilihan, Bagikan, atau clipboard, tetapi tidak dapat membaca percakapan langsung dari layar."
-        }
-    }
 
     private fun sectionTitle(label: String) = TextView(this).apply {
         text = label

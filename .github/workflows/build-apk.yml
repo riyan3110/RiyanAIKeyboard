@@ -2,30 +2,25 @@ name: Build APK
 
 on:
   push:
-    branches: [main]
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
   workflow_dispatch:
-
-permissions:
-  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
-
-      - name: Set up Java 17
+      - uses: actions/checkout@v4
+      - name: Set up JDK
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
-          cache: gradle
-
-      - name: Set up Gradle 8.9
+          java-version: '17'
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "8.9"
+          gradle-version: '8.9'
 
       - name: Restore stable debug signing key
         uses: actions/cache@v4
@@ -49,28 +44,10 @@ jobs:
               -validity 10000
           fi
 
-      - name: Apply keyboard feature patches
-        run: python3 tools/apply_keyboard_memory_patch.py
-
-      - name: Apply full-screen OCR cache patch
-        run: python3 tools/apply_fullscreen_ocr_cache_patch.py
-
-      - name: Apply delete compatibility patch
-        run: python3 tools/apply_delete_compat_patch.py
-
-      - name: Apply automatic multi-source research patch
-        run: python3 tools/apply_auto_multisource_patch.py
-
-      - name: Apply reference bubble key styling
-        run: python3 tools/apply_bubble_keys_patch.py
-
-      - name: Build debug APK
-        run: RIYAN_KEYSTORE_PATH="$HOME/.riyan-ai-keyboard/debug.keystore" gradle --no-daemon :app:assembleDebug
-
+      - name: Build Debug APK
+        run: RIYAN_KEYSTORE_PATH="$HOME/.riyan-ai-keyboard/debug.keystore" gradle :app:assembleDebug
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: AI-Ads-Keyboard-debug
           path: app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
-          retention-days: 30
