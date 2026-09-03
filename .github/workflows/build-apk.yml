@@ -100,6 +100,9 @@ jobs:
       - name: Use configured multimodal AI for camera recognition
         run: python3 tools/apply_v018_multimodal_vision_v10.py
 
+      - name: Switch embedded web and camera results to Microsoft Bing
+        run: python3 tools/apply_v018_bing_search_v11.py
+
       - name: Build debug APK
         run: RIYAN_KEYSTORE_PATH="$HOME/.riyan-ai-keyboard/debug.keystore" gradle --no-daemon :app:assembleDebug
 
