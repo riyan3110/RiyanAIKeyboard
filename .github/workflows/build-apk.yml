@@ -73,6 +73,9 @@ jobs:
       - name: Finish v0.18 camera accuracy
         run: python3 tools/apply_v018_camera_accuracy_fix.py
 
+      - name: Fix v0.18 Kotlin regex escaping
+        run: python3 tools/apply_v018_kotlin_escape_fix.py
+
       - name: Build debug APK
         run: RIYAN_KEYSTORE_PATH="$HOME/.riyan-ai-keyboard/debug.keystore" gradle --no-daemon :app:assembleDebug
 
