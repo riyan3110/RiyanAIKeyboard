@@ -103,6 +103,9 @@ jobs:
       - name: Switch embedded web and camera results to Microsoft Bing
         run: python3 tools/apply_v018_bing_search_v11.py
 
+      - name: Add native app routing and 9Router provider
+        run: python3 tools/apply_v018_native_apps_9router_v12.py
+
       - name: Build debug APK
         run: RIYAN_KEYSTORE_PATH="$HOME/.riyan-ai-keyboard/debug.keystore" gradle --no-daemon :app:assembleDebug
 
