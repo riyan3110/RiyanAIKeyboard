@@ -14,7 +14,6 @@ s = s.replace(
     'background = roundedBackground(Color.BLACK, 10f)',
     1,
 )
-# Keep the composer visually separated, but near-black instead of gray.
 s = s.replace(
     'background = roundedBackground(Color.rgb(45, 45, 51), 15f)',
     'background = roundedBackground(Color.rgb(14, 14, 14), 15f)',
@@ -22,25 +21,22 @@ s = s.replace(
 )
 
 # 2) Fullscreen AI must keep exactly the same keyboard-panel height as normal mode.
-# baseKeyboardHeightDp already includes the utility bar in normal mode; brandBar is added
-# outside it, so subtracting brandBar again compressed the keys in fullscreen.
 old_fullscreen = '''    private fun fullscreenKeyboardPanelHeightDp(): Int =
         (baseKeyboardHeightDp - utilityHeightDp() - toolbarKeyboardGapDp() - brandBarHeightDp())
             .coerceAtLeast(if (isLandscape()) 72 else 105)'''
 new_fullscreen = '''    private fun fullscreenKeyboardPanelHeightDp(): Int =
         (baseKeyboardHeightDp - utilityHeightDp() - toolbarKeyboardGapDp())
             .coerceAtLeast(if (isLandscape()) 72 else 105)'''
-if old_fullscreen not in s:
+if old_fullscreen in s:
+    s = s.replace(old_fullscreen, new_fullscreen, 1)
+elif new_fullscreen not in s:
     raise RuntimeError('fullscreenKeyboardPanelHeightDp marker not found')
-s = s.replace(old_fullscreen, new_fullscreen, 1)
 
-# 3) Multiline editors must retain a real Enter/new-line key even when an app incorrectly
-# advertises IME_ACTION_DONE/GO/etc. This is what happens in some notes/editing apps.
+# 3) Multiline editors must retain a real Enter/new-line key even when an app advertises
+# IME_ACTION_DONE/GO/etc. Embedded web/search and the AI composer keep their own actions.
 marker = '    private fun enterKeyLabel(): String {'
-if marker not in s:
-    raise RuntimeError('enterKeyLabel marker not found')
 helper = '''    private fun editorSupportsNewLine(): Boolean {
-        if (activeInternalInput() != null) return false
+        if (searchWebComposeActive || activeInternalInput() != null) return false
         val info = currentInputEditorInfo ?: return false
         val inputClass = info.inputType and InputType.TYPE_MASK_CLASS
         if (inputClass != InputType.TYPE_CLASS_TEXT) return false
@@ -51,23 +47,27 @@ helper = '''    private fun editorSupportsNewLine(): Boolean {
     }
 
 '''
-s = s.replace(marker, helper + marker, 1)
+if '    private fun editorSupportsNewLine(): Boolean {' not in s:
+    if marker not in s:
+        raise RuntimeError('enterKeyLabel marker not found')
+    s = s.replace(marker, helper + marker, 1)
 
 old_label = '''    private fun enterKeyLabel(): String {
-        if (searchComposeActive) return "🔍"
+        if (searchComposeActive || searchWebComposeActive) return "🔍"
         val action = currentInputEditorInfo?.imeOptions?.and(EditorInfo.IME_MASK_ACTION)
             ?: EditorInfo.IME_ACTION_NONE
         return when (action) {'''
 new_label = '''    private fun enterKeyLabel(): String {
-        if (searchComposeActive) return "🔍"
+        if (searchComposeActive || searchWebComposeActive) return "🔍"
         if (aiComposeActive) return "↑"
         if (editorSupportsNewLine()) return "↵"
         val action = currentInputEditorInfo?.imeOptions?.and(EditorInfo.IME_MASK_ACTION)
             ?: EditorInfo.IME_ACTION_NONE
         return when (action) {'''
-if old_label not in s:
+if old_label in s:
+    s = s.replace(old_label, new_label, 1)
+elif new_label not in s:
     raise RuntimeError('enterKeyLabel body marker not found')
-s = s.replace(old_label, new_label, 1)
 
 old_press = '''        learnCurrentBoundary(completed = true)
         val action = currentInputEditorInfo?.imeOptions?.and(EditorInfo.IME_MASK_ACTION) ?: EditorInfo.IME_ACTION_NONE
@@ -91,9 +91,10 @@ new_press = '''        learnCurrentBoundary(completed = true)
         } else {
             currentInputConnection?.commitText("\\n", 1)
         }'''
-if old_press not in s:
+if old_press in s:
+    s = s.replace(old_press, new_press, 1)
+elif new_press not in s:
     raise RuntimeError('pressEnter action marker not found')
-s = s.replace(old_press, new_press, 1)
 
 path.write_text(s, encoding='utf-8')
 print('Applied v0.18 v15: multiline Enter, stable fullscreen keyboard height, black AI chat.')
