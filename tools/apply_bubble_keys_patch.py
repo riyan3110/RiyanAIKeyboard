@@ -79,6 +79,10 @@ new_label = '''        frame.addView(TextView(this).apply {
             gravity = Gravity.CENTER
             if (spec.alternate != null) translationY = dpFloat(4f)
             setShadowLayer(dpFloat(1.2f), 0f, dpFloat(1f), Color.BLACK)
+            // The molded key face uses elevation, so its legend must have a higher Z value.
+            // Without this, Android composites the face above every letter/emoji and the key
+            // appears blank even though the TextView still contains the correct label.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) elevation = dpFloat(7f)
         }, FrameLayout.LayoutParams(-1, -1))'''
 if new_label not in text:
     if old_label not in text:
@@ -103,6 +107,7 @@ new_alt = '''        spec.alternate?.let { alternate ->
                 gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
                 setPadding(0, dp(4), 0, 0)
                 setShadowLayer(dpFloat(0.8f), 0f, dpFloat(1f), Color.BLACK)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) elevation = dpFloat(7f)
             }, FrameLayout.LayoutParams(-1, -1))
         }'''
 if new_alt not in text:
