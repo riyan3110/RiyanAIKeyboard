@@ -85,6 +85,9 @@ jobs:
       - name: Match product by shape and strong main text
         run: python3 tools/apply_v018_visual_product_match_v3.py
 
+      - name: Fix regex escaping after visual product patch
+        run: python3 tools/apply_v018_kotlin_escape_fix.py
+
       - name: Build debug APK
         run: RIYAN_KEYSTORE_PATH="$HOME/.riyan-ai-keyboard/debug.keystore" gradle --no-daemon :app:assembleDebug
 
