@@ -80,7 +80,7 @@ jobs:
         run: python3 tools/apply_v018_web_navigation_corner_fix.py
 
       - name: Add true visual object search and Back button
-        run: python3 tools/apply_v018_true_visual_search_back_fix.py
+        run: python3 tools/apply_v018_true_visual_search_back_fix_v2.py
 
       - name: Build debug APK
         run: RIYAN_KEYSTORE_PATH="$HOME/.riyan-ai-keyboard/debug.keystore" gradle --no-daemon :app:assembleDebug
