@@ -2,29 +2,135 @@ name: Build APK
 
 on:
   push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+    branches: [main, codex/key-size-preview-v015]
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Set up JDK
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
+          java-version: "17"
+          cache: gradle
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.9'
-      - name: Build Debug APK
-        run: gradle :app:assembleDebug
+          gradle-version: "8.9"
+
+      - name: Restore stable debug signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.riyan-ai-keyboard/debug.keystore
+          key: ${{ runner.os }}-riyan-ai-debug-keystore-v2
+
+      - name: Create stable debug signing key when missing
+        shell: bash
+        run: |
+          mkdir -p "$HOME/.riyan-ai-keyboard"
+          if [ ! -f "$HOME/.riyan-ai-keyboard/debug.keystore" ]; then
+            keytool -genkeypair \
+              -keystore "$HOME/.riyan-ai-keyboard/debug.keystore" \
+              -storepass android \
+              -alias androiddebugkey \
+              -keypass android \
+              -dname "CN=Riyan AI Keyboard Debug,O=Riyan,C=ID" \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000
+          fi
+
+      - name: Apply keyboard feature patches
+        run: python3 tools/apply_keyboard_memory_patch.py
+
+      - name: Apply full-screen OCR cache patch
+        run: python3 tools/apply_fullscreen_ocr_cache_patch.py
+
+      - name: Apply delete compatibility patch
+        run: python3 tools/apply_delete_compat_patch.py
+
+      - name: Apply automatic multi-source research patch
+        run: python3 tools/apply_auto_multisource_patch.py
+
+      - name: Apply reference bubble key styling
+        run: python3 tools/apply_bubble_keys_patch.py
+
+      - name: Finish v0.18 panel frame
+        run: python3 tools/apply_v018_frame_fix.py
+
+      - name: Finish v0.18 web input routing
+        run: python3 tools/apply_v018_web_input_fix.py
+
+      - name: Finish v0.18 camera accuracy
+        run: python3 tools/apply_v018_camera_accuracy_fix.py
+
+      - name: Fix v0.18 Kotlin regex escaping
+        run: python3 tools/apply_v018_kotlin_escape_fix.py
+
+      - name: Fix v0.18 embedded navigation and corners
+        run: python3 tools/apply_v018_web_navigation_corner_fix.py
+
+      - name: Add true visual object search and Back button
+        run: python3 tools/apply_v018_true_visual_search_back_fix_v2.py
+
+      - name: Match product by shape and strong main text
+        run: python3 tools/apply_v018_visual_product_match_v3.py
+
+      - name: Fix regex escaping after visual product patch
+        run: python3 tools/apply_v018_kotlin_escape_fix.py
+
+      - name: Switch embedded search to Brave
+        run: python3 tools/apply_v018_brave_search_v8.py
+
+      - name: Add local object vision pipeline
+        run: python3 tools/apply_v018_local_vision_v9.py
+
+      - name: Restore local vision ROI helpers
+        run: python3 tools/apply_v018_local_vision_v9_compile_fix.py
+
+      - name: Use configured multimodal AI for camera recognition
+        run: python3 tools/apply_v018_multimodal_vision_v10.py
+
+      - name: Switch embedded web and camera results to Microsoft Bing
+        run: python3 tools/apply_v018_bing_search_v11.py
+
+      - name: Add native app routing and 9Router provider
+        run: python3 tools/apply_v018_native_apps_9router_v12.py
+
+      - name: Match AI Ads Lab 9Router API gateway
+        run: python3 tools/apply_v018_9router_gateway_v14.py
+
+      - name: Fix Enter and AI fullscreen layout
+        run: python3 tools/apply_v018_enter_fullscreen_black_v15.py
+
+      - name: Fix fullscreen offset and key latency
+        run: python3 tools/apply_v018_fullscreen_latency_v16.py
+
+      - name: Reduce accessibility load while typing
+        run: python3 tools/apply_v018_accessibility_performance_v17.py
+
+      - name: Make accessibility passive and remove key popups
+        run: python3 tools/apply_v018_passive_accessibility_fast_keys_v18.py
+
+      - name: Remove accessibility and use manual AI text only
+        run: python3 tools/apply_v018_manual_ai_only_v19.py
+
+      - name: Build debug APK
+        run: RIYAN_KEYSTORE_PATH="$HOME/.riyan-ai-keyboard/debug.keystore" gradle --no-daemon :app:assembleDebug
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: AI-Ads-Keyboard-debug
           path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
