@@ -2,7 +2,7 @@ name: Build APK
 
 on:
   push:
-    branches: [main]
+    branches: [main, codex/key-size-preview-v015]
   workflow_dispatch:
 
 permissions:
@@ -75,6 +75,9 @@ jobs:
 
       - name: Fix v0.18 Kotlin regex escaping
         run: python3 tools/apply_v018_kotlin_escape_fix.py
+
+      - name: Fix v0.18 embedded navigation and corners
+        run: python3 tools/apply_v018_web_navigation_corner_fix.py
 
       - name: Build debug APK
         run: RIYAN_KEYSTORE_PATH="$HOME/.riyan-ai-keyboard/debug.keystore" gradle --no-daemon :app:assembleDebug
