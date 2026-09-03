@@ -97,6 +97,9 @@ jobs:
       - name: Restore local vision ROI helpers
         run: python3 tools/apply_v018_local_vision_v9_compile_fix.py
 
+      - name: Use configured multimodal AI for camera recognition
+        run: python3 tools/apply_v018_multimodal_vision_v10.py
+
       - name: Build debug APK
         run: RIYAN_KEYSTORE_PATH="$HOME/.riyan-ai-keyboard/debug.keystore" gradle --no-daemon :app:assembleDebug
 
