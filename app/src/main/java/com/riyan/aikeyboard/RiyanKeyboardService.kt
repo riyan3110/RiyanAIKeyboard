@@ -6,7 +6,9 @@ import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
+import android.net.Uri
 import android.inputmethodservice.InputMethodService
 import android.media.AudioManager
 import android.os.Build
@@ -30,8 +32,14 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.PopupWindow
 import android.widget.ScrollView
 import android.widget.TextView
+import android.webkit.WebResourceRequest
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import android.widget.Toast
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.concurrent.thread
@@ -39,7 +47,7 @@ import kotlin.math.abs
 import kotlin.math.hypot
 
 class RiyanKeyboardService : InputMethodService() {
-    private enum class KeyboardMode { LETTERS, SYMBOLS, CURSOR, EMOJI, CLIPBOARD }
+    private enum class KeyboardMode { LETTERS, SYMBOLS, CURSOR, EMOJI, CLIPBOARD, SEARCH }
 
     private data class KeySpec(
         val label: String,
@@ -64,6 +72,7 @@ class RiyanKeyboardService : InputMethodService() {
     private lateinit var aiInput: EditText
     private lateinit var aiFullscreenButton: Button
     private lateinit var heightLabel: TextView
+    private var searchWebView: WebView? = null
 
     private var mode = KeyboardMode.LETTERS
     private var shift = false
@@ -71,6 +80,9 @@ class RiyanKeyboardService : InputMethodService() {
     private var lastShiftTapAt = 0L
     private var pendingText: String? = null
     private var emojiPage = 0
+    private var searchQuery = ""
+    private var searchUrl = ""
+    private var lastConsumedScanNonce = 0L
     private var baseKeyboardHeightDp = DEFAULT_KEYBOARD_HEIGHT_PORTRAIT_DP
     private var minKeyboardHeightDp = MIN_KEYBOARD_HEIGHT_PORTRAIT_DP
     private var maxKeyboardHeightDp = MAX_KEYBOARD_HEIGHT_PORTRAIT_DP
@@ -80,6 +92,9 @@ class RiyanKeyboardService : InputMethodService() {
     private var touchTolerancePx = 0f
     private var instantKeyResponse = false
     private var longPressDurationMs = 450L
+    private var activeKeyPreview: PopupWindow? = null
+    private var activeKeyPreviewLabel: TextView? = null
+    private var keyPreviewDismissRunnable: Runnable? = null
     private var aiPanelVisible = false
     private var aiFullscreen = false
     private var resizePanelVisible = false
@@ -136,7 +151,9 @@ class RiyanKeyboardService : InputMethodService() {
 
     override fun onDestroy() {
         clipboardManager.removePrimaryClipChangedListener(clipboardListener)
+        dismissKeyPreview()
         handler.removeCallbacksAndMessages(null)
+        destroySearchWebView()
         super.onDestroy()
     }
 
@@ -198,6 +215,12 @@ class RiyanKeyboardService : InputMethodService() {
             renderKeyboard()
             refreshSuggestionsSoon()
         }
+        consumePendingScanResult()
+    }
+
+    override fun onWindowShown() {
+        super.onWindowShown()
+        consumePendingScanResult()
     }
 
     private fun loadPreferences() {
@@ -250,7 +273,7 @@ class RiyanKeyboardService : InputMethodService() {
         baseKeyboardHeightDp = prefs.getInt(heightPreferenceKey, defaultHeight)
             .coerceIn(minKeyboardHeightDp, maxKeyboardHeightDp)
         keyTextSizeSp = prefs.getInt("key_text_size_sp", 21).coerceIn(16, 28).toFloat()
-        keyBoxScale = prefs.getInt("key_box_scale_percent", 100).coerceIn(65, 100) / 100f
+        keyBoxScale = prefs.getInt("key_box_scale_percent", 100).coerceIn(65, 110) / 100f
         val sensitivity = prefs.getInt("touch_sensitivity", 100).coerceIn(20, 400)
         touchTolerancePx = dpFloat(12f + sensitivity * 0.18f)
         instantKeyResponse = sensitivity >= INSTANT_RESPONSE_THRESHOLD
@@ -312,7 +335,7 @@ class RiyanKeyboardService : InputMethodService() {
             setPadding(0, dp(2), 0, 0)
             setBackgroundColor(if (themeUsesPhoto) Color.TRANSPARENT else bg)
             addView(TextView(this@RiyanKeyboardService).apply {
-                text = "AI Ads Keyboard · v0.16"
+                text = "AI Ads Keyboard · v0.17"
                 textSize = 9f
                 setTextColor(Color.rgb(145, 137, 190))
                 gravity = Gravity.CENTER
@@ -442,6 +465,7 @@ class RiyanKeyboardService : InputMethodService() {
             renderKeyboard()
         })
         utilityBar.addView(toolbarButton("↕", dp(43)) { toggleResizePanel() })
+        utilityBar.addView(toolbarButton("📷", dp(43)) { launchScanner() })
         suggestionBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -656,6 +680,7 @@ class RiyanKeyboardService : InputMethodService() {
 
     private fun renderKeyboard() {
         if (!::keyboardPanel.isInitialized) return
+        destroySearchWebView()
         keyboardPanel.removeAllViews()
         when (mode) {
             KeyboardMode.LETTERS -> renderLetters()
@@ -663,6 +688,7 @@ class RiyanKeyboardService : InputMethodService() {
             KeyboardMode.CURSOR -> renderCursorPad()
             KeyboardMode.EMOJI -> renderEmoji()
             KeyboardMode.CLIPBOARD -> renderClipboard()
+            KeyboardMode.SEARCH -> renderSearchPanel()
         }
         refreshSuggestionsSoon()
     }
@@ -759,19 +785,19 @@ class RiyanKeyboardService : InputMethodService() {
         addLetterRow("asdfghjkl", listOf("@", "#", "£", "_", "&", "-", "+", "(", ")"), sidePadding = 0.35f)
 
         val third = mutableListOf<KeySpec>()
-        third += KeySpec(if (capsLock) "⇪" else "⇧", weight = 1.25f, action = { handleShiftTap() })
+        third += KeySpec(if (capsLock) "⇪" else "⇧", weight = 1.72f, action = { handleShiftTap() })
         val thirdAlternates = listOf("*", "\"", "'", ":", ";", "!", "?")
         "zxcvbnm".forEachIndexed { index, c -> third += letterSpec(c, thirdAlternates[index]) }
-        third += KeySpec("⌫", weight = 1.25f, action = { deleteOne() }, longAction = { deleteWord() })
+        third += KeySpec("⌫", weight = 1.72f, action = { deleteOne() }, longAction = { deleteWord() })
         addRow(third)
 
         addRow(
             listOf(
-                KeySpec("?123", weight = 1.18f, action = { mode = KeyboardMode.SYMBOLS; renderKeyboard() }),
+                KeySpec("?123", weight = 1.62f, action = { mode = KeyboardMode.SYMBOLS; renderKeyboard() }),
                 KeySpec(",", action = { commitPunctuation(",") }),
                 KeySpec("spasi", weight = 4.45f, action = { commitSpace() }),
                 KeySpec(".", action = { commitPunctuation(".") }),
-                KeySpec(enterKeyLabel(), weight = 1.25f, action = { pressEnter() })
+                KeySpec(enterKeyLabel(), weight = 1.62f, action = { pressEnter() })
             )
         )
     }
@@ -826,18 +852,18 @@ class RiyanKeyboardService : InputMethodService() {
         addSimpleSymbolRow(listOf("!", "@", "#", "$", "%", "^", "&", "*", "(", ")"))
         addSimpleSymbolRow(listOf("~", "`", "|", "•", "√", "π", "÷", "×", "§", "∆"))
         val last = listOf("<", ">", "[", "]", "{", "}", "_", "-", "+").map { symbolSpec(it) }.toMutableList()
-        last += KeySpec("⌫", weight = 1.2f, action = { deleteOne() }, longAction = { deleteWord() })
+        last += KeySpec("⌫", weight = 1.72f, action = { deleteOne() }, longAction = { deleteWord() })
         addRow(last)
         addRow(
             listOf(
-                KeySpec("ABC", weight = 1.2f, action = { mode = KeyboardMode.LETTERS; renderKeyboard() }),
+                KeySpec("ABC", weight = 1.58f, action = { mode = KeyboardMode.LETTERS; renderKeyboard() }),
                 KeySpec("\\", action = { commit("\\") }),
                 KeySpec("/", action = { commit("/") }),
                 KeySpec(":", action = { commitPunctuation(":") }),
                 KeySpec("spasi", weight = 2.2f, action = { commitSpace() }),
                 KeySpec("?", action = { commitPunctuation("?") }),
                 KeySpec("2/2", weight = 1.25f, action = { mode = KeyboardMode.CURSOR; renderKeyboard() }),
-                KeySpec(enterKeyLabel(), weight = 1.25f, action = { pressEnter() })
+                KeySpec(enterKeyLabel(), weight = 1.62f, action = { pressEnter() })
             )
         )
     }
@@ -886,11 +912,11 @@ class RiyanKeyboardService : InputMethodService() {
             gravity = Gravity.CENTER
         }
         listOf(
-            KeySpec("ABC", weight = 1.2f, action = { mode = KeyboardMode.LETTERS; renderKeyboard() }),
+            KeySpec("ABC", weight = 1.58f, action = { mode = KeyboardMode.LETTERS; renderKeyboard() }),
             KeySpec("1/2", weight = 1.15f, action = { mode = KeyboardMode.SYMBOLS; renderKeyboard() }),
             KeySpec("spasi", weight = 3.3f, action = { commitSpace() }),
-            KeySpec("⌫", weight = 1.2f, action = { deleteOne() }, longAction = { deleteWord() }),
-            KeySpec(enterKeyLabel(), weight = 1.25f, action = { pressEnter() })
+            KeySpec("⌫", weight = 1.72f, action = { deleteOne() }, longAction = { deleteWord() }),
+            KeySpec(enterKeyLabel(), weight = 1.62f, action = { pressEnter() })
         ).forEach { spec ->
             bottom.addView(keyView(spec), LinearLayout.LayoutParams(0, -1, spec.weight).apply {
                 setMargins(dp(2), dp(2), dp(2), dp(2))
@@ -920,6 +946,8 @@ class RiyanKeyboardService : InputMethodService() {
 
     private fun cursorDirectionButton(label: String, keyCode: Int): View {
         val frame = FrameLayout(this).apply {
+            scaleX = keyBoxScale
+            scaleY = keyBoxScale
             isClickable = true
             isFocusable = false
             background = roundedBackground(specialKeyBg, 11f)
@@ -1100,16 +1128,16 @@ class RiyanKeyboardService : InputMethodService() {
             addRow(emojis.drop(rowIndex * 8).take(8).map { emoji -> KeySpec(emoji, action = { rememberEmoji(emoji); commit(emoji) }) })
         }
         val fourth = emojis.drop(24).take(7).map { emoji -> KeySpec(emoji, action = { rememberEmoji(emoji); commit(emoji) }) }.toMutableList()
-        fourth += KeySpec("⌫", weight = 1.2f, action = { deleteOne() }, longAction = { deleteWord() })
+        fourth += KeySpec("⌫", weight = 1.72f, action = { deleteOne() }, longAction = { deleteWord() })
         addRow(fourth)
         addRow(
             listOf(
-                KeySpec("ABC", weight = 1.15f, action = { mode = KeyboardMode.LETTERS; renderKeyboard() }),
+                KeySpec("ABC", weight = 1.58f, action = { mode = KeyboardMode.LETTERS; renderKeyboard() }),
                 KeySpec("◀", action = { emojiPage = (emojiPage - 1 + emojiPages.size) % emojiPages.size; renderKeyboard() }),
                 KeySpec("${emojiPage + 1}/${emojiPages.size}", weight = 1.15f, action = {}),
                 KeySpec("▶", action = { emojiPage = (emojiPage + 1) % emojiPages.size; renderKeyboard() }),
                 KeySpec("spasi", weight = 2.8f, action = { commitSpace() }),
-                KeySpec(enterKeyLabel(), weight = 1.25f, action = { pressEnter() })
+                KeySpec(enterKeyLabel(), weight = 1.62f, action = { pressEnter() })
             )
         )
     }
@@ -1216,7 +1244,7 @@ class RiyanKeyboardService : InputMethodService() {
                 row.addView(View(this), LinearLayout.LayoutParams(0, -1, spec.weight))
             } else {
                 row.addView(keyView(spec), LinearLayout.LayoutParams(0, -1, spec.weight).apply {
-                    setMargins(dp(2), if (isFirstKeyboardRow) 0 else dp(2), dp(2), dp(2))
+                    setMargins(dp(2), if (isFirstKeyboardRow) dp(1) else dp(3), dp(2), dp(3))
                 })
             }
         }
@@ -1226,13 +1254,45 @@ class RiyanKeyboardService : InputMethodService() {
     private fun keyView(spec: KeySpec): View {
         val isSpecial = spec.label.length > 2 || spec.label in listOf("⇧", "⇪", "⌫", "↵", "◀", "▶")
         val normalColor = if (isSpecial) specialKeyBg else keyBg
+        val referenceLargeKey = spec.label in listOf(
+            "⇧", "⇪", "⌫", "?123", "↵", "✓", "➤", "→", "←", "🔍"
+        )
+        val referenceWideKey = referenceLargeKey || spec.label == "spasi"
         val frame = FrameLayout(this).apply {
-            scaleX = keyBoxScale
-            scaleY = keyBoxScale
+            // At the old 100% setting the regular caps now fill 90% of their cells instead of
+            // only 78%. The new 110% maximum can reach 99%, while clamping prevents overlap.
+            scaleX = (keyBoxScale * if (referenceWideKey) 0.98f else 0.90f).coerceAtMost(1f)
+            scaleY = (keyBoxScale * if (referenceLargeKey) 0.98f else 0.94f).coerceAtMost(1f)
             isClickable = true
             isFocusable = false
-            background = roundedBackground(normalColor, 7f)
+            clipChildren = false
+            clipToPadding = false
+            setBackgroundColor(Color.TRANSPARENT)
         }
+
+        // Deep lower shadow makes the cap visibly float above the photo/theme.
+        frame.addView(View(this).apply {
+            background = roundedBackground(Color.argb(190, 4, 4, 7), 22f)
+        }, FrameLayout.LayoutParams(-1, -1).apply {
+            setMargins(dp(2), dp(4), dp(1), 0)
+        })
+
+        // Main charcoal key face. This is the surface changed while pressing.
+        val keyFace = View(this).apply {
+            background = referenceBubbleKeyBackground(pressed = false)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) elevation = dpFloat(2.6f)
+        }
+        frame.addView(keyFace, FrameLayout.LayoutParams(-1, -1).apply {
+            setMargins(dp(1), 0, dp(1), dp(4))
+        })
+
+        // Inner top rim/highlight: the important detail that creates a molded 3D cap.
+        frame.addView(View(this).apply {
+            background = referenceTopRimBackground()
+            alpha = 0.92f
+        }, FrameLayout.LayoutParams(-1, dp(8), Gravity.TOP).apply {
+            setMargins(dp(5), dp(3), dp(5), 0)
+        })
         frame.addView(TextView(this).apply {
             text = spec.label
             textSize = when {
@@ -1241,19 +1301,36 @@ class RiyanKeyboardService : InputMethodService() {
                 (spec.label.firstOrNull()?.code ?: 0) > 0x2600 -> keyTextSizeSp + 1f
                 else -> keyTextSizeSp
             }
-            setTextColor(keyTextColor)
+            setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
+            if (spec.alternate != null) translationY = dpFloat(4f)
+            setShadowLayer(dpFloat(1.2f), 0f, dpFloat(1f), Color.BLACK)
+            // The molded key face uses elevation, so its legend must have a higher Z value.
+            // Without this, Android composites the face above every letter/emoji and the key
+            // appears blank even though the TextView still contains the correct label.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) elevation = dpFloat(7f)
         }, FrameLayout.LayoutParams(-1, -1))
 
         spec.alternate?.let { alternate ->
             frame.addView(TextView(this).apply {
                 text = alternate
                 textSize = 8f
-                setTextColor(Color.argb(210, Color.red(keyTextColor), Color.green(keyTextColor), Color.blue(keyTextColor)))
-                gravity = Gravity.TOP or Gravity.END
-                setPadding(0, dp(1), dp(4), 0)
+                setTextColor(Color.rgb(205, 202, 214))
+                gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                setPadding(0, dp(4), 0, 0)
+                setShadowLayer(dpFloat(0.8f), 0f, dpFloat(1f), Color.BLACK)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) elevation = dpFloat(7f)
             }, FrameLayout.LayoutParams(-1, -1))
         }
+
+
+        frame.addView(View(this).apply {
+            background = roundedBackground(Color.rgb(202, 105, 255), 2f)
+            alpha = 0.96f
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) elevation = dpFloat(5f)
+        }, FrameLayout.LayoutParams(dp(if (referenceLargeKey) 18 else 12), dp(2), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
+            bottomMargin = dp(1)
+        })
 
         var downX = 0f
         var downY = 0f
@@ -1267,11 +1344,15 @@ class RiyanKeyboardService : InputMethodService() {
                     downY = event.y
                     longTriggered = false
                     actionTriggered = false
-                    view.background = roundedBackground(pressedKeyBg, 7f)
+                    showKeyPreview(view, spec)
+                    keyFace.background = referenceBubbleKeyBackground(pressed = true)
+                    view.translationY = dpFloat(1.7f)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) keyFace.elevation = dpFloat(0.6f)
                     spec.longAction?.let { longAction ->
                         longRunnable = Runnable {
                             longTriggered = true
-                            if (actionTriggered && spec.alternate != null) deleteOne()
+                            if (actionTriggered && spec.alternate != null) deleteInstantCommittedCharacter()
+                            spec.alternate?.let(::updateKeyPreview)
                             longAction()
                             keyFeedback(view, longPress = true)
                         }.also { handler.postDelayed(it, longPressDurationMs) }
@@ -1291,7 +1372,10 @@ class RiyanKeyboardService : InputMethodService() {
                 }
                 MotionEvent.ACTION_UP -> {
                     longRunnable?.let(handler::removeCallbacks)
-                    view.background = roundedBackground(normalColor, 7f)
+                    dismissKeyPreview()
+                    keyFace.background = referenceBubbleKeyBackground(pressed = false)
+                    view.translationY = 0f
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) keyFace.elevation = dpFloat(2.6f)
                     val moved = hypot(event.x - downX, event.y - downY)
                     if (!longTriggered && !actionTriggered && moved <= touchTolerancePx) {
                         spec.action()
@@ -1302,7 +1386,10 @@ class RiyanKeyboardService : InputMethodService() {
                 }
                 MotionEvent.ACTION_CANCEL -> {
                     longRunnable?.let(handler::removeCallbacks)
-                    view.background = roundedBackground(normalColor, 7f)
+                    dismissKeyPreview()
+                    keyFace.background = referenceBubbleKeyBackground(pressed = false)
+                    view.translationY = 0f
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) keyFace.elevation = dpFloat(2.6f)
                     true
                 }
                 else -> false
@@ -1328,6 +1415,112 @@ class RiyanKeyboardService : InputMethodService() {
             view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
         }
     }
+
+
+    private fun shouldShowKeyPreview(spec: KeySpec): Boolean {
+        if (spec.label.isBlank() || spec.label.matches(Regex("\\d+/\\d+"))) return false
+        return spec.label !in setOf(
+            "spasi", "?123", "ABC", "⇧", "⇪", "⌫", "↵", "✓", "➤",
+            "→", "←", "🔍", "◀", "▶"
+        )
+    }
+
+    private fun showKeyPreview(anchor: View, spec: KeySpec) {
+        if (!shouldShowKeyPreview(spec) || !anchor.isAttachedToWindow) return
+        dismissKeyPreview()
+
+        val previewWidth = dp(if (isLandscape()) 48 else 58)
+        val previewHeight = dp(if (isLandscape()) 58 else 72)
+        val previewLabel = TextView(this).apply {
+            text = spec.label
+            textSize = when {
+                spec.label.length > 2 -> 25f
+                else -> 31f
+            }
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, Typeface.BOLD)
+            setShadowLayer(dpFloat(1.5f), 0f, dpFloat(1f), Color.BLACK)
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(
+                    Color.rgb(79, 76, 90),
+                    Color.rgb(41, 39, 49),
+                    Color.rgb(18, 18, 24)
+                )
+            ).apply {
+                cornerRadius = dpFloat(18f)
+                setStroke(dp(2), Color.rgb(202, 105, 255))
+            }
+        }
+        val popup = PopupWindow(previewLabel, previewWidth, previewHeight, false).apply {
+            isTouchable = false
+            isOutsideTouchable = false
+            isClippingEnabled = false
+            inputMethodMode = PopupWindow.INPUT_METHOD_NOT_NEEDED
+            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) elevation = dpFloat(10f)
+        }
+        activeKeyPreview = popup
+        activeKeyPreviewLabel = previewLabel
+
+        val xOffset = (anchor.width - previewWidth) / 2
+        val yOffset = -(anchor.height + previewHeight + dp(4))
+        runCatching { popup.showAsDropDown(anchor, xOffset, yOffset) }
+            .onFailure { dismissKeyPreview() }
+
+        keyPreviewDismissRunnable = Runnable {
+            if (activeKeyPreview === popup) dismissKeyPreview()
+        }.also { handler.postDelayed(it, longPressDurationMs + 350L) }
+    }
+
+    private fun updateKeyPreview(label: String) {
+        activeKeyPreviewLabel?.text = label
+    }
+
+    private fun dismissKeyPreview() {
+        keyPreviewDismissRunnable?.let(handler::removeCallbacks)
+        keyPreviewDismissRunnable = null
+        activeKeyPreviewLabel = null
+        activeKeyPreview?.dismiss()
+        activeKeyPreview = null
+    }
+
+    private fun referenceBubbleKeyBackground(pressed: Boolean): GradientDrawable {
+        val colors = if (pressed) {
+            intArrayOf(
+                Color.rgb(45, 44, 52),
+                Color.rgb(25, 24, 31),
+                Color.rgb(14, 14, 19)
+            )
+        } else {
+            intArrayOf(
+                Color.rgb(69, 67, 78),
+                Color.rgb(42, 41, 50),
+                Color.rgb(24, 23, 30),
+                Color.rgb(15, 15, 20)
+            )
+        }
+        return GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, colors).apply {
+            cornerRadius = dpFloat(23f)
+            setStroke(
+                dp(1),
+                if (pressed) Color.rgb(67, 65, 77) else Color.rgb(97, 94, 108)
+            )
+        }
+    }
+
+    private fun referenceTopRimBackground(): GradientDrawable =
+        GradientDrawable(
+            GradientDrawable.Orientation.TOP_BOTTOM,
+            intArrayOf(
+                Color.argb(125, 255, 255, 255),
+                Color.argb(35, 255, 255, 255),
+                Color.TRANSPARENT
+            )
+        ).apply {
+            cornerRadius = dpFloat(20f)
+        }
 
     private fun roundedBackground(color: Int, radiusDp: Float) = GradientDrawable().apply {
         setColor(color)
@@ -1396,6 +1589,8 @@ class RiyanKeyboardService : InputMethodService() {
     private fun brandBarHeightDp(): Int = if (isLandscape()) 18 else 24
 
     private fun cursorBottomRowHeightDp(): Int = if (isLandscape()) 34 else 48
+
+    private fun searchHeaderHeightDp(): Int = if (isLandscape()) 27 else 34
 
     private fun aiHeaderHeightDp(): Int = if (isLandscape()) 23 else 27
 
@@ -1558,6 +1753,196 @@ class RiyanKeyboardService : InputMethodService() {
         }
     }
 
+    private fun launchScanner() {
+        runCatching {
+            startActivity(
+                Intent(this, ScannerActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+            )
+        }.onFailure {
+            Toast.makeText(this, "Kamera penelusuran tidak dapat dibuka.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun consumePendingScanResult() {
+        if (!::keyboardPanel.isInitialized) return
+        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        if (!prefs.getBoolean(SCAN_READY_KEY, false)) return
+        val nonce = prefs.getLong(SCAN_NONCE_KEY, 0L)
+        val query = prefs.getString(SCAN_QUERY_KEY, "").orEmpty().trim()
+        val directUrl = prefs.getString(SCAN_URL_KEY, "").orEmpty().trim()
+        prefs.edit().putBoolean(SCAN_READY_KEY, false).apply()
+        if (nonce == lastConsumedScanNonce || (query.isBlank() && directUrl.isBlank())) return
+
+        lastConsumedScanNonce = nonce
+        searchQuery = query.ifBlank { directUrl }
+        searchUrl = directUrl.takeIf(::isWebUrl) ?: googleSearchUrl(searchQuery)
+        aiComposeActive = false
+        if (::aiInput.isInitialized) aiInput.clearFocus()
+        mode = KeyboardMode.SEARCH
+        renderKeyboard()
+    }
+
+    private fun renderSearchPanel() {
+        val border = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(3), dp(3), dp(3), dp(3))
+            background = GradientDrawable().apply {
+                setColor(Color.WHITE)
+                cornerRadius = dpFloat(20f)
+            }
+        }
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = roundedBackground(Color.rgb(25, 24, 31), 17f)
+        }
+
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(5), dp(2), dp(3), dp(2))
+        }
+        header.addView(TextView(this).apply {
+            text = "Hasil: $searchQuery"
+            textSize = 12f
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, Typeface.BOLD)
+            setPadding(dp(4), 0, dp(4), 0)
+        }, LinearLayout.LayoutParams(0, dp(searchHeaderHeightDp()), 1f))
+        header.addView(compactButton("📷") { launchScanner() }, LinearLayout.LayoutParams(dp(40), dp(searchHeaderHeightDp())))
+        header.addView(compactButton("↗") { openExternalLink(searchUrl) }, LinearLayout.LayoutParams(dp(40), dp(searchHeaderHeightDp())).apply {
+            leftMargin = dp(2)
+        })
+        header.addView(compactButton("✕") {
+            mode = KeyboardMode.LETTERS
+            renderKeyboard()
+        }, LinearLayout.LayoutParams(dp(40), dp(searchHeaderHeightDp())).apply {
+            leftMargin = dp(2)
+        })
+        content.addView(header, LinearLayout.LayoutParams(-1, dp(searchHeaderHeightDp() + 4)))
+
+        var userTouchedPage = false
+        val webView = WebView(this).apply {
+            setBackgroundColor(Color.WHITE)
+            settings.javaScriptEnabled = true
+            settings.domStorageEnabled = true
+            settings.cacheMode = WebSettings.LOAD_DEFAULT
+            settings.loadsImagesAutomatically = true
+            settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            settings.userAgentString = settings.userAgentString + " AIAdsKeyboard/0.17"
+            setOnTouchListener { _, event ->
+                if (event.actionMasked == MotionEvent.ACTION_DOWN) userTouchedPage = true
+                false
+            }
+            webViewClient = object : WebViewClient() {
+                override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                    val target = request?.url?.toString().orEmpty()
+                    val isUserNavigation = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                        request?.hasGesture() == true || userTouchedPage
+                    } else {
+                        userTouchedPage
+                    }
+                    userTouchedPage = false
+                    if (!isUserNavigation || target.isBlank()) return false
+                    openExternalLink(target)
+                    return true
+                }
+
+                @Suppress("DEPRECATION")
+                override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
+                    val target = url.orEmpty()
+                    if (!userTouchedPage || target.isBlank()) return false
+                    userTouchedPage = false
+                    openExternalLink(target)
+                    return true
+                }
+            }
+            loadUrl(searchUrl)
+        }
+        searchWebView = webView
+        content.addView(webView, LinearLayout.LayoutParams(-1, 0, 1f))
+        border.addView(content, LinearLayout.LayoutParams(-1, -1))
+        keyboardPanel.addView(border, LinearLayout.LayoutParams(-1, -1).apply {
+            setMargins(dp(2), dp(1), dp(2), dp(1))
+        })
+    }
+
+    private fun openExternalLink(rawUrl: String) {
+        val url = unwrapSearchRedirect(rawUrl)
+        if (url.isBlank()) return
+        runCatching {
+            if (url.startsWith("intent://", ignoreCase = true)) {
+                val parsedIntent = Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                if (parsedIntent.resolveActivity(packageManager) != null) {
+                    startActivity(parsedIntent)
+                    return
+                }
+                val fallback = parsedIntent.getStringExtra("browser_fallback_url")
+                if (!fallback.isNullOrBlank()) openExternalLink(fallback)
+                return
+            }
+
+            val uri = Uri.parse(url)
+            val intent = Intent(Intent.ACTION_VIEW, uri)
+                .addCategory(Intent.CATEGORY_BROWSABLE)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            if (uri.scheme.equals("http", true) || uri.scheme.equals("https", true)) {
+                val genericIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://example.com"))
+                    .addCategory(Intent.CATEGORY_BROWSABLE)
+                val genericHandlers = packageManager
+                    .queryIntentActivities(genericIntent, 0)
+                    .map { it.activityInfo.packageName }
+                    .toSet()
+                packageManager.queryIntentActivities(intent, 0)
+                    .firstOrNull { it.activityInfo.packageName !in genericHandlers && it.activityInfo.packageName != packageName }
+                    ?.activityInfo
+                    ?.packageName
+                    ?.let(intent::setPackage)
+            }
+            startActivity(intent)
+        }.onFailure {
+            Toast.makeText(this, "Tautan tidak didukung oleh aplikasi di HP ini.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun unwrapSearchRedirect(rawUrl: String): String {
+        val uri = runCatching { Uri.parse(rawUrl) }.getOrNull() ?: return rawUrl
+        val host = uri.host.orEmpty()
+        if (host.endsWith("google.com") && uri.path == "/url") {
+            return uri.getQueryParameter("url")
+                ?: uri.getQueryParameter("q")
+                ?: rawUrl
+        }
+        return rawUrl
+    }
+
+    private fun googleSearchUrl(query: String): String = Uri.Builder()
+        .scheme("https")
+        .authority("www.google.com")
+        .path("search")
+        .appendQueryParameter("q", query)
+        .build()
+        .toString()
+
+    private fun isWebUrl(value: String): Boolean = runCatching {
+        Uri.parse(value).scheme?.lowercase() in setOf("http", "https")
+    }.getOrDefault(false)
+
+    private fun destroySearchWebView() {
+        searchWebView?.let { webView ->
+            webView.stopLoading()
+            webView.webViewClient = WebViewClient()
+            webView.loadUrl("about:blank")
+            webView.clearHistory()
+            webView.removeAllViews()
+            webView.destroy()
+        }
+        searchWebView = null
+    }
+
     private fun openSettings() {
         runCatching {
             startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -1576,9 +1961,8 @@ class RiyanKeyboardService : InputMethodService() {
                 start > 0 -> editable.delete(start - 1, start)
             }
         } else {
-            currentInputConnection?.let { ic ->
-                if (!deleteSelectedText(ic)) ic.deleteSurroundingText(1, 0)
-            }
+            val ic = currentInputConnection ?: return
+            if (!deleteSelectedText(ic)) deletePreviousCharacterCompat(ic)
         }
         refreshSuggestionsSoon()
     }
@@ -1598,15 +1982,72 @@ class RiyanKeyboardService : InputMethodService() {
             refreshSuggestionsSoon()
             return
         }
+
         val ic = currentInputConnection ?: return
         if (deleteSelectedText(ic)) {
             refreshSuggestionsSoon()
             return
         }
-        val before = ic.getTextBeforeCursor(100, 0)?.toString().orEmpty()
+        val before = runCatching { ic.getTextBeforeCursor(100, 0)?.toString().orEmpty() }.getOrDefault("")
         val count = before.takeLastWhile { !it.isWhitespace() }.length.coerceAtLeast(1)
-        ic.deleteSurroundingText(count, 0)
+        repeat(count.coerceAtMost(100)) { deletePreviousCharacterCompat(ic) }
         refreshSuggestionsSoon()
+    }
+
+    /**
+     * Some browser/WebView/OTP fields need a real DEL event. Trust the event result and never
+     * immediately follow it with deleteSurroundingText: many editors apply the key event
+     * asynchronously, and doing both can delete two characters for a single tap.
+     */
+    private fun deletePreviousCharacterCompat(ic: InputConnection): Boolean {
+        if (sendDeleteKeyEvent(ic)) return true
+        return runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                ic.deleteSurroundingTextInCodePoints(1, 0)
+            } else {
+                ic.deleteSurroundingText(1, 0)
+            }
+        }.getOrDefault(false)
+    }
+
+    private fun sendDeleteKeyEvent(ic: InputConnection): Boolean = runCatching {
+        val now = SystemClock.uptimeMillis()
+        val down = ic.sendKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL, 0))
+        val up = ic.sendKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DEL, 0))
+        down || up
+    }.getOrDefault(false)
+
+    /**
+     * When instant response is enabled, the normal letter is committed on ACTION_DOWN before a
+     * long-press can fire. Replacing it with the alternate symbol must delete exactly that one
+     * freshly committed character. Do not use the general backspace compatibility path here,
+     * because a hardware DEL event can race with commitText and remove the previous character too.
+     */
+    private fun deleteInstantCommittedCharacter(): Boolean {
+        if (aiComposeActive && ::aiInput.isInitialized) {
+            val editable = aiInput.text
+            val start = aiInput.selectionStart.coerceAtLeast(0)
+            val end = aiInput.selectionEnd.coerceAtLeast(0)
+            return when {
+                start != end -> {
+                    editable.delete(minOf(start, end), maxOf(start, end))
+                    true
+                }
+                start > 0 -> {
+                    editable.delete(start - 1, start)
+                    true
+                }
+                else -> false
+            }
+        }
+        val ic = currentInputConnection ?: return false
+        return runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                ic.deleteSurroundingTextInCodePoints(1, 0)
+            } else {
+                ic.deleteSurroundingText(1, 0)
+            }
+        }.getOrDefault(false)
     }
 
     private fun deleteSelectedText(ic: InputConnection): Boolean {
@@ -1951,5 +2392,9 @@ class RiyanKeyboardService : InputMethodService() {
         private const val MAX_CLIPS = 12
         private const val MAX_CLIP_LENGTH = 1200
         private const val MAX_LEARNED_SUGGESTIONS = 180
+        private const val SCAN_READY_KEY = "camera_search_ready"
+        private const val SCAN_NONCE_KEY = "camera_search_nonce"
+        private const val SCAN_QUERY_KEY = "camera_search_query"
+        private const val SCAN_URL_KEY = "camera_search_url"
     }
 }

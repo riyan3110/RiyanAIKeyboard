@@ -2,7 +2,7 @@ name: Build APK
 
 on:
   push:
-    branches: [main]
+    branches: [main, codex/key-size-preview-v015]
   workflow_dispatch:
 
 permissions:

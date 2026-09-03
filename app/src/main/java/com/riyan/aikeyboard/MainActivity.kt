@@ -81,7 +81,7 @@ class MainActivity : AppCompatActivity() {
             setTypeface(typeface, Typeface.BOLD)
         })
         root.addView(TextView(this).apply {
-            text = "Versi 0.14.0 · Pembacaan layar lengkap, target balasan terakhir, dan terjemahan selalu ke Bahasa Indonesia."
+            text = "Versi 0.17.0 · Kamera penelusuran, hasil web di keyboard, pembacaan layar lengkap, dan mode coding."
             textSize = 14f
             setPadding(0, dp(7), 0, dp(14))
         })
@@ -170,8 +170,8 @@ class MainActivity : AppCompatActivity() {
         val portraitHeight = settingSlider(root, "Tinggi mode potret", 170, 330, prefs.getInt("keyboard_height_portrait_dp", 220), " dp")
         val landscapeHeight = settingSlider(root, "Tinggi mode lanskap", 90, 190, prefs.getInt("keyboard_height_landscape_dp", 120), " dp")
         val keyTextSize = settingSlider(root, "Ukuran huruf tombol", 16, 28, prefs.getInt("key_text_size_sp", 21), " sp")
-        val keyBoxScale = settingSlider(root, "Ukuran kotak tombol", 65, 100, prefs.getInt("key_box_scale_percent", 100), "%")
-        root.addView(description("Turunkan sampai 65% untuk memperkecil tampilan kotak tombol tanpa membuat area sentuh ikut terlalu kecil."))
+        val keyBoxScale = settingSlider(root, "Ukuran kotak tombol", 65, 110, prefs.getInt("key_box_scale_percent", 100), "%")
+        root.addView(description("Naikkan sampai 110% agar badan tombol lebih besar. Area sentuh tetap dipisahkan supaya tombol di sebelahnya tidak mudah ikut tertekan."))
         val touchSensitivity = settingSlider(root, "Sensitivitas dan kecepatan tombol", 20, 400, prefs.getInt("touch_sensitivity", 100), "%")
         root.addView(description("Mulai 150%, huruf langsung masuk saat tombol disentuh tanpa menunggu jari dilepas. Rentang gerakan juga diperluas sampai 400% agar ketukan cepat tidak terlewat."))
         val longPressDuration = settingSlider(root, "Penundaan tekan lama", 200, 900, prefs.getInt("long_press_ms", 450), " ms")
