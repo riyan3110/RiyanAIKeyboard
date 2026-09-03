@@ -109,6 +109,9 @@ jobs:
       - name: Match AI Ads Lab 9Router API gateway
         run: python3 tools/apply_v018_9router_gateway_v14.py
 
+      - name: Fix Enter and AI fullscreen layout
+        run: python3 tools/apply_v018_enter_fullscreen_black_v15.py
+
       - name: Build debug APK
         run: RIYAN_KEYSTORE_PATH="$HOME/.riyan-ai-keyboard/debug.keystore" gradle --no-daemon :app:assembleDebug
 
