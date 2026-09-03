@@ -257,7 +257,7 @@ text = text.replace(
 
 helper = '''
     private fun shouldShowKeyPreview(spec: KeySpec): Boolean {
-        if (spec.label.isBlank() || '/' in spec.label) return false
+        if (spec.label.isBlank() || spec.label.matches(Regex("\\d+/\\d+"))) return false
         return spec.label !in setOf(
             "spasi", "?123", "ABC", "⇧", "⇪", "⌫", "↵", "✓", "➤",
             "→", "←", "🔍", "◀", "▶"

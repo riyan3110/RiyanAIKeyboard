@@ -19,6 +19,7 @@ import android.text.InputType
 import android.text.TextUtils
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
@@ -34,10 +35,11 @@ import android.widget.TextView
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.concurrent.thread
+import kotlin.math.abs
 import kotlin.math.hypot
 
 class RiyanKeyboardService : InputMethodService() {
-    private enum class KeyboardMode { LETTERS, SYMBOLS, EMOJI, CLIPBOARD }
+    private enum class KeyboardMode { LETTERS, SYMBOLS, CURSOR, EMOJI, CLIPBOARD }
 
     private data class KeySpec(
         val label: String,
@@ -310,7 +312,7 @@ class RiyanKeyboardService : InputMethodService() {
             setPadding(0, dp(2), 0, 0)
             setBackgroundColor(if (themeUsesPhoto) Color.TRANSPARENT else bg)
             addView(TextView(this@RiyanKeyboardService).apply {
-                text = "AI Ads Keyboard · v0.15"
+                text = "AI Ads Keyboard · v0.16"
                 textSize = 9f
                 setTextColor(Color.rgb(145, 137, 190))
                 gravity = Gravity.CENTER
@@ -658,6 +660,7 @@ class RiyanKeyboardService : InputMethodService() {
         when (mode) {
             KeyboardMode.LETTERS -> renderLetters()
             KeyboardMode.SYMBOLS -> renderSymbols()
+            KeyboardMode.CURSOR -> renderCursorPad()
             KeyboardMode.EMOJI -> renderEmoji()
             KeyboardMode.CLIPBOARD -> renderClipboard()
         }
@@ -831,11 +834,256 @@ class RiyanKeyboardService : InputMethodService() {
                 KeySpec("\\", action = { commit("\\") }),
                 KeySpec("/", action = { commit("/") }),
                 KeySpec(":", action = { commitPunctuation(":") }),
-                KeySpec("spasi", weight = 3.1f, action = { commitSpace() }),
+                KeySpec("spasi", weight = 2.2f, action = { commitSpace() }),
                 KeySpec("?", action = { commitPunctuation("?") }),
+                KeySpec("2/2", weight = 1.25f, action = { mode = KeyboardMode.CURSOR; renderKeyboard() }),
                 KeySpec(enterKeyLabel(), weight = 1.25f, action = { pressEnter() })
             )
         )
+    }
+
+    private fun renderCursorPad() {
+        val workArea = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(dp(4), dp(3), dp(4), dp(3))
+        }
+
+        val touchPad = TextView(this).apply {
+            text = "Mouse\nGeser untuk memindahkan kursor"
+            textSize = if (isLandscape()) 12f else 14f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, Typeface.BOLD)
+            background = cursorPadBackground(pressed = false)
+            contentDescription = "Touchpad kursor teks"
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            setOnTouchListener(cursorPadTouchListener())
+        }
+        workArea.addView(touchPad, LinearLayout.LayoutParams(0, -1, 1.75f).apply {
+            rightMargin = dp(5)
+        })
+
+        val dPad = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            background = cursorPadBackground(pressed = false)
+            setPadding(dp(3), dp(3), dp(3), dp(3))
+        }
+        addCursorDirectionRow(dPad, null, "↑" to KeyEvent.KEYCODE_DPAD_UP, null)
+        addCursorDirectionRow(
+            dPad,
+            "←" to KeyEvent.KEYCODE_DPAD_LEFT,
+            null,
+            "→" to KeyEvent.KEYCODE_DPAD_RIGHT
+        )
+        addCursorDirectionRow(dPad, null, "↓" to KeyEvent.KEYCODE_DPAD_DOWN, null)
+        workArea.addView(dPad, LinearLayout.LayoutParams(0, -1, 1f))
+        keyboardPanel.addView(workArea, LinearLayout.LayoutParams(-1, 0, 1f))
+
+        val bottom = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+        listOf(
+            KeySpec("ABC", weight = 1.2f, action = { mode = KeyboardMode.LETTERS; renderKeyboard() }),
+            KeySpec("1/2", weight = 1.15f, action = { mode = KeyboardMode.SYMBOLS; renderKeyboard() }),
+            KeySpec("spasi", weight = 3.3f, action = { commitSpace() }),
+            KeySpec("⌫", weight = 1.2f, action = { deleteOne() }, longAction = { deleteWord() }),
+            KeySpec(enterKeyLabel(), weight = 1.25f, action = { pressEnter() })
+        ).forEach { spec ->
+            bottom.addView(keyView(spec), LinearLayout.LayoutParams(0, -1, spec.weight).apply {
+                setMargins(dp(2), dp(2), dp(2), dp(2))
+            })
+        }
+        keyboardPanel.addView(bottom, LinearLayout.LayoutParams(-1, dp(cursorBottomRowHeightDp())))
+    }
+
+    private fun addCursorDirectionRow(
+        parent: LinearLayout,
+        left: Pair<String, Int>?,
+        center: Pair<String, Int>?,
+        right: Pair<String, Int>?
+    ) {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+        listOf(left, center, right).forEach { item ->
+            val view = item?.let { (label, keyCode) -> cursorDirectionButton(label, keyCode) } ?: View(this)
+            row.addView(view, LinearLayout.LayoutParams(0, -1, 1f).apply {
+                setMargins(dp(2), dp(2), dp(2), dp(2))
+            })
+        }
+        parent.addView(row, LinearLayout.LayoutParams(-1, 0, 1f))
+    }
+
+    private fun cursorDirectionButton(label: String, keyCode: Int): View {
+        val frame = FrameLayout(this).apply {
+            isClickable = true
+            isFocusable = false
+            background = roundedBackground(specialKeyBg, 11f)
+            contentDescription = when (keyCode) {
+                KeyEvent.KEYCODE_DPAD_LEFT -> "Kursor kiri"
+                KeyEvent.KEYCODE_DPAD_RIGHT -> "Kursor kanan"
+                KeyEvent.KEYCODE_DPAD_UP -> "Kursor naik"
+                else -> "Kursor turun"
+            }
+        }
+        frame.addView(TextView(this).apply {
+            text = label
+            textSize = if (isLandscape()) 20f else 25f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, Typeface.BOLD)
+        }, FrameLayout.LayoutParams(-1, -1))
+
+        var repeatRunnable: Runnable? = null
+        frame.setOnTouchListener { view, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    view.background = roundedBackground(pressedKeyBg, 11f)
+                    moveCursor(keyCode)
+                    keyFeedback(view, longPress = false)
+                    repeatRunnable = object : Runnable {
+                        override fun run() {
+                            moveCursor(keyCode)
+                            handler.postDelayed(this, CURSOR_REPEAT_INTERVAL_MS)
+                        }
+                    }.also { handler.postDelayed(it, CURSOR_REPEAT_DELAY_MS) }
+                    true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    repeatRunnable?.let(handler::removeCallbacks)
+                    repeatRunnable = null
+                    view.background = roundedBackground(specialKeyBg, 11f)
+                    true
+                }
+                else -> true
+            }
+        }
+        return frame
+    }
+
+    private fun cursorPadTouchListener(): View.OnTouchListener {
+        var lastX = 0f
+        var lastY = 0f
+        var accumulatedX = 0f
+        var accumulatedY = 0f
+        var gaveFeedback = false
+        return View.OnTouchListener { view, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    lastX = event.x
+                    lastY = event.y
+                    accumulatedX = 0f
+                    accumulatedY = 0f
+                    gaveFeedback = false
+                    view.background = cursorPadBackground(pressed = true)
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    accumulatedX += event.x - lastX
+                    accumulatedY += event.y - lastY
+                    lastX = event.x
+                    lastY = event.y
+                    val step = dpFloat(if (isLandscape()) 13f else 17f)
+                    var moved = false
+                    while (abs(accumulatedX) >= step) {
+                        moveCursor(if (accumulatedX > 0f) KeyEvent.KEYCODE_DPAD_RIGHT else KeyEvent.KEYCODE_DPAD_LEFT)
+                        accumulatedX += if (accumulatedX > 0f) -step else step
+                        moved = true
+                    }
+                    while (abs(accumulatedY) >= step) {
+                        moveCursor(if (accumulatedY > 0f) KeyEvent.KEYCODE_DPAD_DOWN else KeyEvent.KEYCODE_DPAD_UP)
+                        accumulatedY += if (accumulatedY > 0f) -step else step
+                        moved = true
+                    }
+                    if (moved && !gaveFeedback) {
+                        keyFeedback(view, longPress = false)
+                        gaveFeedback = true
+                    }
+                    true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    view.background = cursorPadBackground(pressed = false)
+                    true
+                }
+                else -> false
+            }
+        }
+    }
+
+    private fun cursorPadBackground(pressed: Boolean) = GradientDrawable(
+        GradientDrawable.Orientation.TOP_BOTTOM,
+        if (pressed) {
+            intArrayOf(pressedKeyBg, Color.rgb(34, 28, 55))
+        } else {
+            intArrayOf(Color.rgb(65, 62, 76), Color.rgb(27, 26, 34))
+        }
+    ).apply {
+        cornerRadius = dpFloat(17f)
+        setStroke(dp(2), if (pressed) Color.rgb(214, 133, 255) else Color.rgb(127, 86, 180))
+    }
+
+    private fun moveCursor(keyCode: Int) {
+        if (aiComposeActive && ::aiInput.isInitialized) {
+            val editable = aiInput.text
+            val start = aiInput.selectionStart.coerceIn(0, editable.length)
+            val end = aiInput.selectionEnd.coerceIn(0, editable.length)
+            cursorTarget(editable.toString(), start, end, keyCode)?.let(aiInput::setSelection)
+        } else {
+            moveTargetCursor(keyCode)
+        }
+        refreshSuggestionsSoon()
+    }
+
+    private fun moveTargetCursor(keyCode: Int) {
+        val ic = currentInputConnection ?: return
+        val extracted = runCatching { ic.getExtractedText(ExtractedTextRequest(), 0) }.getOrNull()
+        val text = extracted?.text?.toString()
+        if (extracted != null && text != null) {
+            val start = extracted.selectionStart.coerceIn(0, text.length)
+            val end = extracted.selectionEnd.coerceIn(0, text.length)
+            val target = cursorTarget(text, start, end, keyCode)
+            if (target != null && ic.setSelection(extracted.startOffset + target, extracted.startOffset + target)) return
+        }
+        ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, keyCode))
+        ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, keyCode))
+    }
+
+    private fun cursorTarget(text: String, selectionStart: Int, selectionEnd: Int, keyCode: Int): Int? {
+        fun lineStartAt(position: Int): Int =
+            if (position <= 0) 0 else text.lastIndexOf('\n', position - 1) + 1
+
+        val start = minOf(selectionStart, selectionEnd).coerceIn(0, text.length)
+        val end = maxOf(selectionStart, selectionEnd).coerceIn(0, text.length)
+        if (start != end) {
+            return if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_UP) start else end
+        }
+        val cursor = end
+        return when (keyCode) {
+            KeyEvent.KEYCODE_DPAD_LEFT -> (cursor - 1).coerceAtLeast(0)
+            KeyEvent.KEYCODE_DPAD_RIGHT -> (cursor + 1).coerceAtMost(text.length)
+            KeyEvent.KEYCODE_DPAD_UP -> {
+                val lineStart = lineStartAt(cursor)
+                if (lineStart <= 0) cursor else {
+                    val previousEnd = lineStart - 1
+                    val previousStart = lineStartAt(previousEnd)
+                    (previousStart + (cursor - lineStart)).coerceAtMost(previousEnd)
+                }
+            }
+            KeyEvent.KEYCODE_DPAD_DOWN -> {
+                val lineStart = lineStartAt(cursor)
+                val lineEnd = text.indexOf('\n', cursor)
+                if (lineEnd < 0) cursor else {
+                    val nextStart = lineEnd + 1
+                    val nextEnd = text.indexOf('\n', nextStart).let { if (it < 0) text.length else it }
+                    (nextStart + (cursor - lineStart)).coerceAtMost(nextEnd)
+                }
+            }
+            else -> null
+        }
     }
 
     private fun addSimpleSymbolRow(symbols: List<String>) = addRow(symbols.map(::symbolSpec))
@@ -1146,6 +1394,8 @@ class RiyanKeyboardService : InputMethodService() {
     private fun resizePanelHeightDp(): Int = if (isLandscape()) 30 else 36
 
     private fun brandBarHeightDp(): Int = if (isLandscape()) 18 else 24
+
+    private fun cursorBottomRowHeightDp(): Int = if (isLandscape()) 34 else 48
 
     private fun aiHeaderHeightDp(): Int = if (isLandscape()) 23 else 27
 
@@ -1692,6 +1942,8 @@ class RiyanKeyboardService : InputMethodService() {
         private const val INSTANT_RESPONSE_THRESHOLD = 150
         private const val DOUBLE_TAP_SHIFT_MS = 420L
         private const val SUGGESTION_AUTO_HIDE_MS = 2_600L
+        private const val CURSOR_REPEAT_DELAY_MS = 330L
+        private const val CURSOR_REPEAT_INTERVAL_MS = 65L
         private const val SHARED_CONTEXT_MAX_AGE_MS = 30L * 60L * 1000L
         private const val MAX_AI_CONTEXT_CHARS = 24_000
         private const val MAX_REPLY_CONTEXT_CHARS = 28_000
