@@ -15,9 +15,16 @@
             <category android:name="android.intent.category.BROWSABLE" />
             <data android:scheme="https" />
         </intent>
+        <package android:name="com.shopee.id" />
+        <package android:name="com.google.android.youtube" />
+        <package android:name="com.instagram.android" />
+        <package android:name="com.zhiliaoapp.musically" />
+        <package android:name="com.ss.android.ugc.trill" />
+        <package android:name="com.twitter.android" />
+        <package android:name="com.facebook.katana" />
     </queries>
 
-    <application android:theme="@style/AppTheme" android:label="@string/app_name" android:allowBackup="false" android:supportsRtl="true" android:hardwareAccelerated="true">
+    <application android:usesCleartextTraffic="true" android:theme="@style/AppTheme" android:label="@string/app_name" android:allowBackup="false" android:supportsRtl="true" android:hardwareAccelerated="true">
         <activity
             android:name=".ScannerActivity"
             android:exported="false"
@@ -50,18 +57,6 @@
         <service android:name=".RiyanKeyboardService" android:permission="android.permission.BIND_INPUT_METHOD" android:exported="true">
             <intent-filter><action android:name="android.view.InputMethod" /></intent-filter>
             <meta-data android:name="android.view.im" android:resource="@xml/method" />
-        </service>
-        <service
-            android:name=".ScreenTextAccessibilityService"
-            android:exported="false"
-            android:label="@string/screen_access_name"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
-            <intent-filter>
-                <action android:name="android.accessibilityservice.AccessibilityService" />
-            </intent-filter>
-            <meta-data
-                android:name="android.accessibilityservice"
-                android:resource="@xml/screen_accessibility_service" />
         </service>
     </application>
 </manifest>

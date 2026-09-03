@@ -16,8 +16,8 @@ android {
         applicationId = "com.riyan.aikeyboard"
         minSdk = 23
         targetSdk = 35
-        versionCode = 18
-        versionName = "0.18.0"
+        versionCode = 19
+        versionName = "0.19.0"
     }
 
     signingConfigs {
@@ -47,6 +47,7 @@ dependencies {
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
     implementation("com.google.android.gms:play-services-mlkit-image-labeling:16.0.8")
     implementation("com.google.mlkit:text-recognition:16.0.1")
+    implementation("com.google.mlkit:object-detection:17.0.2")
 }
 
 // Keep the IME action key synchronized with the field opened by the host app.

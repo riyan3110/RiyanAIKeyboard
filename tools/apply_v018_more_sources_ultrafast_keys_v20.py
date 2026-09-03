@@ -171,10 +171,11 @@ if old_learning not in k:
 k = k.replace(old_learning, new_learning, 1)
 
 # v16 posts normal key feedback to the main-thread queue for every key. Under rapid typing this can
-# build a backlog. At 300-400% skip sound/vibration on normal taps; long-press feedback remains.
+# build a backlog. Keep sound/vibration at 300-400%, but run feedback directly after committing the
+# character so every tap remains tactile without adding a Runnable to the main-thread queue.
 k = k.replace(
     '                        handler.post { keyFeedback(view, longPress = false) }\n',
-    '                        if (!fastTypingMode) handler.post { keyFeedback(view, longPress = false) }\n'
+    '                        keyFeedback(view, longPress = false)\n'
 )
 
 # Popup previews are already disabled in v18, so don't enqueue a no-op Runnable on every tap.
@@ -192,12 +193,6 @@ for line in [
     '                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) keyFace.elevation = dpFloat(2.6f)\n',
 ]:
     k = k.replace(line, '')
-
-# If a normal-feedback call survives another formatting variant, guard it too.
-k = k.replace(
-    '                        keyFeedback(view, longPress = false)\n',
-    '                        if (!fastTypingMode) keyFeedback(view, longPress = false)\n'
-)
 
 ai_path.write_text(ai, encoding='utf-8')
 keyboard_path.write_text(k, encoding='utf-8')
