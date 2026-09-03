@@ -91,6 +91,9 @@ jobs:
       - name: Switch embedded search to Brave
         run: python3 tools/apply_v018_brave_search_v8.py
 
+      - name: Add local object vision pipeline
+        run: python3 tools/apply_v018_local_vision_v9.py
+
       - name: Build debug APK
         run: RIYAN_KEYSTORE_PATH="$HOME/.riyan-ai-keyboard/debug.keystore" gradle --no-daemon :app:assembleDebug
 
