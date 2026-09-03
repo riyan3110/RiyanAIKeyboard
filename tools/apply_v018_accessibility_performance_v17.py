@@ -149,7 +149,7 @@ s = s[:start] + new_event + s[end:]
 s = s.replace('private const val SCREEN_CACHE_DEBOUNCE_MS = 180L', 'private const val SCREEN_CACHE_DEBOUNCE_MS = 900L')
 s = s.replace('private const val OCR_CACHE_DEBOUNCE_MS = 260L', 'private const val OCR_CACHE_DEBOUNCE_MS = 2_500L')
 const_marker = '        private const val OCR_CACHE_DEBOUNCE_MS = 2_500L\n'
-if 'CONTENT_EVENT_THROTTLE_MS' not in s:
+if 'private const val CONTENT_EVENT_THROTTLE_MS' not in s:
     if const_marker not in s:
         raise RuntimeError('accessibility constants marker not found')
     s = s.replace(const_marker, const_marker + '''        private const val CONTENT_EVENT_THROTTLE_MS = 700L
