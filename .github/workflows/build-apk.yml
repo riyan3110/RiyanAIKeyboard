@@ -61,6 +61,9 @@ jobs:
       - name: Apply automatic multi-source research patch
         run: python3 tools/apply_auto_multisource_patch.py
 
+      - name: Apply reference bubble key styling
+        run: python3 tools/apply_bubble_keys_patch.py
+
       - name: Build debug APK
         run: RIYAN_KEYSTORE_PATH="$HOME/.riyan-ai-keyboard/debug.keystore" gradle --no-daemon :app:assembleDebug
 
