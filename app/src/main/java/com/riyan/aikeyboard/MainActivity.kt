@@ -81,7 +81,7 @@ class MainActivity : AppCompatActivity() {
             setTypeface(typeface, Typeface.BOLD)
         })
         root.addView(TextView(this).apply {
-            text = "Versi 0.17.0 · Kamera penelusuran, hasil web di keyboard, pembacaan layar lengkap, dan mode coding."
+            text = "Versi 0.18.0 · Kamera dan web di panel atas, pemindaian lengkap, pembacaan layar, dan mode coding."
             textSize = 14f
             setPadding(0, dp(7), 0, dp(14))
         })

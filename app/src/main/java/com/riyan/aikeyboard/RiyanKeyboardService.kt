@@ -1,8 +1,10 @@
 package com.riyan.aikeyboard
 
+import android.Manifest
 import android.content.ClipboardManager
 import android.content.ClipDescription
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.Typeface
@@ -40,14 +42,58 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
+import androidx.camera.core.Camera
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.FocusMeteringAction
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageProxy
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
+import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.barcode.common.Barcode
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.label.ImageLabeling
+import com.google.mlkit.vision.label.defaults.ImageLabelerOptions
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 import kotlin.math.abs
 import kotlin.math.hypot
 
 class RiyanKeyboardService : InputMethodService() {
-    private enum class KeyboardMode { LETTERS, SYMBOLS, CURSOR, EMOJI, CLIPBOARD, SEARCH }
+    private enum class KeyboardMode { LETTERS, SYMBOLS, CURSOR, EMOJI, CLIPBOARD }
+
+    private class CameraSessionLifecycleOwner : LifecycleOwner {
+        private val registry = LifecycleRegistry(this)
+        override val lifecycle: Lifecycle get() = registry
+
+        fun resume() {
+            registry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
+            registry.handleLifecycleEvent(Lifecycle.Event.ON_START)
+            registry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
+        }
+
+        fun destroy() {
+            if (registry.currentState == Lifecycle.State.DESTROYED) return
+            if (registry.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                registry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
+            }
+            if (registry.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+                registry.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
+            }
+            registry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
+        }
+    }
 
     private data class KeySpec(
         val label: String,
@@ -72,7 +118,36 @@ class RiyanKeyboardService : InputMethodService() {
     private lateinit var aiInput: EditText
     private lateinit var aiFullscreenButton: Button
     private lateinit var heightLabel: TextView
+    private lateinit var searchSurfacePanel: FrameLayout
+    private lateinit var searchSurfaceContent: FrameLayout
     private var searchWebView: WebView? = null
+    private var searchInput: EditText? = null
+    private var scannerPreviewView: PreviewView? = null
+    private var scannerStatusText: TextView? = null
+    private var scannerResultText: TextView? = null
+    private var scannerSearchButton: Button? = null
+    private var scannerCamera: Camera? = null
+    private var scannerLifecycleOwner: CameraSessionLifecycleOwner? = null
+    private var searchSurfaceVisible = false
+    private var searchComposeActive = false
+    private var scannerActive = false
+    private var scannerTorchEnabled = false
+    private var scannerBestScore = 0
+    private var scannerSelectedQuery = ""
+    private var scannerSelectedUrl = ""
+    private var scannerLastFrameAt = 0L
+    private var scannerLastCandidateAt = 0L
+    private val scannerProcessingFrame = AtomicBoolean(false)
+    private val scannerExecutor = Executors.newSingleThreadExecutor()
+    private val barcodeScanner by lazy { BarcodeScanning.getClient() }
+    private val scannerTextRecognizer by lazy { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
+    private val scannerImageLabeler by lazy {
+        ImageLabeling.getClient(
+            ImageLabelerOptions.Builder()
+                .setConfidenceThreshold(0.50f)
+                .build()
+        )
+    }
 
     private var mode = KeyboardMode.LETTERS
     private var shift = false
@@ -153,7 +228,12 @@ class RiyanKeyboardService : InputMethodService() {
         clipboardManager.removePrimaryClipChangedListener(clipboardListener)
         dismissKeyPreview()
         handler.removeCallbacksAndMessages(null)
+        stopEmbeddedScanner()
         destroySearchWebView()
+        barcodeScanner.close()
+        scannerTextRecognizer.close()
+        scannerImageLabeler.close()
+        scannerExecutor.shutdown()
         super.onDestroy()
     }
 
@@ -188,6 +268,7 @@ class RiyanKeyboardService : InputMethodService() {
         }
 
         addAiConversationPanel()
+        addSearchSurfacePanel()
         addUtilityBar()
         addSuggestionBar()
         addResizePanel()
@@ -221,6 +302,16 @@ class RiyanKeyboardService : InputMethodService() {
     override fun onWindowShown() {
         super.onWindowShown()
         consumePendingScanResult()
+        if (searchSurfaceVisible && scannerActive &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+        ) {
+            scannerPreviewView?.post { startEmbeddedScanner() }
+        }
+    }
+
+    override fun onWindowHidden() {
+        stopEmbeddedScanner(keepRequested = true)
+        super.onWindowHidden()
     }
 
     private fun loadPreferences() {
@@ -335,7 +426,7 @@ class RiyanKeyboardService : InputMethodService() {
             setPadding(0, dp(2), 0, 0)
             setBackgroundColor(if (themeUsesPhoto) Color.TRANSPARENT else bg)
             addView(TextView(this@RiyanKeyboardService).apply {
-                text = "AI Ads Keyboard · v0.17"
+                text = "AI Ads Keyboard · v0.18"
                 textSize = 9f
                 setTextColor(Color.rgb(145, 137, 190))
                 gravity = Gravity.CENTER
@@ -437,6 +528,30 @@ class RiyanKeyboardService : InputMethodService() {
         }
         aiPanel.addView(quickActions)
         root.addView(aiPanel, LinearLayout.LayoutParams(-1, dp(currentAiPanelHeightDp())))
+    }
+
+    /**
+     * The camera and search page live above the utility bar so the actual keyboard never gets
+     * replaced. This also avoids opening a full-screen scanner activity after camera permission
+     * has been granted.
+     */
+    private fun addSearchSurfacePanel() {
+        searchSurfaceContent = FrameLayout(this)
+        searchSurfacePanel = FrameLayout(this).apply {
+            setPadding(dp(4), dp(4), dp(4), dp(4))
+            background = GradientDrawable().apply {
+                setColor(Color.WHITE)
+                cornerRadius = dpFloat(24f)
+                setStroke(dp(1), Color.rgb(224, 224, 228))
+            }
+            visibility = View.GONE
+            clipChildren = true
+            clipToPadding = true
+            addView(searchSurfaceContent, FrameLayout.LayoutParams(-1, -1))
+        }
+        root.addView(searchSurfacePanel, LinearLayout.LayoutParams(-1, dp(searchSurfaceHeightDp())).apply {
+            setMargins(dp(4), dp(3), dp(4), dp(4))
+        })
     }
 
     private fun addUtilityBar() {
@@ -638,6 +753,14 @@ class RiyanKeyboardService : InputMethodService() {
         if (::bottomBrandBar.isInitialized) bottomBrandBar.layoutParams = bottomBrandBar.layoutParams.apply {
             height = dp(brandBarHeightDp())
         }
+        if (::searchSurfacePanel.isInitialized) {
+            searchSurfacePanel.layoutParams = (searchSurfacePanel.layoutParams as? LinearLayout.LayoutParams
+                ?: LinearLayout.LayoutParams(-1, dp(searchSurfaceHeightDp()))).apply {
+                width = ViewGroup.LayoutParams.MATCH_PARENT
+                height = dp(searchSurfaceHeightDp())
+                setMargins(dp(4), dp(3), dp(4), dp(4))
+            }
+        }
         if (::aiPanel.isInitialized) {
             aiPanel.layoutParams = (aiPanel.layoutParams as? LinearLayout.LayoutParams
                 ?: LinearLayout.LayoutParams(-1, dp(currentAiPanelHeightDp()))).apply {
@@ -662,7 +785,8 @@ class RiyanKeyboardService : InputMethodService() {
         val suggestionReduction = 0
         val extra = brandBarHeightDp() +
             (if (aiPanelVisible) currentAiPanelHeightDp() else 0) +
-            (if (resizePanelVisible) resizePanelHeightDp() else 0)
+            (if (resizePanelVisible) resizePanelHeightDp() else 0) +
+            (if (searchSurfaceVisible) searchSurfaceHeightDp() + 7 else 0)
         val height = dp((baseKeyboardHeightDp - suggestionReduction).coerceAtLeast(1) + extra)
         root.minimumHeight = height
         root.layoutParams = (root.layoutParams ?: ViewGroup.LayoutParams(-1, height)).apply {
@@ -680,7 +804,6 @@ class RiyanKeyboardService : InputMethodService() {
 
     private fun renderKeyboard() {
         if (!::keyboardPanel.isInitialized) return
-        destroySearchWebView()
         keyboardPanel.removeAllViews()
         when (mode) {
             KeyboardMode.LETTERS -> renderLetters()
@@ -688,7 +811,6 @@ class RiyanKeyboardService : InputMethodService() {
             KeyboardMode.CURSOR -> renderCursorPad()
             KeyboardMode.EMOJI -> renderEmoji()
             KeyboardMode.CLIPBOARD -> renderClipboard()
-            KeyboardMode.SEARCH -> renderSearchPanel()
         }
         refreshSuggestionsSoon()
     }
@@ -703,7 +825,7 @@ class RiyanKeyboardService : InputMethodService() {
         if (!::suggestionBar.isInitialized) return
         handler.removeCallbacks(suggestionAutoHideRunnable)
         suggestionBar.removeAllViews()
-        if (!suggestionsEnabled || isSensitiveEditor() || (mode != KeyboardMode.LETTERS && !aiComposeActive)) {
+        if (!suggestionsEnabled || isSensitiveEditor() || (mode != KeyboardMode.LETTERS && activeInternalInput() == null)) {
             suggestionBar.visibility = View.VISIBLE
             return
         }
@@ -737,22 +859,23 @@ class RiyanKeyboardService : InputMethodService() {
     }
 
     private fun textBeforeTypingCursor(): String {
-        if (aiComposeActive && ::aiInput.isInitialized) {
-            val cursor = aiInput.selectionStart.coerceIn(0, aiInput.text.length)
-            return aiInput.text.substring(0, cursor)
+        activeInternalInput()?.let { input ->
+            val cursor = input.selectionStart.coerceIn(0, input.text.length)
+            return input.text.substring(0, cursor)
         }
         return currentInputConnection?.getTextBeforeCursor(120, 0)?.toString().orEmpty()
     }
 
     private fun acceptPrediction(candidate: KeyboardSuggestion) {
         val insertion = "${candidate.text} "
-        if (aiComposeActive && ::aiInput.isInitialized) {
-            val editable = aiInput.text
-            val start = aiInput.selectionStart.coerceIn(0, editable.length)
-            val end = aiInput.selectionEnd.coerceIn(0, editable.length)
+        val internalInput = activeInternalInput()
+        if (internalInput != null) {
+            val editable = internalInput.text
+            val start = internalInput.selectionStart.coerceIn(0, editable.length)
+            val end = internalInput.selectionEnd.coerceIn(0, editable.length)
             val replaceStart = if (start == end) (start - candidate.replaceLength).coerceAtLeast(0) else minOf(start, end)
             editable.replace(replaceStart, maxOf(start, end), insertion)
-            aiInput.setSelection((replaceStart + insertion.length).coerceAtMost(editable.length))
+            internalInput.setSelection((replaceStart + insertion.length).coerceAtMost(editable.length))
         } else {
             val ic = currentInputConnection ?: return
             ic.beginBatchEdit()
@@ -1055,11 +1178,12 @@ class RiyanKeyboardService : InputMethodService() {
     }
 
     private fun moveCursor(keyCode: Int) {
-        if (aiComposeActive && ::aiInput.isInitialized) {
-            val editable = aiInput.text
-            val start = aiInput.selectionStart.coerceIn(0, editable.length)
-            val end = aiInput.selectionEnd.coerceIn(0, editable.length)
-            cursorTarget(editable.toString(), start, end, keyCode)?.let(aiInput::setSelection)
+        val internalInput = activeInternalInput()
+        if (internalInput != null) {
+            val editable = internalInput.text
+            val start = internalInput.selectionStart.coerceIn(0, editable.length)
+            val end = internalInput.selectionEnd.coerceIn(0, editable.length)
+            cursorTarget(editable.toString(), start, end, keyCode)?.let(internalInput::setSelection)
         } else {
             moveTargetCursor(keyCode)
         }
@@ -1555,7 +1679,7 @@ class RiyanKeyboardService : InputMethodService() {
     }
 
     private fun pasteClipboard() {
-        clipboardManager.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString()?.let(::commitToTarget)
+        clipboardManager.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString()?.let(::commit)
     }
 
     private fun pasteClipboardIntoAiInput() {
@@ -1591,6 +1715,15 @@ class RiyanKeyboardService : InputMethodService() {
     private fun cursorBottomRowHeightDp(): Int = if (isLandscape()) 34 else 48
 
     private fun searchHeaderHeightDp(): Int = if (isLandscape()) 27 else 34
+
+    private fun searchSurfaceHeightDp(): Int {
+        val screenDp = (resources.displayMetrics.heightPixels / resources.displayMetrics.density).toInt()
+        return if (isLandscape()) {
+            (screenDp * 0.42f).toInt().coerceIn(118, 205)
+        } else {
+            (screenDp * 0.44f).toInt().coerceIn(245, 390)
+        }
+    }
 
     private fun aiHeaderHeightDp(): Int = if (isLandscape()) 23 else 27
 
@@ -1734,7 +1867,7 @@ class RiyanKeyboardService : InputMethodService() {
     }
 
     private fun isSensitiveEditor(): Boolean {
-        if (aiComposeActive) return false
+        if (activeInternalInput() != null) return false
         val info = currentInputEditorInfo ?: return false
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
             info.imeOptions.and(EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) != 0
@@ -1754,74 +1887,452 @@ class RiyanKeyboardService : InputMethodService() {
     }
 
     private fun launchScanner() {
+        if (!::searchSurfacePanel.isInitialized) return
+        if (aiPanelVisible) toggleAiPanel(false)
+        if (resizePanelVisible) toggleResizePanel(false)
+        searchComposeActive = false
+        aiComposeActive = false
+        if (::aiInput.isInitialized) aiInput.clearFocus()
+        showEmbeddedCameraPanel(resetCandidate = true)
+
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+            scannerPreviewView?.post { startEmbeddedScanner() }
+            return
+        }
+
+        scannerStatusText?.text = "Izinkan kamera sekali; setelah itu pemindai tetap di kotak ini."
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(CAMERA_PERMISSION_PENDING_KEY, true).apply()
         runCatching {
             startActivity(
                 Intent(this, ScannerActivity::class.java)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
             )
         }.onFailure {
-            Toast.makeText(this, "Kamera penelusuran tidak dapat dibuka.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Izin kamera tidak dapat dibuka.", Toast.LENGTH_SHORT).show()
         }
     }
 
+    /** Accepts old v0.17 scan results and the one-time permission hand-off. */
     private fun consumePendingScanResult() {
         if (!::keyboardPanel.isInitialized) return
         val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        val cameraPending = prefs.getBoolean(CAMERA_PERMISSION_PENDING_KEY, false)
+        if (cameraPending &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+        ) {
+            prefs.edit().putBoolean(CAMERA_PERMISSION_PENDING_KEY, false).apply()
+            showEmbeddedCameraPanel(resetCandidate = false)
+            scannerPreviewView?.post { startEmbeddedScanner() }
+        }
+
         if (!prefs.getBoolean(SCAN_READY_KEY, false)) return
         val nonce = prefs.getLong(SCAN_NONCE_KEY, 0L)
         val query = prefs.getString(SCAN_QUERY_KEY, "").orEmpty().trim()
         val directUrl = prefs.getString(SCAN_URL_KEY, "").orEmpty().trim()
         prefs.edit().putBoolean(SCAN_READY_KEY, false).apply()
         if (nonce == lastConsumedScanNonce || (query.isBlank() && directUrl.isBlank())) return
-
         lastConsumedScanNonce = nonce
-        searchQuery = query.ifBlank { directUrl }
-        searchUrl = directUrl.takeIf(::isWebUrl) ?: googleSearchUrl(searchQuery)
-        aiComposeActive = false
-        if (::aiInput.isInitialized) aiInput.clearFocus()
-        mode = KeyboardMode.SEARCH
-        renderKeyboard()
+        openSearchResults(query.ifBlank { directUrl }, directUrl)
     }
 
-    private fun renderSearchPanel() {
-        val border = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(3), dp(3), dp(3), dp(3))
-            background = GradientDrawable().apply {
-                setColor(Color.WHITE)
-                cornerRadius = dpFloat(20f)
-            }
+    private fun showSearchSurface() {
+        searchSurfaceVisible = true
+        searchSurfacePanel.visibility = View.VISIBLE
+        applyRootHeight()
+    }
+
+    private fun closeSearchSurface() {
+        searchComposeActive = false
+        searchInput?.clearFocus()
+        searchInput = null
+        stopEmbeddedScanner()
+        destroySearchWebView()
+        if (::searchSurfaceContent.isInitialized) searchSurfaceContent.removeAllViews()
+        searchSurfaceVisible = false
+        if (::searchSurfacePanel.isInitialized) searchSurfacePanel.visibility = View.GONE
+        applyRootHeight()
+    }
+
+    private fun showEmbeddedCameraPanel(resetCandidate: Boolean) {
+        stopEmbeddedScanner()
+        destroySearchWebView()
+        searchComposeActive = false
+        searchInput = null
+        if (resetCandidate) {
+            scannerBestScore = 0
+            scannerSelectedQuery = ""
+            scannerSelectedUrl = ""
+            scannerLastCandidateAt = 0L
         }
+        scannerActive = true
+        searchSurfaceContent.removeAllViews()
+
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = roundedBackground(Color.rgb(25, 24, 31), 17f)
+            background = roundedBackground(Color.rgb(18, 18, 23), 20f)
         }
-
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(5), dp(2), dp(3), dp(2))
+            setPadding(dp(7), dp(2), dp(4), dp(2))
+            setBackgroundColor(Color.rgb(34, 33, 41))
         }
-        header.addView(TextView(this).apply {
-            text = "Hasil: $searchQuery"
-            textSize = 12f
-            maxLines = 1
-            ellipsize = TextUtils.TruncateAt.END
+        val title = TextView(this).apply {
+            text = "Kamera penelusuran"
+            textSize = if (isLandscape()) 11f else 13f
             setTextColor(Color.WHITE)
             setTypeface(typeface, Typeface.BOLD)
-            setPadding(dp(4), 0, dp(4), 0)
-        }, LinearLayout.LayoutParams(0, dp(searchHeaderHeightDp()), 1f))
-        header.addView(compactButton("📷") { launchScanner() }, LinearLayout.LayoutParams(dp(40), dp(searchHeaderHeightDp())))
-        header.addView(compactButton("↗") { openExternalLink(searchUrl) }, LinearLayout.LayoutParams(dp(40), dp(searchHeaderHeightDp())).apply {
-            leftMargin = dp(2)
-        })
-        header.addView(compactButton("✕") {
-            mode = KeyboardMode.LETTERS
-            renderKeyboard()
-        }, LinearLayout.LayoutParams(dp(40), dp(searchHeaderHeightDp())).apply {
+        }
+        header.addView(title, LinearLayout.LayoutParams(-2, dp(searchHeaderHeightDp())))
+        scannerStatusText = TextView(this).apply {
+            text = "Pindai teks, kode, label, dokumen, dan objek…"
+            textSize = if (isLandscape()) 8f else 10f
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+            setTextColor(Color.LTGRAY)
+            setPadding(dp(7), 0, dp(3), 0)
+        }
+        header.addView(scannerStatusText, LinearLayout.LayoutParams(0, dp(searchHeaderHeightDp()), 1f))
+        header.addView(compactButton("⚡") { toggleScannerTorch() }, LinearLayout.LayoutParams(dp(38), dp(searchHeaderHeightDp())))
+        header.addView(compactButton("✕") { closeSearchSurface() }, LinearLayout.LayoutParams(dp(38), dp(searchHeaderHeightDp())).apply {
             leftMargin = dp(2)
         })
         content.addView(header, LinearLayout.LayoutParams(-1, dp(searchHeaderHeightDp() + 4)))
+
+        val previewFrame = FrameLayout(this)
+        scannerPreviewView = PreviewView(this).apply {
+            scaleType = PreviewView.ScaleType.FILL_CENTER
+            implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+            setBackgroundColor(Color.BLACK)
+            setOnTouchListener { _, event ->
+                if (event.actionMasked == MotionEvent.ACTION_UP) {
+                    focusScannerAt(event.x, event.y)
+                    performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                }
+                true
+            }
+        }
+        previewFrame.addView(scannerPreviewView, FrameLayout.LayoutParams(-1, -1))
+        previewFrame.addView(View(this).apply {
+            background = GradientDrawable().apply {
+                setColor(Color.TRANSPARENT)
+                cornerRadius = dpFloat(18f)
+                setStroke(dp(2), Color.WHITE)
+            }
+        }, FrameLayout.LayoutParams(-1, if (isLandscape()) dp(72) else dp(140), Gravity.CENTER).apply {
+            setMargins(dp(28), 0, dp(28), 0)
+        })
+        content.addView(previewFrame, LinearLayout.LayoutParams(-1, 0, 1f))
+
+        val resultCard = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(6), dp(3), dp(4), dp(3))
+            setBackgroundColor(Color.rgb(31, 30, 38))
+        }
+        scannerResultText = TextView(this).apply {
+            text = scannerSelectedQuery.ifBlank { "Arahkan objek ke kotak, lalu ketuk layar untuk fokus." }
+            textSize = if (isLandscape()) 9f else 11f
+            maxLines = if (isLandscape()) 1 else 2
+            ellipsize = TextUtils.TruncateAt.END
+            setTextColor(Color.WHITE)
+            setPadding(dp(4), 0, dp(5), 0)
+        }
+        resultCard.addView(scannerResultText, LinearLayout.LayoutParams(0, if (isLandscape()) dp(36) else dp(49), 1f))
+        resultCard.addView(compactButton("Ulang") { showEmbeddedCameraPanel(resetCandidate = true); startEmbeddedScanner() }, LinearLayout.LayoutParams(dp(52), if (isLandscape()) dp(30) else dp(38)))
+        scannerSearchButton = compactButton("Cari") { openSearchResults(scannerSelectedQuery, scannerSelectedUrl) }.apply {
+            isEnabled = scannerSelectedQuery.isNotBlank() || scannerSelectedUrl.isNotBlank()
+        }
+        resultCard.addView(scannerSearchButton, LinearLayout.LayoutParams(dp(55), if (isLandscape()) dp(30) else dp(38)).apply {
+            leftMargin = dp(3)
+        })
+        content.addView(resultCard, LinearLayout.LayoutParams(-1, if (isLandscape()) dp(40) else dp(55)))
+        searchSurfaceContent.addView(content, FrameLayout.LayoutParams(-1, -1))
+        showSearchSurface()
+    }
+
+    private fun startEmbeddedScanner() {
+        if (!scannerActive || !searchSurfaceVisible) return
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) return
+        val previewView = scannerPreviewView ?: return
+        val providerFuture = ProcessCameraProvider.getInstance(this)
+        providerFuture.addListener({
+            if (!scannerActive || scannerPreviewView !== previewView) return@addListener
+            runCatching {
+                val provider = providerFuture.get()
+                val owner = CameraSessionLifecycleOwner().also { it.resume() }
+                scannerLifecycleOwner?.destroy()
+                scannerLifecycleOwner = owner
+                val preview = Preview.Builder().build().also { it.setSurfaceProvider(previewView.surfaceProvider) }
+                val analysis = ImageAnalysis.Builder()
+                    .setTargetResolution(android.util.Size(1280, 720))
+                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                    .build()
+                    .also { it.setAnalyzer(scannerExecutor, ::analyzeScannerFrame) }
+                provider.unbindAll()
+                scannerCamera = provider.bindToLifecycle(owner, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis)
+                scannerStatusText?.text = "Aktif · ketuk objek untuk fokus"
+                previewView.postDelayed({ focusScannerAt(previewView.width / 2f, previewView.height / 2f) }, 450L)
+            }.onFailure {
+                scannerStatusText?.text = "Kamera gagal dimulai. Tutup lalu coba lagi."
+            }
+        }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun stopEmbeddedScanner(keepRequested: Boolean = false) {
+        scannerLifecycleOwner?.destroy()
+        scannerLifecycleOwner = null
+        scannerCamera = null
+        scannerTorchEnabled = false
+        scannerProcessingFrame.set(false)
+        if (!keepRequested) scannerActive = false
+    }
+
+    private fun focusScannerAt(x: Float, y: Float) {
+        val preview = scannerPreviewView ?: return
+        val camera = scannerCamera ?: return
+        if (preview.width <= 0 || preview.height <= 0) return
+        val point = preview.meteringPointFactory.createPoint(x, y)
+        val action = FocusMeteringAction.Builder(
+            point,
+            FocusMeteringAction.FLAG_AF or FocusMeteringAction.FLAG_AE or FocusMeteringAction.FLAG_AWB
+        ).setAutoCancelDuration(3, TimeUnit.SECONDS).build()
+        camera.cameraControl.startFocusAndMetering(action)
+    }
+
+    private fun toggleScannerTorch() {
+        val camera = scannerCamera
+        if (camera == null || !camera.cameraInfo.hasFlashUnit()) {
+            Toast.makeText(this, "Lampu kamera tidak tersedia.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        scannerTorchEnabled = !scannerTorchEnabled
+        camera.cameraControl.enableTorch(scannerTorchEnabled)
+        scannerStatusText?.text = if (scannerTorchEnabled) "Lampu aktif · arahkan objek ke kotak" else "Aktif · ketuk objek untuk fokus"
+    }
+
+    @androidx.camera.core.ExperimentalGetImage
+    private fun analyzeScannerFrame(imageProxy: ImageProxy) {
+        val now = System.currentTimeMillis()
+        if (now - scannerLastFrameAt < SCANNER_FRAME_INTERVAL_MS || !scannerProcessingFrame.compareAndSet(false, true)) {
+            imageProxy.close()
+            return
+        }
+        scannerLastFrameAt = now
+        val mediaImage = imageProxy.image
+        if (mediaImage == null) {
+            finishScannerFrame(imageProxy)
+            return
+        }
+        val input = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
+        barcodeScanner.process(input)
+            .addOnSuccessListener { barcodes ->
+                val barcode = barcodes.firstOrNull { !it.rawValue.isNullOrBlank() }
+                if (barcode != null) {
+                    publishScannerBarcode(barcode)
+                    finishScannerFrame(imageProxy)
+                } else {
+                    analyzeScannerTextAndObjects(input, imageProxy)
+                }
+            }
+            .addOnFailureListener { analyzeScannerTextAndObjects(input, imageProxy) }
+    }
+
+    private fun analyzeScannerTextAndObjects(input: InputImage, imageProxy: ImageProxy) {
+        var remaining = 2
+        var recognizedText = ""
+        var labels = emptyList<Pair<String, Float>>()
+        fun completeOne() {
+            remaining -= 1
+            if (remaining != 0) return
+            publishScannerVisualResult(recognizedText, labels)
+            finishScannerFrame(imageProxy)
+        }
+        scannerTextRecognizer.process(input).addOnCompleteListener { task ->
+            if (task.isSuccessful) recognizedText = task.result?.text.orEmpty()
+            completeOne()
+        }
+        scannerImageLabeler.process(input).addOnCompleteListener { task ->
+            if (task.isSuccessful) {
+                labels = task.result.orEmpty()
+                    .sortedByDescending { it.confidence }
+                    .map { it.text.trim() to it.confidence }
+                    .filter { it.first.isNotBlank() }
+                    .distinctBy { it.first.lowercase() }
+                    .take(6)
+            }
+            completeOne()
+        }
+    }
+
+    private fun publishScannerBarcode(barcode: Barcode) {
+        val raw = barcode.rawValue.orEmpty().trim()
+        if (raw.isBlank()) return
+        val directUrl = when {
+            barcode.valueType == Barcode.TYPE_URL -> barcode.url?.url.orEmpty()
+            isWebUrl(raw) -> raw
+            else -> ""
+        }
+        val query = when (barcode.valueType) {
+            Barcode.TYPE_WIFI -> "WiFi ${barcode.wifi?.ssid.orEmpty()} $raw"
+            Barcode.TYPE_EMAIL -> barcode.email?.address.orEmpty().ifBlank { raw }
+            Barcode.TYPE_PHONE -> barcode.phone?.number.orEmpty().ifBlank { raw }
+            Barcode.TYPE_SMS -> listOf(barcode.sms?.phoneNumber, barcode.sms?.message).filterNotNull().joinToString(" ").ifBlank { raw }
+            Barcode.TYPE_GEO -> barcode.geoPoint?.let { "lokasi ${it.lat}, ${it.lng}" } ?: raw
+            Barcode.TYPE_CONTACT_INFO -> listOf(
+                barcode.contactInfo?.name?.formattedName,
+                barcode.contactInfo?.organization,
+                barcode.contactInfo?.phones?.firstOrNull()?.number
+            ).filterNotNull().joinToString(" ").ifBlank { raw }
+            Barcode.TYPE_DRIVER_LICENSE -> barcode.driverLicense?.let {
+                "${it.firstName.orEmpty()} ${it.lastName.orEmpty()} ${it.documentType.orEmpty()} ${it.licenseNumber.orEmpty()}".trim()
+            } ?: raw
+            Barcode.TYPE_ISBN -> "ISBN $raw"
+            else -> when (barcode.format) {
+                Barcode.FORMAT_EAN_8, Barcode.FORMAT_EAN_13, Barcode.FORMAT_UPC_A, Barcode.FORMAT_UPC_E,
+                Barcode.FORMAT_ITF, Barcode.FORMAT_CODABAR, Barcode.FORMAT_CODE_39,
+                Barcode.FORMAT_CODE_93, Barcode.FORMAT_CODE_128 -> "produk kode $raw"
+                else -> raw
+            }
+        }.replace(Regex("\\s+"), " ").trim()
+        val label = when {
+            directUrl.isNotBlank() -> "Tautan terdeteksi"
+            barcode.valueType == Barcode.TYPE_WIFI -> "WiFi terdeteksi"
+            barcode.valueType == Barcode.TYPE_GEO -> "Lokasi terdeteksi"
+            barcode.valueType == Barcode.TYPE_CONTACT_INFO -> "Kontak terdeteksi"
+            else -> "Kode terdeteksi"
+        }
+        setScannerCandidate(query, directUrl, 1_000, label)
+    }
+
+    private fun publishScannerVisualResult(rawText: String, labels: List<Pair<String, Float>>) {
+        val lines = rawText.lineSequence()
+            .map { it.trim().replace(Regex("\\s+"), " ") }
+            .filter { it.length in 2..100 && it.any(Char::isLetterOrDigit) }
+            .distinctBy { it.lowercase() }
+            .toList()
+        val directUrl = lines.asSequence()
+            .mapNotNull { OCR_URL_REGEX.find(it)?.value }
+            .map { if (it.startsWith("www.", true)) "https://$it" else it }
+            .firstOrNull().orEmpty()
+        val rankedLines = lines
+            .map { it to scannerTextLineScore(it) }
+            .filter { it.second > 0 }
+            .sortedByDescending { it.second }
+            .take(4)
+            .map { it.first }
+        val usefulLabels = labels
+            .filter { it.second >= 0.50f }
+            .map { scannerLabelForSearch(it.first) }
+            .filter(String::isNotBlank)
+            .distinctBy { it.lowercase() }
+            .take(3)
+        val queryParts = (rankedLines.take(3) + usefulLabels.take(2))
+            .distinctBy { it.lowercase() }
+        if (queryParts.isEmpty() && directUrl.isBlank()) return
+        val query = directUrl.ifBlank { queryParts.joinToString(" ").take(240) }
+        val hasStructuredText = lines.any {
+            OCR_EMAIL_REGEX.containsMatchIn(it) || OCR_PHONE_REGEX.containsMatchIn(it) ||
+                OCR_PRICE_REGEX.containsMatchIn(it) || OCR_DATE_REGEX.containsMatchIn(it)
+        }
+        val score = rankedLines.sumOf(::scannerTextLineScore) +
+            (labels.firstOrNull()?.second?.times(30)?.toInt() ?: 0) +
+            (if (hasStructuredText) 18 else 0) + (if (directUrl.isNotBlank()) 400 else 0)
+        val source = when {
+            directUrl.isNotBlank() -> "Tautan pada tulisan terdeteksi"
+            rankedLines.isNotEmpty() && usefulLabels.isNotEmpty() -> "Teks, label, dan objek terdeteksi"
+            rankedLines.isNotEmpty() -> if (hasStructuredText) "Data dokumen terdeteksi" else "Tulisan terdeteksi"
+            else -> "Objek terdeteksi"
+        }
+        setScannerCandidate(query, directUrl, score, source)
+    }
+
+    private fun scannerTextLineScore(line: String): Int {
+        var score = 0
+        if (line.any(Char::isLetter)) score += 12
+        if (line.any(Char::isDigit)) score += 5
+        if (line.length in 3..42) score += 12 else if (line.length > 75) score -= 8
+        if (line.count(Char::isUpperCase) >= 2) score += 8
+        if (line.any(Char::isLetter) && line.any(Char::isDigit)) score += 6
+        if (OCR_PRICE_REGEX.containsMatchIn(line) || OCR_DATE_REGEX.containsMatchIn(line)) score += 7
+        if (line.count { it == ',' || it == ';' } >= 4) score -= 10
+        return score
+    }
+
+    private fun scannerLabelForSearch(raw: String): String {
+        val normalized = raw.trim().lowercase()
+        return SCANNER_LABEL_TRANSLATIONS[normalized] ?: raw.trim()
+    }
+
+    private fun setScannerCandidate(query: String, url: String, score: Int, source: String) {
+        val cleanQuery = query.replace(Regex("\\s+"), " ").trim()
+        if (cleanQuery.isBlank() && url.isBlank()) return
+        val now = System.currentTimeMillis()
+        if (score < scannerBestScore && now - scannerLastCandidateAt < SCANNER_CANDIDATE_HOLD_MS) return
+        scannerBestScore = score
+        scannerLastCandidateAt = now
+        scannerSelectedQuery = cleanQuery.ifBlank { url }
+        scannerSelectedUrl = url
+        handler.post {
+            scannerStatusText?.text = "$source · tekan Cari"
+            scannerResultText?.text = scannerSelectedQuery
+            scannerSearchButton?.isEnabled = true
+        }
+    }
+
+    private fun finishScannerFrame(imageProxy: ImageProxy) {
+        imageProxy.close()
+        scannerProcessingFrame.set(false)
+    }
+
+    private fun openSearchResults(query: String, directUrl: String = "") {
+        val cleanQuery = query.trim().ifBlank { directUrl.trim() }
+        if (cleanQuery.isBlank()) return
+        searchQuery = cleanQuery
+        searchUrl = directUrl.takeIf(::isWebUrl) ?: if (isWebUrl(cleanQuery)) cleanQuery else googleSearchUrl(cleanQuery)
+        stopEmbeddedScanner()
+        showSearchWebPanel()
+    }
+
+    private fun showSearchWebPanel() {
+        destroySearchWebView()
+        scannerPreviewView = null
+        searchSurfaceContent.removeAllViews()
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = roundedBackground(Color.WHITE, 20f)
+        }
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(4), dp(2), dp(3), dp(2))
+            setBackgroundColor(Color.rgb(239, 239, 243))
+        }
+        val queryInput = EditText(this).apply {
+            setText(searchQuery)
+            textSize = if (isLandscape()) 10f else 12f
+            setTextColor(Color.rgb(28, 28, 33))
+            setHintTextColor(Color.GRAY)
+            hint = "Ketik pencarian…"
+            maxLines = 1
+            isSingleLine = true
+            showSoftInputOnFocus = false
+            setPadding(dp(9), 0, dp(7), 0)
+            background = roundedBackground(Color.WHITE, 12f)
+            setSelection(text.length)
+            setOnClickListener {
+                searchComposeActive = true
+                aiComposeActive = false
+            }
+            setOnFocusChangeListener { _, focused -> searchComposeActive = focused }
+        }
+        searchInput = queryInput
+        header.addView(queryInput, LinearLayout.LayoutParams(0, dp(searchHeaderHeightDp()), 1f))
+        header.addView(compactButton("Cari") { performSearchFromInput() }, LinearLayout.LayoutParams(dp(46), dp(searchHeaderHeightDp())).apply { leftMargin = dp(3) })
+        header.addView(compactButton("📷") { launchScanner() }, LinearLayout.LayoutParams(dp(38), dp(searchHeaderHeightDp())).apply { leftMargin = dp(2) })
+        header.addView(compactButton("↗") { openExternalLink(searchUrl) }, LinearLayout.LayoutParams(dp(38), dp(searchHeaderHeightDp())).apply { leftMargin = dp(2) })
+        header.addView(compactButton("✕") { closeSearchSurface() }, LinearLayout.LayoutParams(dp(38), dp(searchHeaderHeightDp())).apply { leftMargin = dp(2) })
+        content.addView(header, LinearLayout.LayoutParams(-1, dp(searchHeaderHeightDp() + 5)))
 
         var userTouchedPage = false
         val webView = WebView(this).apply {
@@ -1831,7 +2342,7 @@ class RiyanKeyboardService : InputMethodService() {
             settings.cacheMode = WebSettings.LOAD_DEFAULT
             settings.loadsImagesAutomatically = true
             settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
-            settings.userAgentString = settings.userAgentString + " AIAdsKeyboard/0.17"
+            settings.userAgentString = settings.userAgentString + " AIAdsKeyboard/0.18"
             setOnTouchListener { _, event ->
                 if (event.actionMasked == MotionEvent.ACTION_DOWN) userTouchedPage = true
                 false
@@ -1841,9 +2352,7 @@ class RiyanKeyboardService : InputMethodService() {
                     val target = request?.url?.toString().orEmpty()
                     val isUserNavigation = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                         request?.hasGesture() == true || userTouchedPage
-                    } else {
-                        userTouchedPage
-                    }
+                    } else userTouchedPage
                     userTouchedPage = false
                     if (!isUserNavigation || target.isBlank()) return false
                     openExternalLink(target)
@@ -1863,10 +2372,19 @@ class RiyanKeyboardService : InputMethodService() {
         }
         searchWebView = webView
         content.addView(webView, LinearLayout.LayoutParams(-1, 0, 1f))
-        border.addView(content, LinearLayout.LayoutParams(-1, -1))
-        keyboardPanel.addView(border, LinearLayout.LayoutParams(-1, -1).apply {
-            setMargins(dp(2), dp(1), dp(2), dp(1))
-        })
+        searchSurfaceContent.addView(content, FrameLayout.LayoutParams(-1, -1))
+        showSearchSurface()
+        queryInput.requestFocus()
+        searchComposeActive = true
+    }
+
+    private fun performSearchFromInput() {
+        val query = searchInput?.text?.toString()?.trim().orEmpty()
+        if (query.isBlank()) return
+        searchQuery = query
+        searchUrl = if (isWebUrl(query)) query else googleSearchUrl(query)
+        searchWebView?.loadUrl(searchUrl)
+        searchInput?.setSelection(searchInput?.text?.length ?: 0)
     }
 
     private fun openExternalLink(rawUrl: String) {
@@ -1949,6 +2467,12 @@ class RiyanKeyboardService : InputMethodService() {
         }.onFailure {
             if (::aiStatus.isInitialized) aiStatus.text = "Buka aplikasi AI Ads Keyboard untuk pengaturan"
         }
+    }
+
+    private fun activeInternalInput(): EditText? = when {
+        searchComposeActive -> searchInput
+        aiComposeActive && ::aiInput.isInitialized -> aiInput
+        else -> null
     }
 
     private fun deleteOne() {
@@ -2059,6 +2583,7 @@ class RiyanKeyboardService : InputMethodService() {
 
 
     private fun enterKeyLabel(): String {
+        if (searchComposeActive) return "🔍"
         val action = currentInputEditorInfo?.imeOptions?.and(EditorInfo.IME_MASK_ACTION)
             ?: EditorInfo.IME_ACTION_NONE
         return when (action) {
@@ -2073,6 +2598,10 @@ class RiyanKeyboardService : InputMethodService() {
     }
 
     private fun pressEnter() {
+        if (searchComposeActive) {
+            performSearchFromInput()
+            return
+        }
         if (aiComposeActive) {
             runAiConversation()
             return
@@ -2092,11 +2621,13 @@ class RiyanKeyboardService : InputMethodService() {
     }
 
     private fun commit(text: String) {
-        if (aiComposeActive && ::aiInput.isInitialized) {
-            val editable = aiInput.text
-            val start = aiInput.selectionStart.coerceIn(0, editable.length)
-            val end = aiInput.selectionEnd.coerceIn(0, editable.length)
+        val internalInput = activeInternalInput()
+        if (internalInput != null) {
+            val editable = internalInput.text
+            val start = internalInput.selectionStart.coerceIn(0, editable.length)
+            val end = internalInput.selectionEnd.coerceIn(0, editable.length)
             editable.replace(minOf(start, end), maxOf(start, end), text)
+            internalInput.setSelection((minOf(start, end) + text.length).coerceAtMost(editable.length))
             refreshSuggestionsSoon()
         } else {
             commitToTarget(text)
@@ -2109,7 +2640,7 @@ class RiyanKeyboardService : InputMethodService() {
     }
 
     private fun commitSpace() {
-        if (aiComposeActive) {
+        if (activeInternalInput() != null) {
             learnCurrentBoundary()
             commit(" ")
             return
@@ -2133,7 +2664,7 @@ class RiyanKeyboardService : InputMethodService() {
 
     private fun commitPunctuation(mark: String) {
         learnCurrentBoundary(completed = mark in listOf(".", "?", "!"), terminalMark = mark)
-        commit(if (!aiComposeActive && punctuationSpaceEnabled) "$mark " else mark)
+        commit(if (activeInternalInput() == null && punctuationSpaceEnabled) "$mark " else mark)
         if (automaticCapitalizationEnabled && mark in listOf(".", "?", "!")) {
             shift = true
             if (mode == KeyboardMode.LETTERS) renderKeyboard()
@@ -2396,5 +2927,39 @@ class RiyanKeyboardService : InputMethodService() {
         private const val SCAN_NONCE_KEY = "camera_search_nonce"
         private const val SCAN_QUERY_KEY = "camera_search_query"
         private const val SCAN_URL_KEY = "camera_search_url"
+        private const val CAMERA_PERMISSION_PENDING_KEY = "camera_permission_pending"
+        private const val SCANNER_FRAME_INTERVAL_MS = 260L
+        private const val SCANNER_CANDIDATE_HOLD_MS = 1_250L
+
+        private val OCR_URL_REGEX = Regex("""(?i)\b(?:https?://|www\.)[^\s<>\"']+""")
+        private val OCR_EMAIL_REGEX = Regex("""(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b""")
+        private val OCR_PHONE_REGEX = Regex("""(?<!\d)(?:\+?62|0)[\d\s-]{8,15}(?!\d)""")
+        private val OCR_PRICE_REGEX = Regex("""(?i)(?:Rp\.?|IDR|USD|\$)\s?\d[\d.,]*""")
+        private val OCR_DATE_REGEX = Regex("""(?i)\b(?:\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}|\d{1,2}\s+(?:jan|feb|mar|apr|mei|jun|jul|agu|sep|okt|nov|des)[a-z]*\s+\d{2,4})\b""")
+
+        private val SCANNER_LABEL_TRANSLATIONS = mapOf(
+            "food" to "makanan",
+            "drink" to "minuman",
+            "bottle" to "botol",
+            "packaged goods" to "produk kemasan",
+            "personal care" to "produk perawatan diri",
+            "cosmetics" to "kosmetik",
+            "medicine" to "obat",
+            "electronic device" to "perangkat elektronik",
+            "mobile phone" to "ponsel",
+            "computer" to "komputer",
+            "vehicle" to "kendaraan",
+            "plant" to "tanaman",
+            "animal" to "hewan",
+            "document" to "dokumen",
+            "receipt" to "struk belanja",
+            "book" to "buku",
+            "clothing" to "pakaian",
+            "furniture" to "furnitur",
+            "tool" to "alat",
+            "toy" to "mainan",
+            "fruit" to "buah",
+            "vegetable" to "sayuran"
+        )
     }
 }

@@ -21,8 +21,10 @@
         <activity
             android:name=".ScannerActivity"
             android:exported="false"
-            android:label="Kamera Penelusuran"
-            android:theme="@style/AppTheme" />
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:label="Izin Kamera"
+            android:theme="@style/CameraPermissionTheme" />
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
