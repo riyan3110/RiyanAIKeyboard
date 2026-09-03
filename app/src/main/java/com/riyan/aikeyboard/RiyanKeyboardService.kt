@@ -471,7 +471,7 @@ class RiyanKeyboardService : InputMethodService() {
             setPadding(0, dp(2), 0, 0)
             setBackgroundColor(if (themeUsesPhoto) Color.TRANSPARENT else bg)
             addView(TextView(this@RiyanKeyboardService).apply {
-                text = "AI Ads Keyboard · v0.19"
+                text = "AI Ads Keyboard · v0.20"
                 textSize = 9f
                 setTextColor(Color.rgb(145, 137, 190))
                 gravity = Gravity.CENTER
@@ -484,15 +484,19 @@ class RiyanKeyboardService : InputMethodService() {
     private fun addAiConversationPanel() {
         aiPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(2), dp(3), dp(2), dp(3))
-            background = roundedStrokedBackground(Color.BLACK, 10f, purple, 2)
+            setPadding(dp(5), dp(4), dp(5), dp(4))
+            background = roundedStrokedBackground(Color.BLACK, 12f, purple, 2)
             visibility = View.GONE
+            clipChildren = true
+            clipToPadding = true
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) clipToOutline = true
         }
 
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
+        val headerControlHeight = dp(aiHeaderControlHeightDp())
         header.addView(TextView(this).apply {
             text = "✨ Obrolan AI"
             textSize = if (isLandscape()) 15f else 18f
@@ -501,20 +505,20 @@ class RiyanKeyboardService : InputMethodService() {
             setPadding(dp(9), 0, dp(10), 0)
             typeface = aiBoldTypeface
             background = roundedBackground(purple, 8f)
-        }, LinearLayout.LayoutParams(-2, dp(aiHeaderHeightDp())))
+        }, LinearLayout.LayoutParams(-2, headerControlHeight))
         header.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
         header.addView(aiPanelButton("Hapus") {
             conversationHistory.clear()
             pendingText = null
             aiAnswer.text = "Jawaban AI akan muncul di sini."
             aiStatus.text = activeProviderLabel()
-        }, LinearLayout.LayoutParams(dp(62), dp(aiHeaderHeightDp())))
+        }, LinearLayout.LayoutParams(dp(58), headerControlHeight))
         aiFullscreenButton = aiPanelButton("⛶") { toggleAiFullscreen() }
         aiFullscreenButton.contentDescription = "Buka obrolan AI layar penuh"
-        header.addView(aiFullscreenButton, LinearLayout.LayoutParams(dp(44), dp(aiHeaderHeightDp())).apply {
+        header.addView(aiFullscreenButton, LinearLayout.LayoutParams(dp(40), headerControlHeight).apply {
             leftMargin = dp(2)
         })
-        header.addView(aiPanelButton("✕") { toggleAiPanel(false) }, LinearLayout.LayoutParams(dp(44), dp(aiHeaderHeightDp())).apply {
+        header.addView(aiPanelButton("✕") { toggleAiPanel(false) }, LinearLayout.LayoutParams(dp(40), headerControlHeight).apply {
             leftMargin = dp(2)
         })
         aiPanel.addView(header, LinearLayout.LayoutParams(-1, dp(aiHeaderHeightDp())))
@@ -531,12 +535,12 @@ class RiyanKeyboardService : InputMethodService() {
             setBackgroundColor(Color.BLACK)
             addView(aiAnswer, ViewGroup.LayoutParams(-1, -2))
         }
-        aiPanel.addView(aiAnswerScroll, LinearLayout.LayoutParams(-1, dp(aiAnswerHeightDp())).apply { topMargin = dp(2) })
+        aiPanel.addView(aiAnswerScroll, LinearLayout.LayoutParams(-1, dp(aiAnswerHeightDp())).apply { topMargin = dp(3) })
 
         val composeCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(4), dp(2), dp(4), dp(2))
-            background = roundedStrokedBackground(Color.rgb(14, 14, 16), 16f, purple, 3)
+            background = roundedStrokedBackground(Color.rgb(14, 14, 16), 15f, purple, 2)
         }
         aiInput = EditText(this).apply {
             hint = "Ketik pesan untuk AI…"
@@ -572,16 +576,24 @@ class RiyanKeyboardService : InputMethodService() {
         composeFooter.addView(aiPanelButton("Pakai", primary = true) { insertPendingResult() }, LinearLayout.LayoutParams(dp(58), dp(aiComposeFooterHeightDp())))
         composeFooter.addView(aiPanelButton("↑", primary = true) { runAiConversation() }, LinearLayout.LayoutParams(dp(42), dp(aiComposeFooterHeightDp())).apply { leftMargin = dp(4) })
         composeCard.addView(composeFooter)
-        aiPanel.addView(composeCard, LinearLayout.LayoutParams(-1, dp(aiComposeHeightDp())).apply { topMargin = dp(2) })
+        aiPanel.addView(composeCard, LinearLayout.LayoutParams(-1, dp(aiComposeHeightDp())).apply { topMargin = dp(3) })
 
-        val quickActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val quickActions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
         listOf("Perbaiki", "Balas", "Terjemah", "Ringkas", "Santai", "Sopan").forEach { action ->
-            quickActions.addView(aiPanelButton(action) { runAi(action) }, LinearLayout.LayoutParams(0, dp(aiQuickActionHeightDp()), 1f).apply {
-                setMargins(dp(1), dp(2), dp(1), 0)
+            quickActions.addView(aiPanelButton(action) { runAi(action) }, LinearLayout.LayoutParams(0, -1, 1f).apply {
+                setMargins(dp(1), 0, dp(1), 0)
             })
         }
-        aiPanel.addView(quickActions)
-        root.addView(aiPanel, LinearLayout.LayoutParams(-1, dp(currentAiPanelHeightDp())))
+        aiPanel.addView(quickActions, LinearLayout.LayoutParams(-1, dp(aiQuickActionHeightDp())).apply {
+            topMargin = dp(3)
+        })
+        root.addView(aiPanel, LinearLayout.LayoutParams(-1, dp(currentAiPanelHeightDp())).apply {
+            leftMargin = dp(3)
+            rightMargin = dp(3)
+        })
     }
 
     /**
@@ -746,7 +758,7 @@ class RiyanKeyboardService : InputMethodService() {
                 width = ViewGroup.LayoutParams.MATCH_PARENT
                 height = if (aiFullscreen) 0 else dp(aiAnswerHeightDp())
                 weight = if (aiFullscreen) 1f else 0f
-                topMargin = dp(1)
+                topMargin = dp(3)
             }
         }
         if (::suggestionBar.isInitialized) {
@@ -1799,15 +1811,23 @@ class RiyanKeyboardService : InputMethodService() {
     private fun searchHeaderHeightDp(): Int = if (isLandscape()) 27 else 34
 
     private fun searchSurfaceHeightDp(): Int {
-        val screenDp = (resources.displayMetrics.heightPixels / resources.displayMetrics.density).toInt()
+        val density = resources.displayMetrics.density
+        val screenHeightDp = (resources.displayMetrics.heightPixels / density).toInt()
+        val screenWidthDp = (resources.displayMetrics.widthPixels / density).toInt()
         return if (isLandscape()) {
-            (screenDp * 0.42f).toInt().coerceIn(118, 205)
+            (screenHeightDp * 0.42f).toInt().coerceIn(118, 205)
         } else {
-            (screenDp * 0.44f).toInt().coerceIn(245, 390)
+            val proportionalHeight = (screenHeightDp * 0.50f).toInt().coerceIn(270, 480)
+            // The header sits above the WebView. Include it in the requested panel height so the
+            // actual page viewport stays taller than the usable width and sites detect portrait.
+            val portraitViewportHeight = screenWidthDp + searchHeaderHeightDp() + 14
+            maxOf(proportionalHeight, portraitViewportHeight).coerceAtMost(480)
         }
     }
 
-    private fun aiHeaderHeightDp(): Int = if (isLandscape()) 28 else 34
+    private fun aiHeaderHeightDp(): Int = if (isLandscape()) 30 else 38
+
+    private fun aiHeaderControlHeightDp(): Int = if (isLandscape()) 26 else 34
 
     private fun aiAnswerHeightDp(): Int = if (isLandscape()) 47 else 70
 
@@ -1819,7 +1839,7 @@ class RiyanKeyboardService : InputMethodService() {
 
     private fun aiQuickActionHeightDp(): Int = if (isLandscape()) 28 else 34
 
-    private fun currentAiPanelHeightDp(): Int = if (isLandscape()) 174 else 222
+    private fun currentAiPanelHeightDp(): Int = if (isLandscape()) 184 else 232
 
     private fun fullscreenKeyboardPanelHeightDp(): Int =
         (baseKeyboardHeightDp - utilityHeightDp() - toolbarKeyboardGapDp())
@@ -2651,7 +2671,7 @@ class RiyanKeyboardService : InputMethodService() {
             settings.cacheMode = WebSettings.LOAD_DEFAULT
             settings.loadsImagesAutomatically = true
             settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
-            settings.userAgentString = settings.userAgentString + " AIAdsKeyboard/0.18"
+            settings.userAgentString = settings.userAgentString + " AIAdsKeyboard/0.20"
             setOnTouchListener { view, event ->
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {
@@ -2670,7 +2690,13 @@ class RiyanKeyboardService : InputMethodService() {
             webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
-                    view?.postDelayed({ probeFocusedWebInput() }, WEB_FOCUS_PROBE_DELAY_MS)
+                    view ?: return
+                    applyPortraitWebCompatibility(view)
+                    view.postDelayed({
+                        applyPortraitWebCompatibility(view)
+                        probeFocusedWebInput()
+                    }, WEB_FOCUS_PROBE_DELAY_MS)
+                    view.postDelayed({ applyPortraitWebCompatibility(view) }, WEB_ORIENTATION_RECHECK_DELAY_MS)
                 }
 
                 override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
@@ -2699,6 +2725,84 @@ class RiyanKeyboardService : InputMethodService() {
         showSearchSurface()
         queryInput.requestFocus()
         searchComposeActive = true
+    }
+
+    /**
+     * Keep embedded pages usable while the phone itself is portrait. The old web area could be
+     * wider than it was tall after the keyboard consumed the lower half of the screen, causing
+     * responsive sites to cover their content with a misleading rotate-device message.
+     */
+    private fun applyPortraitWebCompatibility(webView: WebView) {
+        if (isLandscape() || searchWebView !== webView) return
+        val script = """
+            (function() {
+              if (window.innerHeight < window.innerWidth) return false;
+              try {
+                Object.defineProperty(window, 'orientation', {
+                  configurable: true,
+                  get: function() { return 0; }
+                });
+              } catch (_) {}
+              try {
+                var orientation = window.screen && window.screen.orientation;
+                if (orientation) {
+                  Object.defineProperty(orientation, 'type', {
+                    configurable: true,
+                    get: function() { return 'portrait-primary'; }
+                  });
+                  Object.defineProperty(orientation, 'angle', {
+                    configurable: true,
+                    get: function() { return 0; }
+                  });
+                }
+              } catch (_) {}
+
+              var blockerText = /(putar\\s+(?:perangkat|ponsel)|jaga\\s+orientasi|orientasi[^.!?]{0,40}portrait|rotate\\s+(?:your\\s+)?device|turn\\s+(?:your\\s+)?device|portrait\\s+mode)/i;
+              function isLarge(rect) {
+                return rect.width >= window.innerWidth * 0.55 &&
+                       rect.height >= window.innerHeight * 0.35;
+              }
+              function removeOrientationBlockers() {
+                var nodes = document.querySelectorAll('body *');
+                for (var i = 0; i < nodes.length; i++) {
+                  var node = nodes[i];
+                  if (node.dataset && node.dataset.aiAdsOrientationChecked === '1') continue;
+                  var text = (node.innerText || node.textContent || '').replace(/\\s+/g, ' ').trim();
+                  if (!text || text.length > 180 || !blockerText.test(text)) continue;
+                  var target = node;
+                  for (var depth = 0; depth < 4 && target.parentElement; depth++) {
+                    var style = window.getComputedStyle(target);
+                    var rect = target.getBoundingClientRect();
+                    if ((style.position === 'fixed' || style.position === 'absolute') && isLarge(rect)) break;
+                    target = target.parentElement;
+                    if (target === document.body || target === document.documentElement) {
+                      target = node;
+                      break;
+                    }
+                  }
+                  var targetRect = target.getBoundingClientRect();
+                  var targetStyle = window.getComputedStyle(target);
+                  if (isLarge(targetRect) &&
+                      (targetStyle.position === 'fixed' || targetStyle.position === 'absolute' || target === node)) {
+                    target.style.setProperty('display', 'none', 'important');
+                    target.setAttribute('aria-hidden', 'true');
+                    if (document.body) document.body.style.setProperty('overflow', 'auto', 'important');
+                  } else if (node.dataset) {
+                    node.dataset.aiAdsOrientationChecked = '1';
+                  }
+                }
+              }
+              removeOrientationBlockers();
+              if (!window.__aiAdsPortraitObserver && document.body) {
+                window.__aiAdsPortraitObserver = new MutationObserver(removeOrientationBlockers);
+                window.__aiAdsPortraitObserver.observe(document.body, { childList: true, subtree: true });
+              }
+              try { window.dispatchEvent(new Event('orientationchange')); } catch (_) {}
+              try { window.dispatchEvent(new Event('resize')); } catch (_) {}
+              return true;
+            })();
+        """.trimIndent()
+        webView.evaluateJavascript(script, null)
     }
 
     private fun probeFocusedWebInput() {
@@ -3641,6 +3745,7 @@ class RiyanKeyboardService : InputMethodService() {
         private const val SCANNER_REQUIRED_STABLE_HITS = 2
         private const val WEB_FOCUS_PROBE_DELAY_MS = 55L
         private const val WEB_USER_GESTURE_TIMEOUT_MS = 240L
+        private const val WEB_ORIENTATION_RECHECK_DELAY_MS = 900L
 
         private val OCR_URL_REGEX = Regex("""(?i)\b(?:https?://|www\.)[^\s<>\"']+""")
         private val OCR_EMAIL_REGEX = Regex("""(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b""")
