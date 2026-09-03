@@ -18,11 +18,34 @@ jobs:
           distribution: temurin
           java-version: '17'
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
+        uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
+
+      - name: Restore stable debug signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.riyan-ai-keyboard/debug.keystore
+          key: ${{ runner.os }}-riyan-ai-debug-keystore-v2
+
+      - name: Create stable debug signing key when missing
+        shell: bash
+        run: |
+          mkdir -p "$HOME/.riyan-ai-keyboard"
+          if [ ! -f "$HOME/.riyan-ai-keyboard/debug.keystore" ]; then
+            keytool -genkeypair \
+              -keystore "$HOME/.riyan-ai-keyboard/debug.keystore" \
+              -storepass android \
+              -alias androiddebugkey \
+              -keypass android \
+              -dname "CN=Riyan AI Keyboard Debug,O=Riyan,C=ID" \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000
+          fi
+
       - name: Build Debug APK
-        run: gradle :app:assembleDebug
+        run: RIYAN_KEYSTORE_PATH="$HOME/.riyan-ai-keyboard/debug.keystore" gradle :app:assembleDebug
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
