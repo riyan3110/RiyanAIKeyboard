@@ -106,6 +106,9 @@ jobs:
       - name: Add native app routing and 9Router provider
         run: python3 tools/apply_v018_native_apps_9router_v12.py
 
+      - name: Match AI Ads Lab 9Router API gateway
+        run: python3 tools/apply_v018_9router_gateway_v14.py
+
       - name: Build debug APK
         run: RIYAN_KEYSTORE_PATH="$HOME/.riyan-ai-keyboard/debug.keystore" gradle --no-daemon :app:assembleDebug
 
