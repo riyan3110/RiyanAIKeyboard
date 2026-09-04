@@ -1754,9 +1754,7 @@ class RiyanKeyboardService : InputMethodService() {
         imageTintList = ColorStateList.valueOf(Color.WHITE)
         contentDescription = description
         scaleType = ImageView.ScaleType.CENTER_INSIDE
-        minWidth = 0
         minimumWidth = 0
-        minHeight = 0
         minimumHeight = 0
         setPadding(dp(9), dp(7), dp(9), dp(7))
         background = roundedStrokedBackground(
