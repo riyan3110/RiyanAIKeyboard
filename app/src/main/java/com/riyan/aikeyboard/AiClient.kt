@@ -180,7 +180,7 @@ object AiClient {
                 "Jika ada manusia, analisis hanya ciri visual non-sensitif yang benar-benar tampak untuk pencarian kemiripan, tanpa mencoba menentukan identitas orang. " +
                 "Hasil akhir harus berupa satu query pencarian visual yang spesifik, ringkas, dan memuat detail pembeda utama dari area zoom tersebut, bukan deskripsi umum seluruh latar."
         )
-        val hint = localTextHint.trim().replace(Regex("\s+"), " ").take(260)
+        val hint = localTextHint.trim().replace(Regex("\\s+"), " ").take(260)
         if (hint.isNotBlank()) {
             append("\nKonteks lokal opsional; gunakan hanya jika cocok dengan gambar: ")
             append(hint)
