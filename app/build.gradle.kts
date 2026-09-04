@@ -16,8 +16,8 @@ android {
         applicationId = "com.riyan.aikeyboard"
         minSdk = 23
         targetSdk = 35
-        versionCode = 22
-        versionName = "0.21.1"
+        versionCode = 23
+        versionName = "0.21.2"
     }
 
     signingConfigs {
@@ -126,7 +126,7 @@ val patchVisibleVersionLabel by tasks.registering {
         val sourceFile = file("src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt")
         var source = sourceFile.readText()
         val hardcoded = """text = "AI Ads Keyboard · v0.20""""
-        val visible = """text = "AI Ads Keyboard · v0.21.1""""
+        val visible = """text = "AI Ads Keyboard · v0.21.2""""
 
         when {
             source.contains(hardcoded) -> source = source.replace(hardcoded, visible)
