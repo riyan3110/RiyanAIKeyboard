@@ -2,32 +2,34 @@ package com.riyan.aikeyboard
 
 import android.app.Activity
 import android.content.Intent
-import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
 import androidx.appcompat.app.AppCompatActivity
 
 /**
- * Opens the system Photo Picker / default gallery directly, without the document-file browser,
- * then hands the selected image URI back to the IME.
+ * Opens the device gallery / Photos app directly and hands the selected image URI back to the IME.
+ * This intentionally avoids Android's ACTION_PICK_IMAGES bottom-sheet photo picker.
  */
 class GalleryPickerActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (savedInstanceState == null) openPicker()
+        if (savedInstanceState == null) openGallery()
     }
 
-    private fun openPicker() {
-        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            Intent(MediaStore.ACTION_PICK_IMAGES).apply {
-                type = "image/*"
-            }
-        } else {
-            Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI).apply {
-                type = "image/*"
-            }
-        }.apply {
+    private fun openGallery() {
+        val galleryIntent = Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI).apply {
+            type = "image/*"
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+
+        val intent = if (galleryIntent.resolveActivity(packageManager) != null) {
+            galleryIntent
+        } else {
+            Intent(Intent.ACTION_GET_CONTENT).apply {
+                type = "image/*"
+                addCategory(Intent.CATEGORY_OPENABLE)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
         }
 
         @Suppress("DEPRECATION")
