@@ -1,6 +1,7 @@
 package com.riyan.aikeyboard
 
 import android.content.Context
+import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Bundle
@@ -9,6 +10,8 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import android.widget.FrameLayout
+import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -18,6 +21,29 @@ import kotlin.math.roundToInt
 class SettingsActivity : AppCompatActivity() {
     private val prefs by lazy { getSharedPreferences("riyan_ai", MODE_PRIVATE) }
     private lateinit var settingsView: KeyboardSettingsOverlay
+    private var themePickerOpen = false
+
+    private val themeImagePicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        themePickerOpen = false
+        if (uri == null) return@registerForActivityResult
+
+        runCatching {
+            contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+        }
+
+        prefs.edit()
+            .putString("keyboard_theme_image_uri", uri.toString())
+            .putString("keyboard_theme_mode", KeyboardTheme.MODE_PHOTO)
+            .apply()
+
+        if (::settingsView.isInitialized) {
+            settingsView.refreshExternalChanges()
+        }
+        Toast.makeText(this, "Foto tema tersimpan.", Toast.LENGTH_SHORT).show()
+    }
 
     override fun attachBaseContext(newBase: Context) {
         val compactConfig = Configuration(newBase.resources.configuration).apply {
@@ -35,8 +61,6 @@ class SettingsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Keep the host app visible behind the settings card, matching the compact
-        // overlay proportions from the reference while still using a separate Activity.
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.statusBarColor = Color.TRANSPARENT
         window.navigationBarColor = Color.TRANSPARENT
@@ -68,7 +92,8 @@ class SettingsActivity : AppCompatActivity() {
                         }
                     }
                 }
-            }
+            },
+            onPickThemePhoto = { openThemePhotoPicker() }
         ).apply {
             visibility = android.view.View.VISIBLE
         }
@@ -107,6 +132,17 @@ class SettingsActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         if (::settingsView.isInitialized) settingsView.refreshExternalChanges()
+    }
+
+    fun openThemePhotoPicker() {
+        if (themePickerOpen) return
+        themePickerOpen = true
+        runCatching {
+            themeImagePicker.launch(arrayOf("image/*"))
+        }.onFailure {
+            themePickerOpen = false
+            Toast.makeText(this, "Galeri tidak dapat dibuka.", Toast.LENGTH_SHORT).show()
+        }
     }
 
     @Deprecated("Deprecated in Android API; retained so Back matches the close button behavior")
@@ -151,8 +187,6 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     companion object {
-        // Keep text/controls compact, but size the card itself to match reference #2:
-        // ~95% screen width with visible margins and ~84% of the safe portrait height.
         private const val PAGE_UI_SCALE = 0.86f
         private const val BACKGROUND_DIM = 0.52f
         private const val PORTRAIT_WIDTH_RATIO = 0.95f
