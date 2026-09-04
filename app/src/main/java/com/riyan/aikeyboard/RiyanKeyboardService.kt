@@ -3201,12 +3201,10 @@ class RiyanKeyboardService : InputMethodService() {
                 return@post
             }
 
-            val crop = cropScannerVisualTarget(frame)
-            val prepared = scaleBitmapForAiVision(crop, 896)
-            val localHint = scannerMainProductText
-                .replace(Regex("\\s+"), " ")
-                .trim()
-                .take(120)
+            // Send the full camera frame to multimodal AI so app-side cropping cannot remove context.
+            val prepared = scaleBitmapForAiVision(frame, 1024)
+            // Do not bias AI with local OCR/product guesses; let the image itself drive recognition.
+            val localHint = ""
 
             thread {
                 val encoded = runCatching {
@@ -3221,8 +3219,7 @@ class RiyanKeyboardService : InputMethodService() {
                     AiClient.visionProduct(aiSettings(), encoded, localHint)
                 }
 
-                if (prepared !== crop) prepared.recycle()
-                if (crop !== frame) crop.recycle()
+                if (prepared !== frame) prepared.recycle()
                 frame.recycle()
 
                 handler.post {
@@ -3267,7 +3264,7 @@ class RiyanKeyboardService : InputMethodService() {
                 return@thread
             }
 
-            val prepared = scaleBitmapForAiVision(frame, 896)
+            val prepared = scaleBitmapForAiVision(frame, 1024)
             val encoded = runCatching {
                 val output = ByteArrayOutputStream()
                 check(prepared.compress(Bitmap.CompressFormat.JPEG, 82, output))
@@ -3276,7 +3273,7 @@ class RiyanKeyboardService : InputMethodService() {
             val result = if (encoded.isNullOrBlank()) {
                 Result.failure<AiResponse>(IllegalStateException("Gambar galeri gagal disiapkan."))
             } else {
-                AiClient.visionProduct(aiSettings(), encoded, "gambar dipilih dari galeri")
+                AiClient.visionProduct(aiSettings(), encoded, "")
             }
 
             if (prepared !== frame && !prepared.isRecycled) prepared.recycle()

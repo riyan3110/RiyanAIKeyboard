@@ -172,17 +172,16 @@ object AiClient {
 
     private fun visionInstruction(localTextHint: String): String = buildString {
         append(
-            "Lihat gambar secara utuh dan kenali subjek yang paling penting berdasarkan bentuk visual nyata. " +
-                "Subjek bisa berupa produk, benda, makanan, kendaraan, hewan, tanaman, tempat, logo, kemasan, pakaian, perangkat, atau objek lain. " +
-                "Jangan memaksa semua gambar dianggap produk dan jangan terpaku hanya pada teks. " +
-                "Jika ada beberapa objek, pilih yang paling dominan dan gunakan objek lain hanya sebagai konteks. " +
-                "Gunakan bentuk, konstruksi, material, warna, pola, fungsi, logo, dan teks yang benar-benar terlihat untuk membuat query yang spesifik. " +
-                "Sebut merek atau model hanya jika terbaca jelas; jika tidak, gunakan deskripsi visual yang paling akurat. " +
-                "Jawab tepat satu baris query pencarian yang natural, 3 sampai 20 kata, tanpa penjelasan dan tanpa awalan 'query:'."
+            "Analisis gambar apa adanya berdasarkan seluruh isi visual yang benar-benar terlihat. " +
+                "Jangan menambahkan filter kategori dari aplikasi dan jangan memaksa gambar menjadi jenis objek tertentu. " +
+                "Kenali objek, produk, teks, logo, bahan, warna, bentuk, pola, fungsi, lingkungan, serta konteks visual lain yang relevan. " +
+                "Jika ada beberapa objek penting, gunakan kombinasinya bila itu membuat identifikasi lebih tepat. " +
+                "Jangan mengarang merek atau model yang tidak terlihat. " +
+                "Hasil akhir harus berupa satu query pencarian gambar yang paling spesifik dan natural untuk menemukan gambar atau objek yang sama atau sangat mirip."
         )
-        val hint = localTextHint.trim().replace(Regex("\\s+"), " ").take(180)
+        val hint = localTextHint.trim().replace(Regex("\\s+"), " ").take(220)
         if (hint.isNotBlank()) {
-            append("\nPetunjuk OCR/label lokal (gunakan hanya bila membantu dan sesuai dengan gambar): ")
+            append("\nKonteks lokal opsional, abaikan bila tidak cocok dengan gambar: ")
             append(hint)
         }
     }
