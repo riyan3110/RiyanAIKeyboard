@@ -174,7 +174,7 @@ replacement = '''    private fun visionInstruction(localTextHint: String): Strin
     }
 
     private fun requestOpenRouterVision'''
-ai, count = pattern.subn(replacement, ai, count=1)
+ai, count = pattern.subn(lambda _: replacement, ai, count=1)
 if count != 1:
     raise RuntimeError("vision instruction block could not be rebuilt")
 AI_CLIENT.write_text(ai)
