@@ -119,18 +119,18 @@ val patchBluesMindsProvider by tasks.registering(Exec::class) {
     commandLine("python3", rootProject.file("tools/apply_bluesminds_provider_patch.py").absolutePath)
 }
 
-// The keyboard footer used to be hardcoded as v0.20, which made newer APKs look unchanged.
-// Make the visible label follow the real Android versionName and fail the build if the patch cannot be applied.
+// Keep the version text shown on the keyboard synchronized with this release.
+// The service source still contains the legacy v0.20 label, so patch it before compilation.
 val patchVisibleVersionLabel by tasks.registering {
     doLast {
         val sourceFile = file("src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt")
         var source = sourceFile.readText()
         val hardcoded = """text = "AI Ads Keyboard · v0.20""""
-        val dynamic = """text = "AI Ads Keyboard · v${'$'}{BuildConfig.VERSION_NAME}""""
+        val visible = """text = "AI Ads Keyboard · v0.21.1""""
 
         when {
-            source.contains(hardcoded) -> source = source.replace(hardcoded, dynamic)
-            source.contains("BuildConfig.VERSION_NAME") -> Unit
+            source.contains(hardcoded) -> source = source.replace(hardcoded, visible)
+            source.contains(visible) -> Unit
             else -> error("Visible keyboard version label patch did not match the source")
         }
 
