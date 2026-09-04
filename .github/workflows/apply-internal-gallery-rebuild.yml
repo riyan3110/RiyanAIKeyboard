@@ -1,0 +1,30 @@
+name: Apply Internal Gallery Rebuild
+
+on:
+  push:
+    branches: [ rebuild/internal-gallery-v2 ]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: rebuild/internal-gallery-v2
+      - name: Rebuild gallery source
+        run: python3 tools/rebuild_internal_gallery_source.py
+      - name: Commit rebuilt source
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No source changes to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt app/src/main/java/com/riyan/aikeyboard/AiClient.kt
+          git commit -m "Rebuild gallery as internal IME panel"
+          git push origin HEAD:rebuild/internal-gallery-v2
