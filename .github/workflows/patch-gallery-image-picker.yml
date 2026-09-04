@@ -1,0 +1,378 @@
+name: Apply gallery image picker patch
+
+on:
+  push:
+    branches:
+      - feature/gallery-image-picker
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Patch gallery picker support
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          service_path = Path('app/src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt')
+          manifest_path = Path('app/src/main/AndroidManifest.xml')
+          service = service_path.read_text()
+
+          def rep(old, new):
+              global service
+              if old not in service:
+                  raise SystemExit('Patch marker not found:\n' + old[:240])
+              service = service.replace(old, new, 1)
+
+          rep(
+              'import android.graphics.Bitmap\nimport android.graphics.Color',
+              'import android.graphics.Bitmap\nimport android.graphics.BitmapFactory\nimport android.graphics.Color'
+          )
+          rep(
+              'import android.widget.FrameLayout\nimport android.widget.LinearLayout',
+              'import android.widget.FrameLayout\nimport android.widget.ImageView\nimport android.widget.LinearLayout'
+          )
+          rep(
+              '    private var scannerPreviewView: PreviewView? = null\n    private var scannerStatusText: TextView? = null',
+              '    private var scannerPreviewView: PreviewView? = null\n    private var scannerGalleryImageView: ImageView? = null\n    private var scannerStatusText: TextView? = null'
+          )
+          rep(
+              '    private var scannerActive = false\n    private var scannerTorchEnabled = false\n    private var scannerBestScore = 0',
+              '    private var scannerActive = false\n    private var scannerTorchEnabled = false\n    private var scannerGalleryUri: Uri? = null\n    private var scannerGalleryPreviewBitmap: Bitmap? = null\n    private var scannerBestScore = 0'
+          )
+          rep(
+              '        if (searchSurfaceVisible && scannerActive &&\n            ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED',
+              '        if (searchSurfaceVisible && scannerActive && scannerGalleryUri == null &&\n            ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED'
+          )
+          rep(
+              '        if (!prefs.getBoolean(SCAN_READY_KEY, false)) return',
+              '''        if (prefs.getBoolean(GALLERY_READY_KEY, false)) {
+            val galleryUriText = prefs.getString(GALLERY_URI_KEY, "").orEmpty().trim()
+            prefs.edit().putBoolean(GALLERY_READY_KEY, false).apply()
+            if (galleryUriText.isNotBlank()) {
+                val galleryUri = runCatching { Uri.parse(galleryUriText) }.getOrNull()
+                if (galleryUri != null) {
+                    scannerGalleryUri = galleryUri
+                    showEmbeddedCameraPanel(resetCandidate = false)
+                }
+            }
+        }
+
+        if (!prefs.getBoolean(SCAN_READY_KEY, false)) return'''
+          )
+          rep(
+              '        searchInput = null\n        stopEmbeddedScanner()\n        destroySearchWebView()',
+              '        searchInput = null\n        clearScannerGalleryImage()\n        stopEmbeddedScanner()\n        destroySearchWebView()'
+          )
+          rep(
+              '        if (resetCandidate) {\n            scannerBestScore = 0',
+              '        if (resetCandidate) {\n            clearScannerGalleryImage()\n            scannerBestScore = 0'
+          )
+          rep(
+              '        header.addView(scannerStatusText, LinearLayout.LayoutParams(0, dp(searchHeaderHeightDp()), 1f))\n        header.addView(compactButton("⚡") { toggleScannerTorch() }, LinearLayout.LayoutParams(dp(38), dp(searchHeaderHeightDp())))',
+              '        header.addView(scannerStatusText, LinearLayout.LayoutParams(0, dp(searchHeaderHeightDp()), 1f))\n        header.addView(compactButton("🖼") { launchGalleryPicker() }, LinearLayout.LayoutParams(dp(38), dp(searchHeaderHeightDp())))\n        header.addView(compactButton("⚡") { toggleScannerTorch() }, LinearLayout.LayoutParams(dp(38), dp(searchHeaderHeightDp())).apply { leftMargin = dp(2) })'
+          )
+          rep(
+              '        previewFrame.addView(scannerPreviewView, FrameLayout.LayoutParams(-1, -1))\n        previewFrame.addView(View(this).apply {',
+              '''        previewFrame.addView(scannerPreviewView, FrameLayout.LayoutParams(-1, -1))
+        scannerGalleryImageView = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            setBackgroundColor(Color.BLACK)
+            visibility = View.GONE
+        }
+        previewFrame.addView(scannerGalleryImageView, FrameLayout.LayoutParams(-1, -1))
+        previewFrame.addView(View(this).apply {'''
+          )
+          rep(
+              '        searchSurfaceContent.addView(content, FrameLayout.LayoutParams(-1, -1))\n        showSearchSurface()\n    }\n\n    private fun startEmbeddedScanner() {\n        if (!scannerActive || !searchSurfaceVisible) return',
+              '''        searchSurfaceContent.addView(content, FrameLayout.LayoutParams(-1, -1))
+        showSearchSurface()
+        scannerGalleryUri?.let(::showGalleryImage)
+    }
+
+    private fun startEmbeddedScanner() {
+        if (!scannerActive || !searchSurfaceVisible || scannerGalleryUri != null) return'''
+          )
+          rep(
+              '    private fun toggleScannerTorch() {',
+              '''    private fun launchGalleryPicker() {
+        scannerStatusText?.text = "Pilih gambar dari galeri…"
+        runCatching {
+            startActivity(
+                Intent(this, GalleryPickerActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+            )
+        }.onFailure {
+            scannerStatusText?.text = "Galeri tidak dapat dibuka."
+            Toast.makeText(this, "Galeri tidak dapat dibuka.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun showGalleryImage(uri: Uri) {
+        scannerGalleryUri = uri
+        scannerVisualSearchPreferred = true
+        scannerSelectedQuery = ""
+        scannerSelectedUrl = ""
+        scannerMainProductText = ""
+        scannerBingVisualQuery = ""
+        scannerLocalShapeHint = ""
+        stopEmbeddedScanner(keepRequested = true)
+        scannerPreviewView?.visibility = View.GONE
+        scannerGalleryImageView?.apply {
+            setImageDrawable(null)
+            visibility = View.VISIBLE
+        }
+        scannerStatusText?.text = "Gambar galeri dipilih · tekan Cari untuk AI Vision"
+        scannerResultText?.text = "AI Vision akan mengenali gambar dari galeri"
+        scannerSearchButton?.isEnabled = true
+
+        thread {
+            val bitmap = decodeGalleryBitmap(uri, 1280)
+            handler.post {
+                if (scannerGalleryUri != uri) {
+                    bitmap?.recycle()
+                    return@post
+                }
+                scannerGalleryPreviewBitmap?.takeIf { it !== bitmap && !it.isRecycled }?.recycle()
+                scannerGalleryPreviewBitmap = bitmap
+                if (bitmap == null) {
+                    scannerStatusText?.text = "Gambar galeri tidak dapat dibaca · pilih gambar lain"
+                    scannerResultText?.text = "Format gambar tidak didukung atau file tidak tersedia"
+                    scannerSearchButton?.isEnabled = false
+                } else {
+                    scannerGalleryImageView?.setImageBitmap(bitmap)
+                }
+            }
+        }
+    }
+
+    private fun clearScannerGalleryImage() {
+        scannerGalleryUri = null
+        scannerGalleryImageView?.setImageDrawable(null)
+        scannerGalleryImageView = null
+        scannerGalleryPreviewBitmap?.takeIf { !it.isRecycled }?.recycle()
+        scannerGalleryPreviewBitmap = null
+    }
+
+    private fun decodeGalleryBitmap(uri: Uri, maxDimension: Int): Bitmap? = runCatching {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching null
+
+        var sample = 1
+        val longest = maxOf(bounds.outWidth, bounds.outHeight)
+        while (longest / sample > maxDimension * 2) sample *= 2
+
+        val options = BitmapFactory.Options().apply {
+            inSampleSize = sample.coerceAtLeast(1)
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+        }
+        val decoded = contentResolver.openInputStream(uri)?.use {
+            BitmapFactory.decodeStream(it, null, options)
+        } ?: return@runCatching null
+        val decodedLongest = maxOf(decoded.width, decoded.height)
+        if (decodedLongest <= maxDimension) return@runCatching decoded
+        val scale = maxDimension.toFloat() / decodedLongest.toFloat()
+        val width = (decoded.width * scale).toInt().coerceAtLeast(1)
+        val height = (decoded.height * scale).toInt().coerceAtLeast(1)
+        Bitmap.createScaledBitmap(decoded, width, height, true).also {
+            if (it !== decoded && !decoded.isRecycled) decoded.recycle()
+        }
+    }.getOrNull()
+
+    private fun toggleScannerTorch() {'''
+          )
+          rep(
+              '''        if (!scannerVisualSearchPreferred && (scannerSelectedQuery.isNotBlank() || scannerSelectedUrl.isNotBlank())) {
+            openSearchResults(scannerSelectedQuery, scannerSelectedUrl)
+            return
+        }
+
+        val preview = scannerPreviewView ?: run {''',
+              '''        if (!scannerVisualSearchPreferred && (scannerSelectedQuery.isNotBlank() || scannerSelectedUrl.isNotBlank())) {
+            openSearchResults(scannerSelectedQuery, scannerSelectedUrl)
+            return
+        }
+
+        scannerGalleryUri?.let {
+            performGalleryAiVisionSearch(it)
+            return
+        }
+
+        val preview = scannerPreviewView ?: run {'''
+          )
+          rep(
+              '    private fun scaleBitmapForAiVision(source: Bitmap, maxDimension: Int): Bitmap {',
+              '''    private fun performGalleryAiVisionSearch(uri: Uri) {
+        scannerSearchButton?.isEnabled = false
+        scannerSearchButton?.text = "…"
+        scannerStatusText?.text = "Menyiapkan gambar galeri untuk AI Vision…"
+
+        thread {
+            val frame = decodeGalleryBitmap(uri, 1400)
+            if (frame == null || frame.width < 40 || frame.height < 40) {
+                handler.post {
+                    scannerSearchButton?.text = "Cari"
+                    scannerSearchButton?.isEnabled = true
+                    scannerStatusText?.text = "Gambar galeri gagal dibaca · pilih gambar lain"
+                }
+                return@thread
+            }
+
+            val prepared = scaleBitmapForAiVision(frame, 896)
+            val encoded = runCatching {
+                val output = ByteArrayOutputStream()
+                check(prepared.compress(Bitmap.CompressFormat.JPEG, 82, output))
+                android.util.Base64.encodeToString(output.toByteArray(), android.util.Base64.NO_WRAP)
+            }.getOrNull()
+            val result = if (encoded.isNullOrBlank()) {
+                Result.failure<AiResponse>(IllegalStateException("Gambar galeri gagal disiapkan."))
+            } else {
+                AiClient.visionProduct(aiSettings(), encoded, "gambar dipilih dari galeri")
+            }
+
+            if (prepared !== frame && !prepared.isRecycled) prepared.recycle()
+            if (!frame.isRecycled) frame.recycle()
+
+            handler.post {
+                if (scannerGalleryUri != uri) return@post
+                val response = result.getOrNull()
+                val query = response?.text?.let(::cleanAiVisionSearchQuery).orEmpty()
+                if (query.isBlank()) {
+                    scannerSearchButton?.text = "Cari"
+                    scannerSearchButton?.isEnabled = true
+                    scannerStatusText?.text = aiVisionFailureMessage(result.exceptionOrNull())
+                    scannerResultText?.text = "Gambar tidak dikirim ke pencarian sampai AI mengenalinya"
+                    return@post
+                }
+
+                scannerSelectedQuery = query
+                scannerSelectedUrl = ""
+                scannerResultText?.text = query
+                scannerStatusText?.text = "AI Vision: $query"
+                searchQuery = query
+                searchUrl = "https://www.bing.com/images/search?q=${Uri.encode(query)}"
+                stopEmbeddedScanner()
+                showSearchWebPanel()
+                scannerSearchButton?.text = "Cari"
+                scannerSearchButton?.isEnabled = true
+            }
+        }
+    }
+
+    private fun scaleBitmapForAiVision(source: Bitmap, maxDimension: Int): Bitmap {'''
+          )
+          rep(
+              '        private const val SCAN_READY_KEY = "camera_search_ready"',
+              '        private const val GALLERY_READY_KEY = "camera_gallery_ready"\n        private const val GALLERY_URI_KEY = "camera_gallery_uri"\n        private const val SCAN_READY_KEY = "camera_search_ready"'
+          )
+
+          service_path.write_text(service)
+
+          activity = '''package com.riyan.aikeyboard
+
+import android.app.Activity
+import android.content.Intent
+import android.os.Bundle
+import androidx.appcompat.app.AppCompatActivity
+
+/** Opens Android's document/gallery picker and hands the selected image URI back to the IME. */
+class GalleryPickerActivity : AppCompatActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        if (savedInstanceState == null) openPicker()
+    }
+
+    private fun openPicker() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "image/*"
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }
+        @Suppress("DEPRECATION")
+        startActivityForResult(intent, PICK_IMAGE_REQUEST)
+    }
+
+    @Deprecated("Deprecated in Android API; retained for broad device compatibility")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == PICK_IMAGE_REQUEST && resultCode == Activity.RESULT_OK) {
+            data?.data?.let { uri ->
+                runCatching {
+                    contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                    .putString(GALLERY_URI_KEY, uri.toString())
+                    .putBoolean(GALLERY_READY_KEY, true)
+                    .apply()
+            }
+        }
+        finishWithoutAnimation()
+    }
+
+    override fun onBackPressed() {
+        finishWithoutAnimation()
+    }
+
+    private fun finishWithoutAnimation() {
+        finish()
+        @Suppress("DEPRECATION")
+        overridePendingTransition(0, 0)
+    }
+
+    companion object {
+        private const val PICK_IMAGE_REQUEST = 702
+        private const val PREFS = "riyan_ai"
+        private const val GALLERY_READY_KEY = "camera_gallery_ready"
+        private const val GALLERY_URI_KEY = "camera_gallery_uri"
+    }
+}
+'''
+          Path('app/src/main/java/com/riyan/aikeyboard/GalleryPickerActivity.kt').write_text(activity)
+
+          manifest = manifest_path.read_text()
+          marker = '''        <activity
+            android:name=".ScannerActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:label="Izin Kamera"
+            android:theme="@style/CameraPermissionTheme" />
+'''
+          replacement = marker + '''        <activity
+            android:name=".GalleryPickerActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:label="Pilih Gambar"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+'''
+          if marker not in manifest:
+              raise SystemExit('Manifest ScannerActivity marker not found')
+          manifest_path.write_text(manifest.replace(marker, replacement, 1))
+          PY
+
+      - name: Verify gallery patch compiles
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:compileDebugKotlin --stacktrace
+
+      - name: Commit patch and remove temporary workflow
+        shell: bash
+        run: |
+          rm -f .github/workflows/patch-gallery-image-picker.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt \
+                  app/src/main/java/com/riyan/aikeyboard/GalleryPickerActivity.kt \
+                  app/src/main/AndroidManifest.xml \
+                  .github/workflows/patch-gallery-image-picker.yml
+          git commit -m "feat: add gallery image mode to scanner"
+          git push origin HEAD:feature/gallery-image-picker
