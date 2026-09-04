@@ -31,12 +31,17 @@ def patch_ai_client() -> None:
         "settings fields",
     )
 
-    text = replace_once(
-        text,
-        '                    AiProvider.NINEROUTER -> request9RouterVision(settings, jpegBase64, localTextHint)\n',
-        '                    AiProvider.NINEROUTER -> request9RouterVision(settings, jpegBase64, localTextHint)\n                    AiProvider.BLUESMINDS -> requestBluesMindsVision(settings, jpegBase64, localTextHint)\n',
-        "vision provider branch",
-    )
+    if 'AiProvider.BLUESMINDS -> requestBluesMindsVision' not in text:
+        vision_inserted = False
+        for hint_expr in ('localTextHint', '""'):
+            marker = f'                    AiProvider.NINEROUTER -> request9RouterVision(settings, jpegBase64, {hint_expr})\n'
+            if marker in text:
+                addition = marker + f'                    AiProvider.BLUESMINDS -> requestBluesMindsVision(settings, jpegBase64, {hint_expr})\n'
+                text = text.replace(marker, addition, 1)
+                vision_inserted = True
+                break
+        if not vision_inserted:
+            raise RuntimeError("BluesMinds patch marker not found: vision provider branch")
 
     text = replace_once(
         text,
@@ -97,7 +102,7 @@ def patch_ai_client() -> None:
         val body = JSONObject()
             .put("model", settings.bluesMindsModel.trim())
             .put("temperature", 0.05)
-            .put("max_tokens", 160)
+            .put("max_tokens", 220)
             .put(
                 "messages",
                 JSONArray().put(
