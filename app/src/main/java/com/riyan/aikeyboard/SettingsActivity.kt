@@ -4,9 +4,14 @@ import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Bundle
+import android.view.Gravity
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.widget.FrameLayout
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import kotlin.math.roundToInt
 
 class SettingsActivity : AppCompatActivity() {
@@ -29,12 +34,18 @@ class SettingsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        window.statusBarColor = Color.rgb(18, 17, 24)
-        window.navigationBarColor = Color.rgb(18, 17, 24)
+        // Keep the host app visible behind the settings card, matching the compact
+        // overlay proportions from the reference while still using a separate Activity.
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.statusBarColor = Color.TRANSPARENT
+        window.navigationBarColor = Color.TRANSPARENT
+        window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+        window.attributes = window.attributes.apply { dimAmount = BACKGROUND_DIM }
 
         val host = FrameLayout(this).apply {
-            setBackgroundColor(Color.rgb(18, 17, 24))
-            setPadding(dp(6), dp(6), dp(6), dp(6))
+            setBackgroundColor(Color.TRANSPARENT)
+            clipChildren = false
+            clipToPadding = false
         }
 
         settingsView = KeyboardSettingsOverlay(
@@ -52,11 +63,25 @@ class SettingsActivity : AppCompatActivity() {
         host.addView(
             settingsView,
             FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.TOP or Gravity.CENTER_HORIZONTAL
             )
         )
+
         setContentView(host)
+
+        ViewCompat.setOnApplyWindowInsetsListener(host) { view, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            view.post { applyReferencePanelBounds(host) }
+            insets
+        }
+        host.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            applyReferencePanelBounds(host)
+        }
+        ViewCompat.requestApplyInsets(host)
+
         settingsView.show()
     }
 
@@ -70,15 +95,52 @@ class SettingsActivity : AppCompatActivity() {
         closeSettingsTask()
     }
 
+    private fun applyReferencePanelBounds(host: FrameLayout) {
+        if (!::settingsView.isInitialized || host.width <= 0 || host.height <= 0) return
+
+        val safeWidth = (host.width - host.paddingLeft - host.paddingRight).coerceAtLeast(1)
+        val safeHeight = (host.height - host.paddingTop - host.paddingBottom).coerceAtLeast(1)
+        val portrait = resources.configuration.orientation != Configuration.ORIENTATION_LANDSCAPE
+
+        val widthRatio = if (portrait) PORTRAIT_WIDTH_RATIO else LANDSCAPE_WIDTH_RATIO
+        val heightRatio = if (portrait) PORTRAIT_HEIGHT_RATIO else LANDSCAPE_HEIGHT_RATIO
+        val topRatio = if (portrait) PORTRAIT_TOP_OFFSET_RATIO else LANDSCAPE_TOP_OFFSET_RATIO
+
+        val params = (settingsView.layoutParams as? FrameLayout.LayoutParams)
+            ?: FrameLayout.LayoutParams(0, 0)
+        val targetWidth = (safeWidth * widthRatio).roundToInt()
+        val targetHeight = (safeHeight * heightRatio).roundToInt()
+        val targetTopMargin = (safeHeight * topRatio).roundToInt()
+
+        if (params.width == targetWidth &&
+            params.height == targetHeight &&
+            params.topMargin == targetTopMargin &&
+            params.gravity == (Gravity.TOP or Gravity.CENTER_HORIZONTAL)
+        ) return
+
+        params.width = targetWidth
+        params.height = targetHeight
+        params.gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+        params.topMargin = targetTopMargin
+        settingsView.layoutParams = params
+    }
+
     private fun closeSettingsTask() {
         finishAndRemoveTask()
         @Suppress("DEPRECATION")
         overridePendingTransition(0, 0)
     }
 
-    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
-
     companion object {
+        // Keep text/controls compact, but size the card itself to match reference #2:
+        // ~95% screen width with visible margins and ~84% of the safe portrait height.
         private const val PAGE_UI_SCALE = 0.86f
+        private const val BACKGROUND_DIM = 0.52f
+        private const val PORTRAIT_WIDTH_RATIO = 0.95f
+        private const val PORTRAIT_HEIGHT_RATIO = 0.84f
+        private const val PORTRAIT_TOP_OFFSET_RATIO = 0.045f
+        private const val LANDSCAPE_WIDTH_RATIO = 0.90f
+        private const val LANDSCAPE_HEIGHT_RATIO = 0.90f
+        private const val LANDSCAPE_TOP_OFFSET_RATIO = 0.02f
     }
 }
