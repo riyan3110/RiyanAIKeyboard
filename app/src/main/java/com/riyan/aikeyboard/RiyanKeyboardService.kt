@@ -130,6 +130,8 @@ class RiyanKeyboardService : InputMethodService() {
     private lateinit var resizePanel: LinearLayout
     private lateinit var suggestionBar: LinearLayout
     private lateinit var bottomBrandBar: LinearLayout
+    private lateinit var settingsPanel: KeyboardSettingsOverlay
+    private var settingsPanelVisible = false
     private lateinit var aiPanel: LinearLayout
     private lateinit var aiStatus: TextView
     private lateinit var aiAnswer: TextView
@@ -333,6 +335,7 @@ class RiyanKeyboardService : InputMethodService() {
 
         addAiConversationPanel()
         addSearchSurfacePanel()
+        addSettingsPanel()
         addUtilityBar()
         addSuggestionBar()
         addResizePanel()
@@ -650,6 +653,53 @@ class RiyanKeyboardService : InputMethodService() {
         })
     }
 
+    private fun addSettingsPanel() {
+        settingsPanel = KeyboardSettingsOverlay(
+            context = this,
+            prefs = getSharedPreferences(PREFS, MODE_PRIVATE),
+            onApply = {
+                loadPreferences()
+                if (::heightLabel.isInitialized) heightLabel.text = keyboardHeightLabel()
+                renderKeyboard()
+                refreshSuggestionsSoon()
+            },
+            onClose = {
+                settingsPanelVisible = false
+                if (::settingsPanel.isInitialized) settingsPanel.visibility = View.GONE
+                applyRootHeight()
+                renderKeyboard()
+            }
+        ).apply {
+            visibility = View.GONE
+        }
+        root.addView(settingsPanel, LinearLayout.LayoutParams(-1, 0, 0f).apply {
+            leftMargin = dp(8)
+            rightMargin = dp(8)
+            topMargin = dp(8)
+            bottomMargin = dp(6)
+        })
+    }
+
+    private fun toggleSettingsPanel(force: Boolean? = null) {
+        val show = force ?: !settingsPanelVisible
+        if (show == settingsPanelVisible) return
+        if (show) {
+            if (searchSurfaceVisible) closeSearchSurface()
+            aiPanelVisible = false
+            aiFullscreen = false
+            aiComposeActive = false
+            aiPanel.visibility = View.GONE
+            resizePanelVisible = false
+            resizePanel.visibility = View.GONE
+            settingsPanelVisible = true
+            settingsPanel.show()
+        } else {
+            settingsPanel.hidePanel()
+            return
+        }
+        applyRootHeight()
+    }
+
     private fun addUtilityBar() {
         val barHeight = dp(utilityHeightDp())
         utilityBarFrame = FrameLayout(this).apply {
@@ -929,6 +979,34 @@ class RiyanKeyboardService : InputMethodService() {
                 height = if (aiFullscreen) 0 else dp(currentAiPanelHeightDp())
                 weight = if (aiFullscreen) 1f else 0f
             }
+        }
+        if (::settingsPanel.isInitialized) {
+            settingsPanel.layoutParams = (settingsPanel.layoutParams as? LinearLayout.LayoutParams
+                ?: LinearLayout.LayoutParams(-1, 0)).apply {
+                width = ViewGroup.LayoutParams.MATCH_PARENT
+                height = 0
+                weight = if (settingsPanelVisible) 1f else 0f
+                leftMargin = dp(8)
+                rightMargin = dp(8)
+                topMargin = if (settingsPanelVisible) dp(8) else 0
+                bottomMargin = if (settingsPanelVisible) dp(6) else 0
+            }
+            settingsPanel.visibility = if (settingsPanelVisible) View.VISIBLE else View.GONE
+        }
+        if (settingsPanelVisible) {
+            applyAiDisplayMode()
+            val screenHeight = fullscreenRootHeightPx()
+            val keyboardAreaDp = (baseKeyboardHeightDp - utilityHeightDp() - brandBarHeightDp())
+                .coerceAtLeast(if (isLandscape()) 92 else 180)
+            keyboardPanel.layoutParams = LinearLayout.LayoutParams(-1, dp(keyboardAreaDp))
+            root.minimumHeight = screenHeight
+            root.layoutParams = (root.layoutParams ?: ViewGroup.LayoutParams(-1, screenHeight)).apply {
+                width = ViewGroup.LayoutParams.MATCH_PARENT
+                height = screenHeight
+            }
+            root.requestLayout()
+            window?.window?.decorView?.requestLayout()
+            return
         }
         if (aiFullscreen) {
             applyAiDisplayMode()
@@ -3632,14 +3710,11 @@ resultCard.bringToFront()
     }
 
     private fun openSettings() {
-        runCatching {
-            startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        }.onFailure {
-            if (::aiStatus.isInitialized) aiStatus.text = "Buka aplikasi AI Ads Keyboard untuk pengaturan"
-        }
+        toggleSettingsPanel(true)
     }
 
     private fun activeInternalInput(): EditText? = when {
+        settingsPanelVisible && ::settingsPanel.isInitialized && settingsPanel.activeInput != null -> settingsPanel.activeInput
         searchComposeActive -> searchInput
         aiComposeActive && ::aiInput.isInitialized -> aiInput
         else -> null
