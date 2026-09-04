@@ -1,0 +1,176 @@
+name: Apply Keyboard Reference UI
+
+on:
+  push:
+    branches:
+      - ui/keyboard-reference-v2
+    paths:
+      - .github/workflows/apply-keyboard-reference-ui.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ui/keyboard-reference-v2
+
+      - name: Restyle keys and toolbar
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path('app/src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt')
+          s = p.read_text()
+
+          utility_pattern = re.compile(
+              r'    private fun addUtilityBar\(\) \{.*?\n    \}\n\n    private fun addSuggestionBar\(\)',
+              re.S,
+          )
+          utility_replacement = '''    private fun addUtilityBar() {
+        val barHeight = dp(utilityHeightDp())
+        val barFrame = FrameLayout(this).apply {
+            setBackgroundColor(keyBg)
+            clipChildren = false
+            clipToPadding = false
+        }
+
+        utilityBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(2), dp(2), dp(2), 0)
+            setBackgroundColor(keyBg)
+        }
+
+        utilityBar.addView(toolbarButton("✦ AI", dp(50)) { toggleAiPanel() })
+        utilityBar.addView(toolbarButton("⌨", dp(36)) {
+            aiComposeActive = false
+            mode = KeyboardMode.LETTERS
+            renderKeyboard()
+        })
+        utilityBar.addView(toolbarButton("😊", dp(36)) {
+            aiComposeActive = false
+            emojiPage = 0
+            mode = KeyboardMode.EMOJI
+            renderKeyboard()
+        })
+        utilityBar.addView(toolbarButton("📋", dp(36)) {
+            aiComposeActive = false
+            addCurrentClipboardToHistory()
+            mode = KeyboardMode.CLIPBOARD
+            renderKeyboard()
+        })
+        utilityBar.addView(toolbarButton("Kursor", dp(50)) {
+            aiComposeActive = false
+            mode = KeyboardMode.CURSOR
+            renderKeyboard()
+        })
+        utilityBar.addView(
+            toolbarIconButton(R.drawable.ic_camera_modern, "Kamera penelusuran", dp(36)) { launchScanner() }
+        )
+        utilityBar.addView(toolbarButton("↕", dp(34)) { toggleResizePanel() })
+
+        suggestionBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(1), 0, dp(1), 0)
+            setBackgroundColor(keyBg)
+            visibility = View.VISIBLE
+        }
+        utilityBar.addView(suggestionBar, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
+        utilityBar.addView(
+            toolbarIconButton(R.drawable.ic_settings_modern, "Pengaturan", dp(38)) { openSettings() }
+        )
+
+        barFrame.addView(utilityBar, FrameLayout.LayoutParams(-1, barHeight))
+
+        barFrame.addView(View(this).apply {
+            background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(
+                Color.TRANSPARENT,
+                Color.argb(150, 152, 73, 255),
+                Color.argb(230, 193, 92, 255),
+                Color.argb(150, 152, 73, 255),
+                Color.TRANSPARENT
+            ))
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) elevation = dpFloat(5f)
+        }, FrameLayout.LayoutParams(-1, dp(4), Gravity.TOP))
+        barFrame.addView(View(this).apply {
+            setBackgroundColor(Color.rgb(188, 82, 255))
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) elevation = dpFloat(6f)
+        }, FrameLayout.LayoutParams(-1, dp(1), Gravity.TOP))
+
+        root.addView(barFrame, LinearLayout.LayoutParams(-1, barHeight).apply {
+            bottomMargin = dp(toolbarKeyboardGapDp())
+        })
+    }
+
+    private fun addSuggestionBar()'''
+          s, n = utility_pattern.subn(utility_replacement, s, count=1)
+          if n != 1:
+              raise SystemExit(f'addUtilityBar replacement failed: {n}')
+
+          old_cursor = '                KeySpec("2/2", weight = 1.25f, action = { mode = KeyboardMode.CURSOR; renderKeyboard() }),\n'
+          if old_cursor in s:
+              s = s.replace(old_cursor, '', 1)
+
+          s = s.replace('cornerRadius = dpFloat(23f)', 'cornerRadius = dpFloat(11f)', 1)
+          s = s.replace(
+              '''                Color.rgb(42, 41, 50),
+                Color.rgb(24, 23, 30),
+                Color.rgb(15, 15, 20)''',
+              '''                Color.rgb(45, 44, 53),
+                Color.rgb(39, 38, 47),
+                Color.rgb(35, 34, 43)''',
+              1,
+          )
+
+          s = s.replace(
+              '}, FrameLayout.LayoutParams(-1, dp(8), Gravity.TOP).apply {\n            setMargins(dp(5), dp(3), dp(5), 0)\n        })',
+              '}, FrameLayout.LayoutParams(-1, dp(3), Gravity.TOP).apply {\n            setMargins(dp(5), dp(2), dp(5), 0)\n        })',
+              1,
+          )
+
+          s = s.replace(
+              '''                textSize = 8f
+                setTextColor(Color.rgb(205, 202, 214))
+                gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                setPadding(0, dp(4), 0, 0)''',
+              '''                textSize = 8f
+                setTextColor(Color.rgb(176, 174, 184))
+                gravity = Gravity.TOP or Gravity.END
+                setPadding(0, dp(3), dp(6), 0)''',
+              1,
+          )
+
+          underline_pattern = re.compile(
+              r'''\n        frame\.addView\(View\(this\)\.apply \{\n            background = roundedBackground\(Color\.rgb\(202, 105, 255\), 2f\)\n            alpha = 0\.96f\n            if \(Build\.VERSION\.SDK_INT >= Build\.VERSION_CODES\.LOLLIPOP\) elevation = dpFloat\(5f\)\n        \}, FrameLayout\.LayoutParams\(dp\(if \(referenceLargeKey\) 18 else 12\), dp\(2\), Gravity\.BOTTOM or Gravity\.CENTER_HORIZONTAL\)\.apply \{\n            bottomMargin = dp\(1\)\n        \}\)\n'''
+          )
+          s, n = underline_pattern.subn('\n', s, count=1)
+          if n != 1:
+              raise SystemExit(f'purple key underline removal failed: {n}')
+
+          s = s.replace(
+              'scaleX = (keyBoxScale * if (referenceWideKey) 0.98f else 0.90f).coerceAtMost(1f)',
+              'scaleX = (keyBoxScale * if (referenceWideKey) 0.98f else 0.94f).coerceAtMost(1f)',
+              1,
+          )
+          s = s.replace(
+              'scaleY = (keyBoxScale * if (referenceLargeKey) 0.98f else 0.94f).coerceAtMost(1f)',
+              'scaleY = (keyBoxScale * if (referenceLargeKey) 0.96f else 0.90f).coerceAtMost(1f)',
+              1,
+          )
+
+          p.write_text(s)
+          PY
+
+          rm -f .github/workflows/apply-keyboard-reference-ui.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Restyle keyboard keys and toolbar from reference"
+          git push origin HEAD:ui/keyboard-reference-v2
