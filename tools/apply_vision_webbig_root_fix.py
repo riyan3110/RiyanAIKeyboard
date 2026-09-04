@@ -3,6 +3,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 AI = ROOT / "app/src/main/java/com/riyan/aikeyboard/AiClient.kt"
 SERVICE = ROOT / "app/src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt"
+BLUES_PATCH = ROOT / "tools/apply_bluesminds_provider_patch.py"
 
 
 def splice(text: str, start_marker: str, end_marker: str, replacement: str, label: str) -> str:
@@ -35,10 +36,10 @@ def patch_ai() -> None:
             return Result.failure(IllegalArgumentException("Gambar kamera kosong."))
         }
 
-        // Vision is a capability route, not a text-provider route. Never trust a non-empty
-        // answer just because an endpoint returned 200: some text/coding models silently ignore
-        // image_url and then describe only the local OCR/color hint. Try every configured vision
-        // endpoint and accept only a structured result that proves the model classified the image.
+        // Vision is routed by capability, not merely by whichever text model is primary.
+        // Some coding/text models accept image_url syntactically but silently ignore the image.
+        // Therefore every configured provider is tried and its answer is accepted only when it
+        // returns a structured semantic classification of the image itself.
         val providers = buildList {
             add(settings.primaryProvider)
             AiProvider.entries.filter { it != settings.primaryProvider }.forEach(::add)
@@ -115,8 +116,8 @@ def patch_ai() -> None:
             else -> return null
         }
 
-        // Reject the exact failure mode seen in the scanner: a supposed vision result that only
-        // lists colors/background/frame without naming a semantic subject.
+        // Reject the failure visible in the scanner screenshots: a supposed vision result that
+        // only repeats colors/background/frame and never names a semantic subject.
         val generic = setOf(
             "merah", "biru", "hijau", "hitam", "putih", "krem", "abu", "warna",
             "latar", "background", "bingkai", "frame", "tebal", "tipis", "pola",
@@ -137,9 +138,18 @@ def patch_ai() -> None:
 '''
     text = splice(text, "    private fun visionInstruction(localTextHint: String): String = buildString {\n", "    private fun requestOpenRouterVision(\n", vision_helpers, "vision instruction")
 
-    # Give the strict JSON response a little more room while remaining inexpensive.
     text = text.replace('.put("max_tokens", 160)', '.put("max_tokens", 220)')
     AI.write_text(text)
+
+
+def patch_bluesminds_generator() -> None:
+    text = BLUES_PATCH.read_text()
+    old_block = '''    text = replace_once(\n        text,\n        '                    AiProvider.NINEROUTER -> request9RouterVision(settings, jpegBase64, localTextHint)\\n',\n        '                    AiProvider.NINEROUTER -> request9RouterVision(settings, jpegBase64, localTextHint)\\n                    AiProvider.BLUESMINDS -> requestBluesMindsVision(settings, jpegBase64, localTextHint)\\n',\n        "vision provider branch",\n    )\n'''
+    new_block = '''    if 'AiProvider.BLUESMINDS -> requestBluesMindsVision' not in text:\n        vision_inserted = False\n        for hint_expr in ('localTextHint', '\"\"'):\n            marker = f'                    AiProvider.NINEROUTER -> request9RouterVision(settings, jpegBase64, {hint_expr})\\n'\n            if marker in text:\n                addition = marker + f'                    AiProvider.BLUESMINDS -> requestBluesMindsVision(settings, jpegBase64, {hint_expr})\\n'\n                text = text.replace(marker, addition, 1)\n                vision_inserted = True\n                break\n        if not vision_inserted:\n            raise RuntimeError("BluesMinds patch marker not found: vision provider branch")\n'''
+    if old_block not in text and new_block not in text:
+        raise RuntimeError("BluesMinds generator vision marker changed unexpectedly")
+    text = text.replace(old_block, new_block, 1)
+    BLUES_PATCH.write_text(text)
 
 
 def patch_service() -> None:
@@ -171,14 +181,12 @@ def patch_service() -> None:
     private fun webBigSurfaceHeightDp(): Int {
         val density = resources.displayMetrics.density
         val screenHeightDp = (resources.displayMetrics.heightPixels / density).toInt()
-        if (isLandscape()) {
-            return (screenHeightDp * 0.58f).toInt().coerceIn(155, 285)
+        return if (isLandscape()) {
+            (screenHeightDp * 0.60f).toInt().coerceIn(170, 300)
+        } else {
+            // Web Big is deliberately a different mode, not the camera panel with a WebView in it.
+            (screenHeightDp * 0.70f).toInt().coerceIn(340, 560)
         }
-        // Web Big is intentionally taller than the camera panel. Keep the keyboard usable while
-        // giving the result page most of the remaining portrait screen.
-        val target = (screenHeightDp * 0.66f).toInt()
-        val maxFit = (screenHeightDp - baseKeyboardHeightDp - brandBarHeightDp() - 10).coerceAtLeast(300)
-        return minOf(target, maxFit).coerceIn(300, 560)
     }
 
 '''
@@ -209,8 +217,6 @@ def patch_service() -> None:
         "close Web Big",
     )
 
-    # Use the normal Android Chrome UA. The custom suffix can make Google visual-search serve a
-    # degraded/unsupported page inside WebView.
     text = replace_once(
         text,
         '            settings.userAgentString = settings.userAgentString + " AIAdsKeyboard/0.20"',
@@ -218,9 +224,6 @@ def patch_service() -> None:
         "webview user agent",
     )
 
-    # Configure cookie continuity BEFORE loading the Lens result. HttpURLConnection performs the
-    # image upload, while WebView renders the result; without copying upload cookies the Lens page
-    # loses its visual-search session and shows a broken image / generic Google page.
     old_load = '''            loadUrl(searchUrl)\n        }\n        searchWebView = webView\n'''
     new_load = '''        }\n        searchWebView = webView\n        runCatching {\n            val cookieManager = android.webkit.CookieManager.getInstance()\n            cookieManager.setAcceptCookie(true)\n            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {\n                cookieManager.setAcceptThirdPartyCookies(webView, true)\n            }\n        }\n        webView.loadUrl(searchUrl)\n'''
     text = replace_once(text, old_load, new_load, "load Web Big after cookies")
@@ -229,8 +232,8 @@ def patch_service() -> None:
     new_response = '''        val responseCode = connection.responseCode\n        val responseCookies = connection.headerFields.entries\n            .filter { (key, _) -> key?.equals("Set-Cookie", ignoreCase = true) == true }\n            .flatMap { it.value.orEmpty() }\n            .filter { it.isNotBlank() }\n        var location = connection.getHeaderField("Location").orEmpty().trim()\n        if (location.isBlank()) {'''
     text = replace_once(text, old_response, new_response, "capture visual-search cookies")
 
-    old_disconnect = '''        connection.disconnect()\n        if (location.startsWith("/")) {'''
-    new_disconnect = '''        val cookieTarget = location.takeIf { it.startsWith("http://", true) || it.startsWith("https://", true) } ?: endpoint\n        if (responseCookies.isNotEmpty()) {\n            runCatching {\n                val cookieManager = android.webkit.CookieManager.getInstance()\n                cookieManager.setAcceptCookie(true)\n                responseCookies.forEach { cookie -> cookieManager.setCookie(cookieTarget, cookie) }\n                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) cookieManager.flush()\n            }\n        }\n        connection.disconnect()\n        if (location.startsWith("/")) {'''
+    old_disconnect = '''        connection.disconnect()\n\n        if (location.startsWith("//")) location = "https:$location"\n        if (location.startsWith("/")) {\n            val origin = Uri.parse(endpoint)\n            location = "${origin.scheme}://${origin.host}$location"\n        }\n'''
+    new_disconnect = '''        if (location.startsWith("//")) location = "https:$location"\n        if (location.startsWith("/")) {\n            val origin = Uri.parse(endpoint)\n            location = "${origin.scheme}://${origin.host}$location"\n        }\n        val cookieTarget = location.takeIf { it.startsWith("http://", true) || it.startsWith("https://", true) } ?: endpoint\n        if (responseCookies.isNotEmpty()) {\n            runCatching {\n                val cookieManager = android.webkit.CookieManager.getInstance()\n                cookieManager.setAcceptCookie(true)\n                responseCookies.forEach { cookie -> cookieManager.setCookie(cookieTarget, cookie) }\n                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) cookieManager.flush()\n            }\n        }\n        connection.disconnect()\n'''
     text = replace_once(text, old_disconnect, new_disconnect, "persist visual-search cookies")
 
     SERVICE.write_text(text)
@@ -238,6 +241,7 @@ def patch_service() -> None:
 
 def main() -> None:
     patch_ai()
+    patch_bluesminds_generator()
     patch_service()
     print("vision + Web Big root refactor applied")
 
