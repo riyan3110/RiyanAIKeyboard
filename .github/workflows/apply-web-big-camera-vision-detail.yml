@@ -2,15 +2,13 @@ name: Apply Web Big Camera and Vision Detail
 
 on:
   push:
-    branches: [ fix/web-big-camera-vision-detail ]
-    paths:
-      - .github/workflows/apply-web-big-camera-vision-detail.yml
 
 permissions:
   contents: write
 
 jobs:
   apply:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
