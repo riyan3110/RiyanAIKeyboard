@@ -16,8 +16,8 @@ android {
         applicationId = "com.riyan.aikeyboard"
         minSdk = 23
         targetSdk = 35
-        versionCode = 26
-        versionName = "0.21.5-test-internal-gallery"
+        versionCode = 27
+        versionName = "0.21.6-test-settings-input-gallery"
     }
 
     signingConfigs {
@@ -119,16 +119,61 @@ val patchBluesMindsProvider by tasks.registering(Exec::class) {
     commandLine("python3", rootProject.file("tools/apply_bluesminds_provider_patch.py").absolutePath)
 }
 
+// Settings used to live inside the IME, so its EditTexts intentionally blocked the
+// Android soft keyboard. On the new separate SettingsActivity they must behave like
+// normal fields. Also make the photo theme as easy as the old settings: tapping the
+// photo option immediately opens the device gallery/file picker.
+val patchSettingsInputAndGallery by tasks.registering {
+    doLast {
+        val sourceFile = file("src/main/java/com/riyan/aikeyboard/KeyboardSettingsOverlay.kt")
+        var source = sourceFile.readText()
+
+        val oldSoftInput = "showSoftInputOnFocus = false"
+        val newSoftInput = "showSoftInputOnFocus = context is android.app.Activity"
+        when {
+            source.contains(oldSoftInput) -> source = source.replace(oldSoftInput, newSoftInput)
+            source.contains(newSoftInput) -> Unit
+            else -> error("Settings soft-input patch did not match the source")
+        }
+
+        val oldPhotoClick = """                    setOnClickListener {
+                        draft.themeMode = mode
+                        renderBody()
+                    }"""
+        val newPhotoClick = """                    setOnClickListener {
+                        draft.themeMode = mode
+                        if (mode == KeyboardTheme.MODE_PHOTO) {
+                            val pickerIntent = Intent(context, ThemePhotoPickerActivity::class.java)
+                            if (context !is android.app.Activity) {
+                                pickerIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            context.startActivity(pickerIntent)
+                        } else {
+                            renderBody()
+                        }
+                    }"""
+        when {
+            source.contains(oldPhotoClick) -> source = source.replace(oldPhotoClick, newPhotoClick)
+            source.contains(newPhotoClick) -> Unit
+            else -> error("Photo-theme one-tap patch did not match the source")
+        }
+
+        sourceFile.writeText(source)
+    }
+}
+
 // Keep the version text shown on the keyboard synchronized with this test build.
 val patchVisibleVersionLabel by tasks.registering {
     doLast {
         val sourceFile = file("src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt")
         var source = sourceFile.readText()
         val hardcoded = """text = "AI Ads Keyboard · v0.20""""
-        val visible = """text = "AI Ads Keyboard · v0.21.5 test""""
+        val previous = """text = "AI Ads Keyboard · v0.21.5 test""""
+        val visible = """text = "AI Ads Keyboard · v0.21.6 test""""
 
         when {
             source.contains(hardcoded) -> source = source.replace(hardcoded, visible)
+            source.contains(previous) -> source = source.replace(previous, visible)
             source.contains(visible) -> Unit
             else -> error("Visible keyboard version label patch did not match the source")
         }
@@ -137,13 +182,19 @@ val patchVisibleVersionLabel by tasks.registering {
     }
 }
 
+patchSettingsInputAndGallery.configure {
+    mustRunAfter(patchBluesMindsProvider)
+}
+
 patchVisibleVersionLabel.configure {
     mustRunAfter(patchDynamicImeAction)
     mustRunAfter(patchBluesMindsProvider)
+    mustRunAfter(patchSettingsInputAndGallery)
 }
 
 tasks.named("preBuild").configure {
     dependsOn(patchDynamicImeAction)
     dependsOn(patchBluesMindsProvider)
+    dependsOn(patchSettingsInputAndGallery)
     dependsOn(patchVisibleVersionLabel)
 }

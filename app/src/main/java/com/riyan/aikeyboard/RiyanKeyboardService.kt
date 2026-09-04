@@ -343,7 +343,6 @@ class RiyanKeyboardService : InputMethodService() {
 
         addAiConversationPanel()
         addSearchSurfacePanel()
-        addSettingsPanel()
         addUtilityBar()
         addSuggestionBar()
         addResizePanel()
@@ -776,7 +775,12 @@ class RiyanKeyboardService : InputMethodService() {
         }
         utilityBar.addView(suggestionBar, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
         utilityBar.addView(
-            toolbarIconButton(R.drawable.ic_settings_modern, "Pengaturan", dp(38)) { openSettings() }
+            toolbarIconButton(R.drawable.ic_settings_modern, "Pengaturan", dp(38)) {
+                startActivity(
+                    Intent(this@RiyanKeyboardService, SettingsActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            }
         )
 
         utilityBarFrame.addView(utilityBar, FrameLayout.LayoutParams(-1, barHeight))

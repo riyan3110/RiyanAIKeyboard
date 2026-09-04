@@ -46,8 +46,17 @@
             android:name=".ThemePhotoPickerActivity"
             android:exported="false"
             android:excludeFromRecents="true"
-            android:noHistory="true"
+            android:launchMode="singleTop"
+            android:taskAffinity="com.riyan.aikeyboard.settings"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:taskAffinity="com.riyan.aikeyboard.settings"
+            android:label="Pengaturan AI Ads Keyboard"
+            android:theme="@style/SettingsPanelTheme" />
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
