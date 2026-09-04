@@ -119,17 +119,6 @@ val patchBluesMindsProvider by tasks.registering(Exec::class) {
     commandLine("python3", rootProject.file("tools/apply_bluesminds_provider_patch.py").absolutePath)
 }
 
-// Gallery/Photos is launched from an IME service. Guard the launch before Android
-// leaves the host app, and restore the IME after the picker returns.
-val patchGalleryLifecycle by tasks.registering(Exec::class) {
-    commandLine("python3", rootProject.file("tools/apply_gallery_lifecycle_patch.py").absolutePath)
-}
-
-patchGalleryLifecycle.configure {
-    mustRunAfter(patchDynamicImeAction)
-    mustRunAfter(patchBluesMindsProvider)
-}
-
 // Keep the version text shown on the keyboard synchronized with this release.
 // The service source still contains the legacy v0.20 label, so patch it before compilation.
 val patchVisibleVersionLabel by tasks.registering {
@@ -152,12 +141,10 @@ val patchVisibleVersionLabel by tasks.registering {
 patchVisibleVersionLabel.configure {
     mustRunAfter(patchDynamicImeAction)
     mustRunAfter(patchBluesMindsProvider)
-    mustRunAfter(patchGalleryLifecycle)
 }
 
 tasks.named("preBuild").configure {
     dependsOn(patchDynamicImeAction)
     dependsOn(patchBluesMindsProvider)
-    dependsOn(patchGalleryLifecycle)
     dependsOn(patchVisibleVersionLabel)
 }
