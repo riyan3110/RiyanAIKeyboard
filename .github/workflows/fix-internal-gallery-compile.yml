@@ -1,0 +1,44 @@
+name: Fix Internal Gallery Compile
+
+on:
+  push:
+    branches: [ rebuild/internal-gallery-v2 ]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: rebuild/internal-gallery-v2
+      - name: Fix Kotlin compile errors
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          ai = Path('app/src/main/java/com/riyan/aikeyboard/AiClient.kt')
+          text = ai.read_text()
+          text = text.replace('Regex("\\s+")', 'Regex("\\\\s+")')
+          ai.write_text(text)
+
+          gallery = Path('app/src/main/java/com/riyan/aikeyboard/InternalGalleryPanel.kt')
+          text = gallery.read_text()
+          text = text.replace('scroll.addView(rows, ScrollView.LayoutParams(-1, -2))', 'scroll.addView(rows, ViewGroup.LayoutParams(-1, -2))')
+          gallery.write_text(text)
+          PY
+      - name: Commit compile fixes
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No changes needed"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/com/riyan/aikeyboard/AiClient.kt app/src/main/java/com/riyan/aikeyboard/InternalGalleryPanel.kt
+          git commit -m "Fix internal gallery Kotlin compilation"
+          git push origin HEAD:rebuild/internal-gallery-v2
