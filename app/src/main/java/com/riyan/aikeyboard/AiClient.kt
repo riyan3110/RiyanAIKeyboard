@@ -172,16 +172,16 @@ object AiClient {
 
     private fun visionInstruction(localTextHint: String): String = buildString {
         append(
-            "Lihat FOTO, bukan sekadar teks. Kenali SATU benda/produk fisik utama yang berada di tengah gambar. " +
-                "Buat query pencarian gambar yang paling mungkin menemukan benda yang sama atau model yang sangat mirip. " +
-                "Utamakan jenis/fungsi benda, konstruksi/bentuk khas, material, warna, dan ciri pembeda. " +
-                "Sebut merek atau model HANYA jika benar-benar terbaca jelas pada gambar. Jangan menebak merek/model. " +
-                "Abaikan benda latar belakang dan OCR kecil/noisy. Gunakan nama produk Indonesia atau Inggris yang umum dipakai di marketplace. " +
-                "Jawab tepat SATU BARIS query pencarian, 4 sampai 18 kata, tanpa penjelasan, tanpa tanda kutip, tanpa awalan 'query:'."
+            "Analisis gambar apa adanya berdasarkan seluruh isi visual yang benar-benar terlihat. " +
+                "Jangan menambahkan filter kategori dari aplikasi dan jangan memaksa gambar menjadi jenis objek tertentu. " +
+                "Kenali objek, produk, teks, logo, bahan, warna, bentuk, pola, fungsi, lingkungan, serta konteks visual lain yang relevan. " +
+                "Jika ada beberapa objek penting, gunakan kombinasinya bila itu membuat identifikasi lebih tepat. " +
+                "Jangan mengarang merek atau model yang tidak terlihat. " +
+                "Hasil akhir harus berupa satu query pencarian gambar yang paling spesifik dan natural untuk menemukan gambar atau objek yang sama atau sangat mirip."
         )
-        val hint = localTextHint.trim().replace(Regex("\\s+"), " ").take(120)
+        val hint = localTextHint.trim().replace(Regex("\\s+"), " ").take(220)
         if (hint.isNotBlank()) {
-            append("\nPetunjuk OCR lokal (boleh diabaikan jika bertentangan dengan foto): ")
+            append("\nKonteks lokal opsional, abaikan bila tidak cocok dengan gambar: ")
             append(hint)
         }
     }
