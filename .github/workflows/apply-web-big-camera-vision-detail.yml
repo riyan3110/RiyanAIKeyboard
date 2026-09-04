@@ -1,0 +1,122 @@
+name: Apply Web Big Camera and Vision Detail
+
+on:
+  push:
+    branches: [ fix/web-big-camera-vision-detail ]
+    paths:
+      - .github/workflows/apply-web-big-camera-vision-detail.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/web-big-camera-vision-detail
+      - name: Patch WebView camera and AI Vision prompt
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          svc_path = Path('app/src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt')
+          svc = svc_path.read_text()
+
+          import_old = '''import android.webkit.WebResourceRequest
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient'''
+          import_new = '''import android.webkit.PermissionRequest
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient'''
+          if import_old not in svc:
+              raise SystemExit('WebView import anchor not found')
+          svc = svc.replace(import_old, import_new, 1)
+
+          web_anchor = '''            settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            settings.userAgentString = settings.userAgentString + " AIAdsKeyboard/0.20"
+            setOnTouchListener { view, event ->'''
+          web_replacement = '''            settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            settings.mediaPlaybackRequiresUserGesture = false
+            settings.userAgentString = settings.userAgentString + " AIAdsKeyboard/0.20"
+            webChromeClient = object : WebChromeClient() {
+                override fun onPermissionRequest(request: PermissionRequest?) {
+                    request ?: return
+                    handler.post {
+                        val host = request.origin?.host?.lowercase().orEmpty()
+                        val trustedCameraOrigin =
+                            host == "bing.com" || host.endsWith(".bing.com") ||
+                            host == "google.com" || host.endsWith(".google.com")
+                        val cameraGranted = ContextCompat.checkSelfPermission(
+                            this@RiyanKeyboardService,
+                            Manifest.permission.CAMERA
+                        ) == PackageManager.PERMISSION_GRANTED
+                        val videoRequested = request.resources.any {
+                            it == PermissionRequest.RESOURCE_VIDEO_CAPTURE
+                        }
+
+                        if (trustedCameraOrigin && cameraGranted && videoRequested) {
+                            request.grant(arrayOf(PermissionRequest.RESOURCE_VIDEO_CAPTURE))
+                        } else {
+                            request.deny()
+                            if (videoRequested && !cameraGranted) {
+                                Toast.makeText(
+                                    this@RiyanKeyboardService,
+                                    "Izinkan akses kamera AI Ads Keyboard agar kamera Web Big dapat digunakan.",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+                    }
+                }
+            }
+            setOnTouchListener { view, event ->'''
+          if web_anchor not in svc:
+              raise SystemExit('WebView settings anchor not found')
+          svc = svc.replace(web_anchor, web_replacement, 1)
+
+          destroy_anchor = '''            webView.stopLoading()
+            webView.webViewClient = WebViewClient()
+            webView.loadUrl("about:blank")'''
+          destroy_replacement = '''            webView.stopLoading()
+            webView.webChromeClient = WebChromeClient()
+            webView.webViewClient = WebViewClient()
+            webView.loadUrl("about:blank")'''
+          if destroy_anchor not in svc:
+              raise SystemExit('destroySearchWebView anchor not found')
+          svc = svc.replace(destroy_anchor, destroy_replacement, 1)
+          svc_path.write_text(svc)
+
+          ai_path = Path('app/src/main/java/com/riyan/aikeyboard/AiClient.kt')
+          ai = ai_path.read_text()
+          old_prompt = '''            "Analisis gambar apa adanya berdasarkan seluruh isi visual yang benar-benar terlihat. " +
+                "Jangan menambahkan filter kategori dari aplikasi dan jangan memaksa gambar menjadi jenis objek tertentu. " +
+                "Kenali objek, produk, teks, logo, bahan, warna, bentuk, pola, fungsi, lingkungan, serta konteks visual lain yang relevan. " +
+                "Jika ada beberapa objek penting, gunakan kombinasinya bila itu membuat identifikasi lebih tepat. " +
+                "Jangan mengarang merek atau model yang tidak terlihat. " +
+                "Hasil akhir harus berupa satu query pencarian gambar yang paling spesifik dan natural untuk menemukan gambar atau objek yang sama atau sangat mirip."'''
+          new_prompt = '''            "Analisis gambar apa adanya berdasarkan seluruh isi visual yang benar-benar terlihat. " +
+                "Jangan menambahkan filter kategori dari aplikasi dan jangan memaksa gambar menjadi jenis objek tertentu. " +
+                "Kenali objek, produk, teks, logo, bahan, warna, bentuk, pola, fungsi, lingkungan, serta konteks visual lain yang relevan. " +
+                "Jika ada manusia, gunakan ciri fisik yang benar-benar terlihat untuk pencarian visual secara rinci: siluet dan proporsi tubuh yang tampak, postur atau pose, bentuk wajah, bentuk dan kontur bibir, bentuk hidung termasuk pangkal dan ujungnya, bentuk serta jarak mata, kelopak, bentuk dan ketebalan alis, panjang/tekstur/gaya/warna rambut, serta bentuk atau posisi telinga yang terlihat. " +
+                "Perhatikan juga pakaian, aksesori, arah pandang, dan ciri visual pembeda lain yang tampak. Jangan mengidentifikasi siapa orangnya dan jangan menebak etnis, kondisi kesehatan, kepribadian, atau atribut sensitif lain yang tidak dapat dipastikan dari gambar. " +
+                "Jika ada beberapa objek atau ciri penting, gunakan kombinasinya bila itu membuat identifikasi lebih tepat. " +
+                "Jangan mengarang merek, model, identitas, atau ciri yang tidak terlihat. " +
+                "Hasil akhir harus berupa satu query pencarian gambar yang paling spesifik dan natural untuk menemukan gambar, objek, atau tampilan visual yang sama atau sangat mirip."'''
+          if old_prompt not in ai:
+              raise SystemExit('visionInstruction anchor not found')
+          ai = ai.replace(old_prompt, new_prompt, 1)
+          ai_path.write_text(ai)
+          PY
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt app/src/main/java/com/riyan/aikeyboard/AiClient.kt
+          git commit -m "Fix Web Big camera permission and improve human visual detail detection"
+          git push origin HEAD:fix/web-big-camera-vision-detail
