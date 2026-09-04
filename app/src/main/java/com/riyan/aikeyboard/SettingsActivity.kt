@@ -23,8 +23,11 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var settingsView: KeyboardSettingsOverlay
     private var themePickerOpen = false
 
+    // Same ownership model as the old settings page: the settings Activity itself launches
+    // Android's document/gallery picker and receives the result. No proxy Activity owns the result.
     private val themeImagePicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         themePickerOpen = false
+        prefs.edit().putBoolean(THEME_PICKER_ACTIVE_KEY, false).apply()
         if (uri == null) return@registerForActivityResult
 
         runCatching {
@@ -92,8 +95,7 @@ class SettingsActivity : AppCompatActivity() {
                         }
                     }
                 }
-            },
-            onPickThemePhoto = { openThemePhotoPicker() }
+            }
         ).apply {
             visibility = android.view.View.VISIBLE
         }
@@ -132,15 +134,30 @@ class SettingsActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         if (::settingsView.isInitialized) settingsView.refreshExternalChanges()
+        consumeThemePhotoPickerRequest()
     }
 
-    fun openThemePhotoPicker() {
+    private fun consumeThemePhotoPickerRequest() {
+        if (themePickerOpen) return
+        if (!prefs.getBoolean(THEME_PICKER_REQUEST_KEY, false)) return
+
+        // Consume before opening so duplicate taps/proxy launches cannot queue another Gallery.
+        prefs.edit()
+            .putBoolean(THEME_PICKER_REQUEST_KEY, false)
+            .putBoolean(THEME_PICKER_ACTIVE_KEY, true)
+            .apply()
+        openThemePhotoPicker()
+    }
+
+    private fun openThemePhotoPicker() {
         if (themePickerOpen) return
         themePickerOpen = true
+        prefs.edit().putBoolean(THEME_PICKER_ACTIVE_KEY, true).apply()
         runCatching {
             themeImagePicker.launch(arrayOf("image/*"))
         }.onFailure {
             themePickerOpen = false
+            prefs.edit().putBoolean(THEME_PICKER_ACTIVE_KEY, false).apply()
             Toast.makeText(this, "Galeri tidak dapat dibuka.", Toast.LENGTH_SHORT).show()
         }
     }
@@ -187,6 +204,9 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     companion object {
+        const val THEME_PICKER_REQUEST_KEY = "theme_photo_picker_request"
+        const val THEME_PICKER_ACTIVE_KEY = "theme_photo_picker_active"
+
         private const val PAGE_UI_SCALE = 0.86f
         private const val BACKGROUND_DIM = 0.52f
         private const val PORTRAIT_WIDTH_RATIO = 0.95f
