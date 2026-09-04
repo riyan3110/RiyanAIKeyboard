@@ -7,45 +7,11 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
-          fetch-depth: 0
-      - name: Apply scanner detail and Web Big source fix
-        if: github.event_name == 'pull_request'
-        shell: bash
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          p = Path('tools/apply_scanner_detail_webbig_v2.py')
-          s = p.read_text()
-          s = s.replace(
-              'vision_pattern.subn(vision_replacement, ai, count=1)',
-              'vision_pattern.subn(lambda _m: vision_replacement, ai, count=1)'
-          )
-          p.write_text(s)
-          PY
-          python tools/apply_scanner_detail_webbig_v2.py
-      - name: Commit applied source fix
-        if: github.event_name == 'pull_request'
-        shell: bash
-        run: |
-          if git diff --quiet -- app/src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt app/src/main/java/com/riyan/aikeyboard/AiClient.kt; then
-            echo "No source changes to commit"
-          else
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add app/src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt app/src/main/java/com/riyan/aikeyboard/AiClient.kt
-            git commit -m "fix: make zoom detection use visible detail and preserve visual Web Big"
-            git push origin HEAD:${{ github.event.pull_request.head.ref }}
-          fi
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
