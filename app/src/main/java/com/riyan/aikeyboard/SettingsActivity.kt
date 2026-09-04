@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.view.Gravity
 import android.view.ViewGroup
 import android.view.WindowManager
+import android.view.inputmethod.InputMethodManager
 import android.widget.FrameLayout
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
@@ -41,6 +42,7 @@ class SettingsActivity : AppCompatActivity() {
         window.navigationBarColor = Color.TRANSPARENT
         window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
         window.attributes = window.attributes.apply { dimAmount = BACKGROUND_DIM }
+        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
 
         val host = FrameLayout(this).apply {
             setBackgroundColor(Color.TRANSPARENT)
@@ -55,7 +57,16 @@ class SettingsActivity : AppCompatActivity() {
                 // Settings are persisted by KeyboardSettingsOverlay itself.
             },
             onClose = { closeSettingsTask() },
-            onInputFocusChanged = { }
+            onInputFocusChanged = { hasFocus ->
+                if (hasFocus && ::settingsView.isInitialized) {
+                    settingsView.activeInput?.post { field ->
+                        field.showSoftInputOnFocus = true
+                        field.requestFocus()
+                        val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
+                        imm.showSoftInput(field, InputMethodManager.SHOW_IMPLICIT)
+                    }
+                }
+            }
         ).apply {
             visibility = android.view.View.VISIBLE
         }
@@ -73,7 +84,13 @@ class SettingsActivity : AppCompatActivity() {
 
         ViewCompat.setOnApplyWindowInsetsListener(host) { view, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+            view.setPadding(
+                bars.left,
+                bars.top,
+                bars.right,
+                maxOf(bars.bottom, ime.bottom)
+            )
             view.post { applyReferencePanelBounds(host) }
             insets
         }
