@@ -1,0 +1,116 @@
+name: Apply camera full-bleed UI v2
+
+on:
+  push:
+    branches: [ ui/camera-full-bleed ]
+    paths: [ .github/workflows/apply-camera-full-bleed-v2.yml ]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ui/camera-full-bleed
+      - name: Update camera panel only
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('app/src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt')
+          text = path.read_text()
+          start = text.index('    private fun showEmbeddedCameraPanel(resetCandidate: Boolean) {')
+          end = text.index('    private fun showInternalGalleryPanel()', start)
+          block = text[start:end]
+
+          def sub(pattern, repl, label):
+              global block
+              block, count = re.subn(pattern, repl, block, count=1, flags=re.S)
+              if count != 1:
+                  raise SystemExit(f'{label}: matched {count} times')
+
+          sub(
+              r'        val content = LinearLayout\(this\)\.apply \{\s*orientation = LinearLayout\.VERTICAL\s*background = roundedBackground\(Color\.rgb\(18, 18, 23\), 20f\)\s*if \(Build\.VERSION\.SDK_INT >= Build\.VERSION_CODES\.LOLLIPOP\) clipToOutline = true\s*\}',
+              '''        val content = FrameLayout(this).apply {
+              background = roundedBackground(Color.TRANSPARENT, 20f)
+              if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) clipToOutline = true
+          }''',
+              'camera content container',
+          )
+
+          sub(
+              r'        val header = LinearLayout\(this\)\.apply \{\s*orientation = LinearLayout\.HORIZONTAL\s*gravity = Gravity\.CENTER_VERTICAL\s*setPadding\(dp\(7\), dp\(2\), dp\(4\), dp\(2\)\)\s*setBackgroundColor\(Color\.rgb\(34, 33, 41\)\)\s*\}',
+              '''        val header = LinearLayout(this).apply {
+              orientation = LinearLayout.HORIZONTAL
+              gravity = Gravity.CENTER_VERTICAL
+              setPadding(dp(7), dp(2), dp(4), dp(2))
+              elevation = dpFloat(8f)
+          }''',
+              'camera header',
+          )
+
+          sub(
+              r'        val title = TextView\(this\)\.apply \{.*?        header\.addView\(scannerStatusText, LinearLayout\.LayoutParams\(0, dp\(searchHeaderHeightDp\(\)\), 1f\)\)',
+              '''        scannerStatusText = TextView(this).apply {
+              visibility = View.GONE
+          }
+          header.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))''',
+              'camera title/status removal',
+          )
+
+          sub(
+              r'        content\.addView\(header, LinearLayout\.LayoutParams\(-1, dp\(searchHeaderHeightDp\(\) \+ 4\)\)\)',
+              '''        content.addView(header, FrameLayout.LayoutParams(-1, dp(searchHeaderHeightDp() + 4), Gravity.TOP).apply {
+              leftMargin = dp(3)
+              rightMargin = dp(3)
+              topMargin = dp(2)
+          })''',
+              'camera header layout',
+          )
+
+          sub(
+              r'        previewFrame\.addView\(View\(this\)\.apply \{\s*background = GradientDrawable\(\)\.apply \{\s*setColor\(Color\.TRANSPARENT\)\s*cornerRadius = dpFloat\(18f\)\s*setStroke\(dp\(2\), Color\.WHITE\)\s*\}\s*\}, FrameLayout\.LayoutParams\(-1, if \(isLandscape\(\)\) dp\(72\) else dp\(140\), Gravity\.CENTER\)\.apply \{\s*setMargins\(dp\(28\), 0, dp\(28\), 0\)\s*\}\)',
+              '',
+              'white scan box removal',
+          )
+
+          sub(
+              r'        content\.addView\(previewFrame, LinearLayout\.LayoutParams\(-1, 0, 1f\)\)',
+              '        content.addView(previewFrame, FrameLayout.LayoutParams(-1, -1))',
+              'camera preview full bleed',
+          )
+
+          sub(
+              r'        val resultCard = LinearLayout\(this\)\.apply \{\s*orientation = LinearLayout\.HORIZONTAL\s*gravity = Gravity\.CENTER_VERTICAL\s*setPadding\(dp\(6\), dp\(3\), dp\(4\), dp\(3\)\)\s*setBackgroundColor\(Color\.rgb\(31, 30, 38\)\)\s*\}',
+              '''        val resultCard = LinearLayout(this).apply {
+              orientation = LinearLayout.HORIZONTAL
+              gravity = Gravity.CENTER_VERTICAL
+              setPadding(dp(6), dp(3), dp(4), dp(3))
+              setBackgroundColor(Color.TRANSPARENT)
+              elevation = dpFloat(8f)
+          }''',
+              'camera bottom bar',
+          )
+
+          sub(
+              r'        content\.addView\(resultCard, LinearLayout\.LayoutParams\(-1, if \(isLandscape\(\)\) dp\(40\) else dp\(55\)\)\)',
+              '''        content.addView(resultCard, FrameLayout.LayoutParams(-1, if (isLandscape()) dp(40) else dp(55), Gravity.BOTTOM))
+          header.bringToFront()
+          resultCard.bringToFront()''',
+              'camera bottom overlay layout',
+          )
+
+          text = text[:start] + block + text[end:]
+          path.write_text(text)
+          PY
+
+          rm -f .github/workflows/apply-camera-full-bleed.yml .github/workflows/apply-camera-full-bleed-v2.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Make camera preview full-bleed inside purple frame"
+          git push origin HEAD:ui/camera-full-bleed
