@@ -219,6 +219,7 @@ class RiyanKeyboardService : InputMethodService() {
     private var personalizedLearningEnabled = true
     private var styleMemoryEnabled = true
     private var enterActionEnabled = false
+    private var lastRenderedEnterLabel = ""
     private var lastSpaceAt = 0L
     private val conversationHistory = mutableListOf<Pair<String, String>>()
 
@@ -301,6 +302,14 @@ class RiyanKeyboardService : InputMethodService() {
     ) {
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
         if (!fastTypingMode) refreshSuggestionsSoon()
+        refreshEnterKeyIfNeeded()
+    }
+
+    override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
+        super.onStartInput(attribute, restarting)
+        if (::keyboardPanel.isInitialized) {
+            handler.post { refreshEnterKeyIfNeeded() }
+        }
     }
 
     override fun onCreateInputView(): View {
@@ -903,7 +912,15 @@ class RiyanKeyboardService : InputMethodService() {
             KeyboardMode.EMOJI -> renderEmoji()
             KeyboardMode.CLIPBOARD -> renderClipboard()
         }
+        lastRenderedEnterLabel = enterKeyLabel()
         refreshSuggestionsSoon()
+    }
+
+    private fun refreshEnterKeyIfNeeded() {
+        if (!::keyboardPanel.isInitialized) return
+        val label = enterKeyLabel()
+        if (label == lastRenderedEnterLabel) return
+        renderKeyboard()
     }
 
     private fun refreshSuggestionsSoon() {
@@ -3409,9 +3426,31 @@ class RiyanKeyboardService : InputMethodService() {
     }
 
 
+    private fun standardEditorAction(info: EditorInfo? = currentInputEditorInfo): Int =
+        info?.imeOptions?.and(EditorInfo.IME_MASK_ACTION) ?: EditorInfo.IME_ACTION_NONE
+
+    private fun editorHasAction(info: EditorInfo? = currentInputEditorInfo): Boolean {
+        info ?: return false
+        if (info.imeOptions and EditorInfo.IME_FLAG_NO_ENTER_ACTION != 0) return false
+        val action = standardEditorAction(info)
+        return (action != EditorInfo.IME_ACTION_NONE && action != EditorInfo.IME_ACTION_UNSPECIFIED) ||
+            info.actionId != 0
+    }
+
+    private fun resolvedEditorAction(info: EditorInfo? = currentInputEditorInfo): Int {
+        info ?: return EditorInfo.IME_ACTION_NONE
+        val action = standardEditorAction(info)
+        return if (action != EditorInfo.IME_ACTION_NONE && action != EditorInfo.IME_ACTION_UNSPECIFIED) {
+            action
+        } else {
+            info.actionId.takeIf { it != 0 } ?: action
+        }
+    }
+
     private fun editorSupportsNewLine(): Boolean {
         if (searchWebComposeActive || activeInternalInput() != null) return false
         val info = currentInputEditorInfo ?: return false
+        if (editorHasAction(info)) return false
         val inputClass = info.inputType and InputType.TYPE_MASK_CLASS
         if (inputClass != InputType.TYPE_CLASS_TEXT) return false
         val multiline = info.inputType and InputType.TYPE_TEXT_FLAG_MULTI_LINE != 0
@@ -3420,21 +3459,44 @@ class RiyanKeyboardService : InputMethodService() {
         return multiline || imeMultiline || noEnterAction
     }
 
+    private fun customEditorActionIcon(info: EditorInfo?): String {
+        val label = info?.actionLabel?.toString()?.trim()?.lowercase().orEmpty()
+        return when {
+            label.contains("search") || label.contains("cari") -> "🔍"
+            label.contains("send") || label.contains("kirim") -> "➤"
+            label.contains("done") || label.contains("selesai") -> "✓"
+            label.contains("previous") || label.contains("sebelum") -> "←"
+            else -> "→"
+        }
+    }
+
     private fun enterKeyLabel(): String {
         if (searchComposeActive || searchWebComposeActive) return "🔍"
         if (aiComposeActive) return "↑"
-        if (editorSupportsNewLine()) return "↵"
-        val action = currentInputEditorInfo?.imeOptions?.and(EditorInfo.IME_MASK_ACTION)
-            ?: EditorInfo.IME_ACTION_NONE
-        return when (action) {
-            EditorInfo.IME_ACTION_SEARCH -> "🔍"
-            EditorInfo.IME_ACTION_SEND -> "➤"
-            EditorInfo.IME_ACTION_GO -> "→"
-            EditorInfo.IME_ACTION_NEXT -> "→"
-            EditorInfo.IME_ACTION_PREVIOUS -> "←"
-            EditorInfo.IME_ACTION_DONE -> "✓"
-            else -> "↵"
+
+        val info = currentInputEditorInfo
+        val action = resolvedEditorAction(info)
+        if (editorHasAction(info)) {
+            return when (action) {
+                EditorInfo.IME_ACTION_SEARCH -> "🔍"
+                EditorInfo.IME_ACTION_SEND -> "➤"
+                EditorInfo.IME_ACTION_GO -> "→"
+                EditorInfo.IME_ACTION_NEXT -> "→"
+                EditorInfo.IME_ACTION_PREVIOUS -> "←"
+                EditorInfo.IME_ACTION_DONE -> "✓"
+                else -> customEditorActionIcon(info)
+            }
         }
+        return "↵"
+    }
+
+    private fun performEditorActionCompat(action: Int) {
+        val ic = currentInputConnection ?: return
+        val performed = runCatching { ic.performEditorAction(action) }.getOrDefault(false)
+        if (performed) return
+        val now = SystemClock.uptimeMillis()
+        ic.sendKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER, 0))
+        ic.sendKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER, 0))
     }
 
     private fun pressEnter() {
@@ -3451,8 +3513,11 @@ class RiyanKeyboardService : InputMethodService() {
             return
         }
         learnCurrentBoundary(completed = true)
-        val action = currentInputEditorInfo?.imeOptions?.and(EditorInfo.IME_MASK_ACTION) ?: EditorInfo.IME_ACTION_NONE
-        if (editorSupportsNewLine()) {
+        val info = currentInputEditorInfo
+        val action = resolvedEditorAction(info)
+        if (editorHasAction(info)) {
+            performEditorActionCompat(action)
+        } else if (editorSupportsNewLine()) {
             val ic = currentInputConnection
             val committed = runCatching { ic?.commitText("\n", 1) == true }.getOrDefault(false)
             if (!committed && ic != null) {
@@ -3460,8 +3525,6 @@ class RiyanKeyboardService : InputMethodService() {
                 ic.sendKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER, 0))
                 ic.sendKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER, 0))
             }
-        } else if (action != EditorInfo.IME_ACTION_NONE && action != EditorInfo.IME_ACTION_UNSPECIFIED) {
-            currentInputConnection?.performEditorAction(action)
         } else {
             currentInputConnection?.commitText("\n", 1)
         }
