@@ -32,6 +32,12 @@
             android:noHistory="true"
             android:label="Izin Kamera"
             android:theme="@style/CameraPermissionTheme" />
+        <activity
+            android:name=".GalleryPickerActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:label="Pilih Gambar"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
