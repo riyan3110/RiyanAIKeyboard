@@ -8,7 +8,7 @@ import android.provider.MediaStore
 import androidx.appcompat.app.AppCompatActivity
 
 /**
- * Opens Android's photo picker / default gallery directly instead of the document-file browser,
+ * Opens the system Photo Picker / default gallery directly, without the document-file browser,
  * then hands the selected image URI back to the IME.
  */
 class GalleryPickerActivity : AppCompatActivity() {
