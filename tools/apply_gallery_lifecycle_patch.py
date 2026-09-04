@@ -1,6 +1,7 @@
 from pathlib import Path
 
-SERVICE = Path("app/src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt")
+ROOT = Path(__file__).resolve().parents[1]
+SERVICE = ROOT / "app/src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt"
 source = SERVICE.read_text()
 
 
