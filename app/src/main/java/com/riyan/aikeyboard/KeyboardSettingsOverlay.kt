@@ -40,6 +40,9 @@ class KeyboardSettingsOverlay(
         var nineRouterKey: String,
         var nineRouterBaseUrl: String,
         var nineRouterModel: String,
+        var bluesMindsKey: String,
+        var bluesMindsBaseUrl: String,
+        var bluesMindsModel: String,
         var fallbackEnabled: Boolean,
         var referenceUrls: String,
         var styleMemoryEnabled: Boolean,
@@ -210,7 +213,7 @@ class KeyboardSettingsOverlay(
 
     private fun renderModelTab() {
         body.addView(section("Penyedia AI Utama"))
-        val providers = listOf(AiProvider.OPENROUTER, AiProvider.TABIAI, AiProvider.NINEROUTER)
+        val providers = listOf(AiProvider.OPENROUTER, AiProvider.TABIAI, AiProvider.NINEROUTER, AiProvider.BLUESMINDS)
         val grid = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
         providers.chunked(2).forEach { rowItems ->
             val row = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
@@ -252,6 +255,11 @@ class KeyboardSettingsOverlay(
                 config.addView(textInput("API Key 9Router", draft.nineRouterKey, secret = true) { draft.nineRouterKey = it })
                 config.addView(textInput("Base URL Gateway", draft.nineRouterBaseUrl) { draft.nineRouterBaseUrl = it })
                 config.addView(textInput("Nama Model / Combo", draft.nineRouterModel) { draft.nineRouterModel = it })
+            }
+            AiProvider.BLUESMINDS -> {
+                config.addView(textInput("API Key BluesMinds", draft.bluesMindsKey, secret = true) { draft.bluesMindsKey = it })
+                config.addView(textInput("Base URL BluesMinds", draft.bluesMindsBaseUrl) { draft.bluesMindsBaseUrl = it })
+                config.addView(textInput("Nama Model", draft.bluesMindsModel) { draft.bluesMindsModel = it })
             }
         }
         body.addView(config, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
@@ -398,6 +406,9 @@ class KeyboardSettingsOverlay(
             .putString("9router_api_key", draft.nineRouterKey.trim())
             .putString("9router_base_url", draft.nineRouterBaseUrl.trim().ifBlank { "http://43.159.50.231:20130/v1" })
             .putString("9router_model", draft.nineRouterModel.trim().ifBlank { "cc/claude-sonnet-4-20250514" })
+            .putString("bluesminds_api_key", draft.bluesMindsKey.trim())
+            .putString("bluesminds_base_url", draft.bluesMindsBaseUrl.trim().ifBlank { "https://api.bluesminds.com/v1" })
+            .putString("bluesminds_model", draft.bluesMindsModel.trim().ifBlank { "deepseek-ai/deepseek-v4-flash" })
             .putBoolean("fallback_enabled", draft.fallbackEnabled)
             .putString("reference_urls", draft.referenceUrls.trim())
             .putBoolean("style_memory_enabled", draft.styleMemoryEnabled)
@@ -446,6 +457,9 @@ class KeyboardSettingsOverlay(
         nineRouterKey = prefs.getString("9router_api_key", "").orEmpty(),
         nineRouterBaseUrl = prefs.getString("9router_base_url", "http://43.159.50.231:20130/v1").orEmpty(),
         nineRouterModel = prefs.getString("9router_model", "cc/claude-sonnet-4-20250514").orEmpty(),
+        bluesMindsKey = prefs.getString("bluesminds_api_key", "").orEmpty(),
+        bluesMindsBaseUrl = prefs.getString("bluesminds_base_url", "https://api.bluesminds.com/v1").orEmpty(),
+        bluesMindsModel = prefs.getString("bluesminds_model", "deepseek-ai/deepseek-v4-flash").orEmpty(),
         fallbackEnabled = prefs.getBoolean("fallback_enabled", false),
         referenceUrls = prefs.getString("reference_urls", "").orEmpty(),
         styleMemoryEnabled = prefs.getBoolean("style_memory_enabled", true),
@@ -481,6 +495,9 @@ class KeyboardSettingsOverlay(
         nineRouterKey = draft.nineRouterKey,
         nineRouterBaseUrl = "http://43.159.50.231:20130/v1",
         nineRouterModel = "cc/claude-sonnet-4-20250514",
+        bluesMindsKey = draft.bluesMindsKey,
+        bluesMindsBaseUrl = "https://api.bluesminds.com/v1",
+        bluesMindsModel = "deepseek-ai/deepseek-v4-flash",
         fallbackEnabled = false,
         referenceUrls = "",
         styleMemoryEnabled = true,
@@ -510,6 +527,7 @@ class KeyboardSettingsOverlay(
         AiProvider.OPENROUTER -> "OpenRouter"
         AiProvider.TABIAI -> "TabiAI"
         AiProvider.NINEROUTER -> "9Router"
+        AiProvider.BLUESMINDS -> "BluesMinds"
     }
 
     private fun textInput(
