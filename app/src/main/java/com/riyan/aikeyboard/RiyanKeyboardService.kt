@@ -2888,7 +2888,39 @@ resultCard.bringToFront()
             settings.cacheMode = WebSettings.LOAD_DEFAULT
             settings.loadsImagesAutomatically = true
             settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            settings.mediaPlaybackRequiresUserGesture = false
             settings.userAgentString = settings.userAgentString + " AIAdsKeyboard/0.20"
+            webChromeClient = object : android.webkit.WebChromeClient() {
+                override fun onPermissionRequest(request: android.webkit.PermissionRequest?) {
+                    request ?: return
+                    handler.post {
+                        val host = request.origin?.host?.lowercase().orEmpty()
+                        val trustedCameraOrigin =
+                            host == "bing.com" || host.endsWith(".bing.com") ||
+                            host == "google.com" || host.endsWith(".google.com")
+                        val cameraGranted = ContextCompat.checkSelfPermission(
+                            this@RiyanKeyboardService,
+                            Manifest.permission.CAMERA
+                        ) == PackageManager.PERMISSION_GRANTED
+                        val videoRequested = request.resources.any {
+                            it == android.webkit.PermissionRequest.RESOURCE_VIDEO_CAPTURE
+                        }
+
+                        if (trustedCameraOrigin && cameraGranted && videoRequested) {
+                            request.grant(arrayOf(android.webkit.PermissionRequest.RESOURCE_VIDEO_CAPTURE))
+                        } else {
+                            request.deny()
+                            if (videoRequested && !cameraGranted) {
+                                Toast.makeText(
+                                    this@RiyanKeyboardService,
+                                    "Izinkan akses kamera AI Ads Keyboard agar kamera Web Big dapat digunakan.",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+                    }
+                }
+            }
             setOnTouchListener { view, event ->
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {
@@ -3555,6 +3587,7 @@ resultCard.bringToFront()
         searchWebComposeActive = false
         searchWebView?.let { webView ->
             webView.stopLoading()
+            webView.webChromeClient = android.webkit.WebChromeClient()
             webView.webViewClient = WebViewClient()
             webView.loadUrl("about:blank")
             webView.clearHistory()
