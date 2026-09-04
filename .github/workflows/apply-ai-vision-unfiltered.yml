@@ -3,7 +3,6 @@ name: Apply AI Vision Unfiltered App Logic
 on:
   push:
     branches: [ rebuild/internal-gallery-v2 ]
-    paths: [ .github/workflows/apply-ai-vision-unfiltered.yml ]
 
 permissions:
   contents: write
@@ -24,8 +23,24 @@ jobs:
 
           ai_path = Path('app/src/main/java/com/riyan/aikeyboard/AiClient.kt')
           ai = ai_path.read_text()
-          pattern = re.compile(r'    private fun visionInstruction\(localTextHint: String\): String = buildString \{.*?\n    \}\n\n    private fun requestOpenRouterVision', re.S)
-          replacement = '''    private fun visionInstruction(localTextHint: String): String = buildString {
+          old_block = '''    private fun visionInstruction(localTextHint: String): String = buildString {
+        append(
+            "Lihat gambar secara utuh dan kenali subjek yang paling penting berdasarkan bentuk visual nyata. " +
+                "Subjek bisa berupa produk, benda, makanan, kendaraan, hewan, tanaman, tempat, logo, kemasan, pakaian, perangkat, atau objek lain. " +
+                "Jangan memaksa semua gambar dianggap produk dan jangan terpaku hanya pada teks. " +
+                "Jika ada beberapa objek, pilih yang paling dominan dan gunakan objek lain hanya sebagai konteks. " +
+                "Gunakan bentuk, konstruksi, material, warna, pola, fungsi, logo, dan teks yang benar-benar terlihat untuk membuat query yang spesifik. " +
+                "Sebut merek atau model hanya jika terbaca jelas; jika tidak, gunakan deskripsi visual yang paling akurat. " +
+                "Jawab tepat satu baris query pencarian yang natural, 3 sampai 20 kata, tanpa penjelasan dan tanpa awalan 'query:'."
+        )
+        val hint = localTextHint.trim().replace(Regex("\\\\s+"), " ").take(180)
+        if (hint.isNotBlank()) {
+            append("\\nPetunjuk OCR/label lokal (gunakan hanya bila membantu dan sesuai dengan gambar): ")
+            append(hint)
+        }
+    }
+'''
+          new_block = '''    private fun visionInstruction(localTextHint: String): String = buildString {
         append(
             "Analisis gambar apa adanya berdasarkan seluruh isi visual yang benar-benar terlihat. " +
                 "Jangan menambahkan filter kategori dari aplikasi dan jangan memaksa gambar menjadi jenis objek tertentu. " +
@@ -40,31 +55,31 @@ jobs:
             append(hint)
         }
     }
-
-    private fun requestOpenRouterVision'''
-          ai, count = pattern.subn(lambda _: replacement, ai, count=1)
-          if count != 1:
-              raise SystemExit('visionInstruction block not found')
+'''
+          if old_block in ai:
+              ai = ai.replace(old_block, new_block, 1)
+          elif new_block not in ai:
+              raise SystemExit('visionInstruction marker not found')
           ai_path.write_text(ai)
 
           service_path = Path('app/src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt')
           service = service_path.read_text()
-
-          old = '''            val crop = cropScannerVisualTarget(frame)
+          old_camera = '''            val crop = cropScannerVisualTarget(frame)
             val prepared = scaleBitmapForAiVision(crop, 896)
             val localHint = scannerMainProductText
                 .replace(Regex("\\\\s+"), " ")
                 .trim()
                 .take(120)
 '''
-          new = '''            // AI Vision receives the full camera frame so context is not lost by the old center crop.
+          new_camera = '''            // Send the full camera frame to multimodal AI so no context is cut away by app-side cropping.
             val prepared = scaleBitmapForAiVision(frame, 1024)
-            // Do not bias the multimodal model with OCR/product guesses from the lightweight local detector.
+            // Do not bias AI with local OCR/product guesses; let the image itself drive recognition.
             val localHint = ""
 '''
-          if old not in service:
-              raise SystemExit('camera AI preparation block not found')
-          service = service.replace(old, new, 1)
+          if old_camera in service:
+              service = service.replace(old_camera, new_camera, 1)
+          elif new_camera not in service:
+              raise SystemExit('camera preparation marker not found')
 
           old_cleanup = '''                if (prepared !== crop) prepared.recycle()
                 if (crop !== frame) crop.recycle()
@@ -73,21 +88,28 @@ jobs:
           new_cleanup = '''                if (prepared !== frame) prepared.recycle()
                 frame.recycle()
 '''
-          if old_cleanup not in service:
-              raise SystemExit('camera cleanup block not found')
-          service = service.replace(old_cleanup, new_cleanup, 1)
+          if old_cleanup in service:
+              service = service.replace(old_cleanup, new_cleanup, 1)
+          elif new_cleanup not in service:
+              raise SystemExit('camera cleanup marker not found')
 
           service = service.replace(
               'AiClient.visionProduct(aiSettings(), encoded, "gambar dipilih dari galeri")',
               'AiClient.visionProduct(aiSettings(), encoded, "")',
               1,
           )
-          service = service.replace('scaleBitmapForAiVision(frame, 896)', 'scaleBitmapForAiVision(frame, 1024)', 1)
+          gallery_marker = 'val prepared = scaleBitmapForAiVision(frame, 896)'
+          if gallery_marker in service:
+              service = service.replace(gallery_marker, 'val prepared = scaleBitmapForAiVision(frame, 1024)', 1)
           service_path.write_text(service)
           PY
       - name: Commit source changes
         shell: bash
         run: |
+          if git diff --quiet; then
+            echo "AI Vision source already updated"
+            exit 0
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add app/src/main/java/com/riyan/aikeyboard/AiClient.kt app/src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt
