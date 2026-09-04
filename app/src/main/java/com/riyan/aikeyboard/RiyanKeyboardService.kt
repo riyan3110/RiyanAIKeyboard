@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.ClipDescription
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -36,6 +37,7 @@ import android.view.inputmethod.InputConnection
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.PopupWindow
@@ -132,7 +134,7 @@ class RiyanKeyboardService : InputMethodService() {
     private lateinit var aiAnswer: TextView
     private lateinit var aiAnswerScroll: ScrollView
     private lateinit var aiInput: EditText
-    private lateinit var aiFullscreenButton: Button
+    private lateinit var aiFullscreenButton: ImageButton
     private lateinit var heightLabel: TextView
     private lateinit var searchSurfacePanel: FrameLayout
     private lateinit var searchSurfaceContent: FrameLayout
@@ -527,14 +529,17 @@ class RiyanKeyboardService : InputMethodService() {
             aiAnswer.text = "Jawaban AI akan muncul di sini."
             aiStatus.text = activeProviderLabel()
         }, LinearLayout.LayoutParams(dp(58), headerControlHeight))
-        aiFullscreenButton = aiPanelButton("⛶") { toggleAiFullscreen() }
-        aiFullscreenButton.contentDescription = "Buka obrolan AI layar penuh"
+        aiFullscreenButton = premiumIconButton(
+            R.drawable.ic_fullscreen_modern,
+            "Buka obrolan AI layar penuh"
+        ) { toggleAiFullscreen() }
         header.addView(aiFullscreenButton, LinearLayout.LayoutParams(dp(40), headerControlHeight).apply {
             leftMargin = dp(2)
         })
-        header.addView(aiPanelButton("✕") { toggleAiPanel(false) }, LinearLayout.LayoutParams(dp(40), headerControlHeight).apply {
-            leftMargin = dp(2)
-        })
+        header.addView(
+            premiumIconButton(R.drawable.ic_close_modern, "Tutup obrolan AI") { toggleAiPanel(false) },
+            LinearLayout.LayoutParams(dp(40), headerControlHeight).apply { leftMargin = dp(2) }
+        )
         aiPanel.addView(header, LinearLayout.LayoutParams(-1, dp(aiHeaderHeightDp())))
 
         aiAnswer = TextView(this).apply {
@@ -667,7 +672,9 @@ class RiyanKeyboardService : InputMethodService() {
             renderKeyboard()
         })
         utilityBar.addView(toolbarButton("↕", dp(43)) { toggleResizePanel() })
-        utilityBar.addView(toolbarButton("📷", dp(43)) { launchScanner() })
+        utilityBar.addView(
+            toolbarIconButton(R.drawable.ic_camera_modern, "Kamera penelusuran", dp(43)) { launchScanner() }
+        )
         suggestionBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -676,7 +683,9 @@ class RiyanKeyboardService : InputMethodService() {
             visibility = View.VISIBLE
         }
         utilityBar.addView(suggestionBar, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
-        utilityBar.addView(toolbarButton("⚙", dp(43)) { openSettings() })
+        utilityBar.addView(
+            toolbarIconButton(R.drawable.ic_settings_modern, "Pengaturan", dp(43)) { openSettings() }
+        )
         root.addView(utilityBar, LinearLayout.LayoutParams(-1, dp(utilityHeightDp())).apply {
             bottomMargin = dp(toolbarKeyboardGapDp())
         })
@@ -759,7 +768,9 @@ class RiyanKeyboardService : InputMethodService() {
     private fun applyAiDisplayMode() {
         if (!::aiPanel.isInitialized) return
         if (::aiFullscreenButton.isInitialized) {
-            aiFullscreenButton.text = if (aiFullscreen) "↙" else "⛶"
+            aiFullscreenButton.setImageResource(
+                if (aiFullscreen) R.drawable.ic_fullscreen_exit_modern else R.drawable.ic_fullscreen_modern
+            )
             aiFullscreenButton.contentDescription = if (aiFullscreen) {
                 "Kecilkan obrolan AI"
             } else {
@@ -1734,6 +1745,47 @@ class RiyanKeyboardService : InputMethodService() {
         setStroke(dp(strokeWidthDp), strokeColor)
     }
 
+    private fun premiumIconButton(
+        iconRes: Int,
+        description: String,
+        action: () -> Unit
+    ) = ImageButton(this).apply {
+        setImageResource(iconRes)
+        imageTintList = ColorStateList.valueOf(Color.WHITE)
+        contentDescription = description
+        scaleType = ImageView.ScaleType.CENTER_INSIDE
+        minWidth = 0
+        minimumWidth = 0
+        minHeight = 0
+        minimumHeight = 0
+        setPadding(dp(9), dp(7), dp(9), dp(7))
+        background = roundedStrokedBackground(
+            Color.rgb(49, 48, 58),
+            11f,
+            Color.rgb(82, 78, 99),
+            1
+        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            elevation = dpFloat(2.2f)
+        }
+        setOnClickListener {
+            keyFeedback(this, longPress = false)
+            action()
+        }
+    }
+
+    private fun toolbarIconButton(
+        iconRes: Int,
+        description: String,
+        widthPx: Int,
+        action: () -> Unit
+    ) = premiumIconButton(iconRes, description, action).apply {
+        setPadding(dp(10), dp(8), dp(10), dp(8))
+        layoutParams = LinearLayout.LayoutParams(widthPx, dp(utilityHeightDp())).apply {
+            setMargins(dp(2), dp(3), dp(2), dp(3))
+        }
+    }
+
     private fun toolbarButton(label: String, widthPx: Int, action: () -> Unit) = Button(this).apply {
         text = label
         textSize = if (label.length > 2) 12f else 18f
@@ -2143,11 +2195,18 @@ class RiyanKeyboardService : InputMethodService() {
             setPadding(dp(7), 0, dp(3), 0)
         }
         header.addView(scannerStatusText, LinearLayout.LayoutParams(0, dp(searchHeaderHeightDp()), 1f))
-        header.addView(compactButton("🖼") { launchGalleryPicker() }, LinearLayout.LayoutParams(dp(38), dp(searchHeaderHeightDp())))
-        header.addView(compactButton("⚡") { toggleScannerTorch() }, LinearLayout.LayoutParams(dp(38), dp(searchHeaderHeightDp())).apply { leftMargin = dp(2) })
-        header.addView(compactButton("✕") { closeSearchSurface() }, LinearLayout.LayoutParams(dp(38), dp(searchHeaderHeightDp())).apply {
-            leftMargin = dp(2)
-        })
+        header.addView(
+            premiumIconButton(R.drawable.ic_gallery_modern, "Pilih foto dari galeri") { launchGalleryPicker() },
+            LinearLayout.LayoutParams(dp(38), dp(searchHeaderHeightDp()))
+        )
+        header.addView(
+            premiumIconButton(R.drawable.ic_flash_modern, "Flash kamera") { toggleScannerTorch() },
+            LinearLayout.LayoutParams(dp(38), dp(searchHeaderHeightDp())).apply { leftMargin = dp(2) }
+        )
+        header.addView(
+            premiumIconButton(R.drawable.ic_close_modern, "Tutup kamera penelusuran") { closeSearchSurface() },
+            LinearLayout.LayoutParams(dp(38), dp(searchHeaderHeightDp())).apply { leftMargin = dp(2) }
+        )
         content.addView(header, LinearLayout.LayoutParams(-1, dp(searchHeaderHeightDp() + 4)))
 
         val previewFrame = FrameLayout(this)
@@ -2787,9 +2846,18 @@ class RiyanKeyboardService : InputMethodService() {
         searchInput = queryInput
         header.addView(queryInput, LinearLayout.LayoutParams(0, dp(searchHeaderHeightDp()), 1f))
         header.addView(compactButton("Cari") { performSearchFromInput() }, LinearLayout.LayoutParams(dp(46), dp(searchHeaderHeightDp())).apply { leftMargin = dp(3) })
-        header.addView(compactButton("←") { navigateEmbeddedSearchBack() }, LinearLayout.LayoutParams(dp(38), dp(searchHeaderHeightDp())).apply { leftMargin = dp(2) })
-        header.addView(compactButton("↗") { openExternalLink(searchUrl) }, LinearLayout.LayoutParams(dp(38), dp(searchHeaderHeightDp())).apply { leftMargin = dp(2) })
-        header.addView(compactButton("✕") { closeSearchSurface() }, LinearLayout.LayoutParams(dp(38), dp(searchHeaderHeightDp())).apply { leftMargin = dp(2) })
+        header.addView(
+            premiumIconButton(R.drawable.ic_back_modern, "Kembali") { navigateEmbeddedSearchBack() },
+            LinearLayout.LayoutParams(dp(38), dp(searchHeaderHeightDp())).apply { leftMargin = dp(2) }
+        )
+        header.addView(
+            premiumIconButton(R.drawable.ic_open_external_modern, "Buka di aplikasi atau browser") { openExternalLink(searchUrl) },
+            LinearLayout.LayoutParams(dp(38), dp(searchHeaderHeightDp())).apply { leftMargin = dp(2) }
+        )
+        header.addView(
+            premiumIconButton(R.drawable.ic_close_modern, "Tutup penelusuran") { closeSearchSurface() },
+            LinearLayout.LayoutParams(dp(38), dp(searchHeaderHeightDp())).apply { leftMargin = dp(2) }
+        )
         content.addView(header, LinearLayout.LayoutParams(-1, dp(searchHeaderHeightDp() + 5)))
 
         var userTouchedPage = false

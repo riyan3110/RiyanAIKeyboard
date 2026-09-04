@@ -2,10 +2,15 @@ package com.riyan.aikeyboard
 
 import android.app.Activity
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
+import android.provider.MediaStore
 import androidx.appcompat.app.AppCompatActivity
 
-/** Opens Android's document/gallery picker and hands the selected image URI back to the IME. */
+/**
+ * Opens Android's photo picker / default gallery directly instead of the document-file browser,
+ * then hands the selected image URI back to the IME.
+ */
 class GalleryPickerActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -13,11 +18,18 @@ class GalleryPickerActivity : AppCompatActivity() {
     }
 
     private fun openPicker() {
-        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-            addCategory(Intent.CATEGORY_OPENABLE)
-            type = "image/*"
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            Intent(MediaStore.ACTION_PICK_IMAGES).apply {
+                type = "image/*"
+            }
+        } else {
+            Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI).apply {
+                type = "image/*"
+            }
+        }.apply {
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
+
         @Suppress("DEPRECATION")
         startActivityForResult(intent, PICK_IMAGE_REQUEST)
     }
@@ -27,9 +39,6 @@ class GalleryPickerActivity : AppCompatActivity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == PICK_IMAGE_REQUEST && resultCode == Activity.RESULT_OK) {
             data?.data?.let { uri ->
-                runCatching {
-                    contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
                 getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                     .putString(GALLERY_URI_KEY, uri.toString())
                     .putBoolean(GALLERY_READY_KEY, true)
