@@ -7,8 +7,13 @@ import android.provider.MediaStore
 import androidx.appcompat.app.AppCompatActivity
 
 /**
- * Opens the device gallery / Photos app directly and hands the selected image URI back to the IME.
- * This intentionally avoids Android's ACTION_PICK_IMAGES bottom-sheet photo picker.
+ * Opens the device Gallery / Photos app in real PICK mode and hands the selected
+ * image URI back to the IME.
+ *
+ * Important: ACTION_PICK needs both the MediaStore collection URI and MIME type.
+ * Calling setType() after setting data clears the data URI on Android, which can
+ * make some OEM gallery apps (including Vivo/iQOO) open in normal browse mode
+ * where tapping a thumbnail does not return a selection.
  */
 class GalleryPickerActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -17,15 +22,15 @@ class GalleryPickerActivity : AppCompatActivity() {
     }
 
     private fun openGallery() {
-        val galleryIntent = Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI).apply {
-            type = "image/*"
+        val galleryIntent = Intent(Intent.ACTION_PICK).apply {
+            setDataAndType(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, "image/*")
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
 
         val intent = if (galleryIntent.resolveActivity(packageManager) != null) {
             galleryIntent
         } else {
-            Intent(Intent.ACTION_GET_CONTENT).apply {
+            Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                 type = "image/*"
                 addCategory(Intent.CATEGORY_OPENABLE)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -40,7 +45,8 @@ class GalleryPickerActivity : AppCompatActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == PICK_IMAGE_REQUEST && resultCode == Activity.RESULT_OK) {
-            data?.data?.let { uri ->
+            val uri = data?.data ?: data?.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri
+            if (uri != null) {
                 getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                     .putString(GALLERY_URI_KEY, uri.toString())
                     .putBoolean(GALLERY_READY_KEY, true)
