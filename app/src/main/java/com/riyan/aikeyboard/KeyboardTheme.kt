@@ -33,6 +33,7 @@ object KeyboardTheme {
     const val MODE_ROSE = "rose"
     const val MODE_CUSTOM = "custom"
     const val MODE_PHOTO = "photo"
+    const val MODE_AMOLED = "amoled"
 
     val modes = listOf(
         MODE_DARK to "Gelap",
@@ -41,6 +42,7 @@ object KeyboardTheme {
         MODE_GREEN to "Hijau",
         MODE_ROSE to "Merah muda",
         MODE_CUSTOM to "Warna sendiri",
+        MODE_AMOLED to "Amoled Pitch Black",
         MODE_PHOTO to "Foto dari galeri"
     )
 
@@ -68,6 +70,17 @@ object KeyboardTheme {
                 accent = Color.rgb(105, 76, 218),
                 text = Color.WHITE,
                 usesPhoto = true
+            )
+        }
+        if (mode == MODE_AMOLED) {
+            return KeyboardThemePalette(
+                background = Color.BLACK,
+                key = Color.rgb(17, 17, 20),
+                specialKey = Color.rgb(21, 21, 25),
+                pressedKey = Color.rgb(96, 67, 210),
+                accent = Color.rgb(111, 79, 232),
+                text = Color.WHITE,
+                usesPhoto = false
             )
         }
         if (mode == MODE_DARK) {

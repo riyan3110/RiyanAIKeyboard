@@ -1,11 +1,15 @@
 package com.riyan.aikeyboard
 
 import android.content.Context
+import android.content.Intent
 import android.content.SharedPreferences
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.text.Editable
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
 import android.text.InputType
 import android.text.TextWatcher
 import android.view.Gravity
@@ -25,7 +29,8 @@ class KeyboardSettingsOverlay(
     context: Context,
     private val prefs: SharedPreferences,
     private val onApply: () -> Unit,
-    private val onClose: () -> Unit
+    private val onClose: () -> Unit,
+    private val onInputFocusChanged: (Boolean) -> Unit = {}
 ) : FrameLayout(context) {
 
     enum class Tab { MODEL, MEMORY, THEME, TYPING }
@@ -99,8 +104,15 @@ class KeyboardSettingsOverlay(
     fun hidePanel() {
         activeInput?.clearFocus()
         activeInput = null
+        onInputFocusChanged(false)
         visibility = View.GONE
         onClose()
+    }
+
+    fun refreshExternalChanges() {
+        val currentMode = prefs.getString("keyboard_theme_mode", draft.themeMode).orEmpty()
+        if (currentMode.isNotBlank()) draft.themeMode = currentMode
+        if (currentTab == Tab.THEME && visibility == View.VISIBLE) renderBody()
     }
 
     private fun buildShell() {
@@ -118,7 +130,7 @@ class KeyboardSettingsOverlay(
         }
         header.addView(TextView(context).apply {
             text = "⚙  Pengaturan AI Ads Keyboard"
-            textSize = 18f
+            textSize = 16.5f
             setTextColor(Color.rgb(140, 126, 255))
             setTypeface(typeface, Typeface.BOLD)
         }, LinearLayout.LayoutParams(0, dp(42), 1f))
@@ -184,8 +196,10 @@ class KeyboardSettingsOverlay(
             val selected = tab == currentTab
             tabRow.addView(TextView(context).apply {
                 text = label
-                textSize = 11.5f
+                textSize = 10.2f
                 gravity = Gravity.CENTER
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
                 setTextColor(if (selected) Color.rgb(150, 135, 255) else Color.rgb(195, 190, 204))
                 background = if (selected) rounded(Color.rgb(38, 34, 59), 7f, accent, 1) else null
                 setOnClickListener {
@@ -332,30 +346,34 @@ class KeyboardSettingsOverlay(
 
     private fun renderThemeTab() {
         body.addView(section("Tema Keyboard"))
+        val customPreview = runCatching { Color.parseColor(KeyboardTheme.normalizeColor(draft.themeColor)) }.getOrDefault(accent)
         val themeOptions = listOf(
-            KeyboardTheme.MODE_DARK to "Gelap Modern",
-            KeyboardTheme.MODE_BLUE to "Deep Navy",
-            KeyboardTheme.MODE_PURPLE to "Cyber Purple",
-            KeyboardTheme.MODE_ROSE to "Ruby Crimson",
-            KeyboardTheme.MODE_GREEN to "Emerald Forest",
-            KeyboardTheme.MODE_CUSTOM to "Kustomisasi Warna"
+            Triple(KeyboardTheme.MODE_DARK, "Gelap Modern (Default)", Color.rgb(138, 112, 255)),
+            Triple(KeyboardTheme.MODE_BLUE, "Deep Navy", Color.rgb(52, 166, 255)),
+            Triple(KeyboardTheme.MODE_PURPLE, "Cyber Purple", Color.rgb(197, 73, 255)),
+            Triple(KeyboardTheme.MODE_ROSE, "Ruby Crimson", Color.rgb(255, 73, 98)),
+            Triple(KeyboardTheme.MODE_GREEN, "Emerald Forest", Color.rgb(48, 215, 132)),
+            Triple(KeyboardTheme.MODE_AMOLED, "Amoled Pitch Black", Color.rgb(151, 116, 255)),
+            Triple(KeyboardTheme.MODE_CUSTOM, "Kustomisasi Warna", customPreview),
+            Triple(KeyboardTheme.MODE_PHOTO, "Foto dari Perangkat", Color.rgb(255, 183, 77))
         )
         themeOptions.chunked(2).forEach { pair ->
             val row = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
-            pair.forEach { (mode, label) ->
+            pair.forEach { (mode, label, previewColor) ->
                 val selected = draft.themeMode == mode
                 row.addView(TextView(context).apply {
-                    text = "Aa 123\n$label"
+                    text = themePreviewText(label, previewColor)
                     gravity = Gravity.CENTER
-                    textSize = 12f
+                    textSize = 11.5f
                     setTextColor(Color.WHITE)
-                    background = rounded(if (selected) Color.rgb(34, 29, 63) else card, 12f, if (selected) accent else border, 1)
+                    background = rounded(if (selected) Color.rgb(31, 28, 55) else card, 12f, if (selected) accent else border, if (selected) 1 else 1)
                     setOnClickListener {
                         draft.themeMode = mode
                         renderBody()
                     }
-                }, LinearLayout.LayoutParams(0, dp(72), 1f).apply { setMargins(dp(3), dp(3), dp(3), dp(3)) })
+                }, LinearLayout.LayoutParams(0, dp(80), 1f).apply { setMargins(dp(3), dp(3), dp(3), dp(3)) })
             }
+            if (pair.size == 1) row.addView(View(context), LinearLayout.LayoutParams(0, 1, 1f))
             body.addView(row)
         }
 
@@ -363,6 +381,28 @@ class KeyboardSettingsOverlay(
             body.addView(textInput("Warna, contoh #5D4AC4", draft.themeColor) { draft.themeColor = it }, LinearLayout.LayoutParams(-1, dp(46)).apply {
                 topMargin = dp(8)
             })
+        }
+
+        if (draft.themeMode == KeyboardTheme.MODE_PHOTO) {
+            val photoCard = cardContainer()
+            photoCard.addView(section("Foto Latar dari Perangkat", compact = true))
+            val hasPhoto = !prefs.getString("keyboard_theme_image_uri", "").isNullOrBlank()
+            photoCard.addView(description(if (hasPhoto) "✓ Foto perangkat sudah dipilih. Tekan tombol di bawah untuk mengganti." else "Pilih foto langsung dari galeri HP untuk dijadikan latar keyboard."))
+            photoCard.addView(actionButton(if (hasPhoto) "Ganti Foto dari HP" else "Pilih Foto dari HP") {
+                draft.themeMode = KeyboardTheme.MODE_PHOTO
+                context.startActivity(
+                    Intent(context, ThemePhotoPickerActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            }, LinearLayout.LayoutParams(-1, dp(44)).apply { topMargin = dp(6) })
+            if (hasPhoto) {
+                photoCard.addView(actionButton("Hapus Foto", danger = true) {
+                    prefs.edit().remove("keyboard_theme_image_uri").apply()
+                    draft.themeMode = KeyboardTheme.MODE_DARK
+                    renderBody()
+                }, LinearLayout.LayoutParams(-1, dp(42)).apply { topMargin = dp(6) })
+            }
+            body.addView(photoCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
         }
 
         val sizeCard = cardContainer()
@@ -554,7 +594,15 @@ class KeyboardSettingsOverlay(
         }
         showSoftInputOnFocus = false
         background = rounded(field, 8f, border, 1)
-        setOnFocusChangeListener { _, hasFocus -> if (hasFocus) activeInput = this }
+        setOnFocusChangeListener { _, hasFocus ->
+            if (hasFocus) {
+                activeInput = this
+                onInputFocusChanged(true)
+            } else if (activeInput === this) {
+                activeInput = null
+                onInputFocusChanged(false)
+            }
+        }
         addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
@@ -643,6 +691,13 @@ class KeyboardSettingsOverlay(
         wrap.addView(value, LinearLayout.LayoutParams(-1, dp(28)))
         wrap.addView(slider, LinearLayout.LayoutParams(-1, dp(34)))
         return wrap
+    }
+
+    private fun themePreviewText(label: String, previewColor: Int): SpannableString {
+        val value = SpannableString("Aa 123\n$label")
+        value.setSpan(ForegroundColorSpan(previewColor), 0, 6, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        value.setSpan(ForegroundColorSpan(Color.WHITE), 7, value.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        return value
     }
 
     private fun actionButton(label: String, danger: Boolean = false, action: () -> Unit) = Button(context).apply {
