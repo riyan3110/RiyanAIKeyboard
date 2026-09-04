@@ -126,6 +126,7 @@ class RiyanKeyboardService : InputMethodService() {
     private lateinit var root: LinearLayout
     private lateinit var keyboardPanel: LinearLayout
     private lateinit var utilityBar: LinearLayout
+    private lateinit var utilityBarFrame: FrameLayout
     private lateinit var resizePanel: LinearLayout
     private lateinit var suggestionBar: LinearLayout
     private lateinit var bottomBrandBar: LinearLayout
@@ -651,7 +652,7 @@ class RiyanKeyboardService : InputMethodService() {
 
     private fun addUtilityBar() {
         val barHeight = dp(utilityHeightDp())
-        val barFrame = FrameLayout(this).apply {
+        utilityBarFrame = FrameLayout(this).apply {
             setBackgroundColor(keyBg)
             clipChildren = false
             clipToPadding = false
@@ -704,10 +705,10 @@ class RiyanKeyboardService : InputMethodService() {
             toolbarIconButton(R.drawable.ic_settings_modern, "Pengaturan", dp(38)) { openSettings() }
         )
 
-        barFrame.addView(utilityBar, FrameLayout.LayoutParams(-1, barHeight))
+        utilityBarFrame.addView(utilityBar, FrameLayout.LayoutParams(-1, barHeight))
 
         // Purple light strip modeled after the reference: soft glow plus a crisp core line.
-        barFrame.addView(View(this).apply {
+        utilityBarFrame.addView(View(this).apply {
             background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(
                 Color.TRANSPARENT,
                 Color.argb(150, 152, 73, 255),
@@ -717,12 +718,12 @@ class RiyanKeyboardService : InputMethodService() {
             ))
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) elevation = dpFloat(5f)
         }, FrameLayout.LayoutParams(-1, dp(4), Gravity.TOP))
-        barFrame.addView(View(this).apply {
+        utilityBarFrame.addView(View(this).apply {
             setBackgroundColor(Color.rgb(188, 82, 255))
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) elevation = dpFloat(6f)
         }, FrameLayout.LayoutParams(-1, dp(1), Gravity.TOP))
 
-        root.addView(barFrame, LinearLayout.LayoutParams(-1, barHeight).apply {
+        root.addView(utilityBarFrame, LinearLayout.LayoutParams(-1, barHeight).apply {
             bottomMargin = dp(toolbarKeyboardGapDp())
         })
     }
@@ -889,11 +890,19 @@ class RiyanKeyboardService : InputMethodService() {
     private fun applyRootHeight() {
         if (!::root.isInitialized) return
         updateRootPadding(root)
-        if (::utilityBar.isInitialized) {
-            utilityBar.layoutParams = (utilityBar.layoutParams as? LinearLayout.LayoutParams
+        if (::utilityBarFrame.isInitialized) {
+            utilityBarFrame.layoutParams = (utilityBarFrame.layoutParams as? LinearLayout.LayoutParams
                 ?: LinearLayout.LayoutParams(-1, dp(utilityHeightDp()))).apply {
+                width = ViewGroup.LayoutParams.MATCH_PARENT
                 height = dp(utilityHeightDp())
                 bottomMargin = dp(toolbarKeyboardGapDp())
+            }
+        }
+        if (::utilityBar.isInitialized) {
+            utilityBar.layoutParams = (utilityBar.layoutParams as? FrameLayout.LayoutParams
+                ?: FrameLayout.LayoutParams(-1, dp(utilityHeightDp()))).apply {
+                width = ViewGroup.LayoutParams.MATCH_PARENT
+                height = dp(utilityHeightDp())
             }
         }
         if (::suggestionBar.isInitialized) suggestionBar.layoutParams = suggestionBar.layoutParams.apply {
