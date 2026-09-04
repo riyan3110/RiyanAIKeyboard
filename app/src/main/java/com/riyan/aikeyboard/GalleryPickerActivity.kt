@@ -28,9 +28,6 @@ class GalleryPickerActivity : AppCompatActivity() {
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val missingResultFallback = Runnable {
-        // A normal picker result is delivered before onResume(). If an OEM returns
-        // to this bridge without delivering the callback, release the durable lock
-        // instead of leaving the Gallery button unusable.
         if (ownsSession && pickerLaunched && leftForPicker && !resultHandled && !isFinishing) {
             resultHandled = true
             clearSession()
@@ -63,15 +60,11 @@ class GalleryPickerActivity : AppCompatActivity() {
         val restoredOwner = savedInstanceState?.getBoolean(STATE_OWNS_SESSION, false) == true
 
         if (restoredOwner) {
-            // This is the original bridge being recreated by Android. Keep owning
-            // the already-open external picker, but never launch a second one.
             ownsSession = true
             getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                 .putBoolean(SESSION_ACTIVE_KEY, true)
                 .commit()
         } else if (!acquireFreshSession()) {
-            // Another bridge instance can be created while Gallery itself is on top.
-            // It must disappear without starting another external picker.
             finishWithoutAnimation()
             return
         }
@@ -80,8 +73,6 @@ class GalleryPickerActivity : AppCompatActivity() {
         val launchAlreadyCommitted = prefs.getBoolean(PICKER_LAUNCHED_KEY, false)
 
         if (!pickerLaunched && !launchAlreadyCommitted) {
-            // commit(), not apply(): the flag must be on disk before launching the
-            // external app so a process restart cannot forget that Gallery is open.
             if (!prefs.edit().putBoolean(PICKER_LAUNCHED_KEY, true).commit()) {
                 resultHandled = true
                 clearSession()
@@ -100,15 +91,12 @@ class GalleryPickerActivity : AppCompatActivity() {
                 }
             }
         } else {
-            // Restored owner: ActivityResultRegistry will reconnect to the existing
-            // request. Do not call launch() again.
             pickerLaunched = true
         }
     }
 
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
-        // Never restart the picker from a duplicate bridge intent.
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -136,9 +124,6 @@ class GalleryPickerActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         mainHandler.removeCallbacks(missingResultFallback)
-        // Deliberately do NOT clear the durable session here. onDestroy() may run
-        // while the external Gallery is still open. Clearing it here is exactly
-        // what allows a second picker to be launched after process recreation.
         super.onDestroy()
     }
 
@@ -151,7 +136,6 @@ class GalleryPickerActivity : AppCompatActivity() {
 
         if (active && age in 0..SESSION_STALE_MS) return false
 
-        // Clear stale state and synchronously acquire one new picker session.
         val committed = prefs.edit()
             .putBoolean(SESSION_ACTIVE_KEY, true)
             .putLong(SESSION_STARTED_KEY, now)
@@ -222,8 +206,6 @@ class GalleryPickerActivity : AppCompatActivity() {
     }
 
     companion object {
-        // Long enough for ordinary photo selection, but bounded so an OEM-lost
-        // result can never lock the Gallery button permanently.
         private const val SESSION_STALE_MS = 60_000L
         private const val RETURN_FALLBACK_DELAY_MS = 650L
 
