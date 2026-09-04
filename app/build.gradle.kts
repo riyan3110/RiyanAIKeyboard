@@ -113,6 +113,13 @@ val patchDynamicImeAction by tasks.registering {
     }
 }
 
+// BluesMinds was previously used by AI Ads Lab. Apply the same OpenAI-compatible
+// provider wiring before compilation without changing unrelated keyboard behavior.
+val patchBluesMindsProvider by tasks.registering(Exec::class) {
+    commandLine("python3", rootProject.file("tools/apply_bluesminds_provider_patch.py").absolutePath)
+}
+
 tasks.named("preBuild").configure {
     dependsOn(patchDynamicImeAction)
+    dependsOn(patchBluesMindsProvider)
 }
