@@ -36,7 +36,6 @@
             android:name=".GalleryPickerActivity"
             android:exported="false"
             android:excludeFromRecents="true"
-            android:launchMode="singleTop"
             android:label="Pilih Gambar"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
         <activity android:name=".MainActivity" android:exported="true">
