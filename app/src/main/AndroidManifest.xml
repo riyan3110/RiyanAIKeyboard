@@ -2,6 +2,9 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
 
     <queries>
@@ -33,11 +36,11 @@
             android:label="Izin Kamera"
             android:theme="@style/CameraPermissionTheme" />
         <activity
-            android:name=".GalleryPickerActivity"
+            android:name=".GalleryPermissionActivity"
             android:exported="false"
             android:excludeFromRecents="true"
-            android:launchMode="singleTop"
-            android:label="Pilih Gambar"
+            android:noHistory="true"
+            android:label="Izin Galeri"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
