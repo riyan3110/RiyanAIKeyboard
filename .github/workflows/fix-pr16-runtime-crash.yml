@@ -1,0 +1,80 @@
+name: Fix PR16 runtime crash
+
+on:
+  push:
+    branches:
+      - ui/keyboard-reference-v2
+    paths:
+      - .github/workflows/fix-pr16-runtime-crash.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ui/keyboard-reference-v2
+
+      - name: Fix utility bar layout params ownership
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('app/src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt')
+          text = path.read_text()
+
+          old_prop = '    private lateinit var utilityBar: LinearLayout\n'
+          new_prop = '    private lateinit var utilityBar: LinearLayout\n    private lateinit var utilityBarFrame: FrameLayout\n'
+          if new_prop not in text:
+              if old_prop not in text:
+                  raise SystemExit('utilityBar property anchor not found')
+              text = text.replace(old_prop, new_prop, 1)
+
+          if 'val barFrame = FrameLayout(this).apply {' in text:
+              text = text.replace(
+                  '        val barFrame = FrameLayout(this).apply {',
+                  '        utilityBarFrame = FrameLayout(this).apply {',
+                  1
+              )
+          text = text.replace('        barFrame.addView(utilityBar, FrameLayout.LayoutParams(-1, barHeight))',
+                              '        utilityBarFrame.addView(utilityBar, FrameLayout.LayoutParams(-1, barHeight))', 1)
+          text = text.replace('        barFrame.addView(View(this).apply {',
+                              '        utilityBarFrame.addView(View(this).apply {', 1)
+          text = text.replace('        barFrame.addView(View(this).apply {',
+                              '        utilityBarFrame.addView(View(this).apply {', 1)
+          text = text.replace('        root.addView(barFrame, LinearLayout.LayoutParams(-1, barHeight).apply {',
+                              '        root.addView(utilityBarFrame, LinearLayout.LayoutParams(-1, barHeight).apply {', 1)
+
+          pattern = re.compile(r'''        if \(::utilityBar\.isInitialized\) \{\n            utilityBar\.layoutParams = \(utilityBar\.layoutParams as\? LinearLayout\.LayoutParams\n                \?: LinearLayout\.LayoutParams\(-1, dp\(utilityHeightDp\(\)\)\)\)\.apply \{\n                height = dp\(utilityHeightDp\(\)\)\n                bottomMargin = dp\(toolbarKeyboardGapDp\(\)\)\n            \}\n        \}''')
+          replacement = '''        if (::utilityBarFrame.isInitialized) {
+            utilityBarFrame.layoutParams = (utilityBarFrame.layoutParams as? LinearLayout.LayoutParams
+                ?: LinearLayout.LayoutParams(-1, dp(utilityHeightDp()))).apply {
+                height = dp(utilityHeightDp())
+                bottomMargin = dp(toolbarKeyboardGapDp())
+            }
+        }
+        if (::utilityBar.isInitialized) {
+            utilityBar.layoutParams = (utilityBar.layoutParams as? FrameLayout.LayoutParams
+                ?: FrameLayout.LayoutParams(-1, dp(utilityHeightDp()))).apply {
+                width = ViewGroup.LayoutParams.MATCH_PARENT
+                height = dp(utilityHeightDp())
+            }
+        }'''
+          text, count = pattern.subn(replacement, text, count=1)
+          if count != 1:
+              raise SystemExit(f'applyRootHeight utilityBar block replacement count={count}')
+
+          path.write_text(text)
+          PY
+
+          rm -f .github/workflows/fix-pr16-runtime-crash.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Fix keyboard runtime crash from utility bar wrapper"
+          git push origin HEAD:ui/keyboard-reference-v2
