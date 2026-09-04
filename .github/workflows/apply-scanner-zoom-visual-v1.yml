@@ -6,6 +6,7 @@ on:
       - fix/scanner-zoom-visual-gallery-v1
     paths:
       - tools/apply_scanner_zoom_visual_v1.py
+      - tools/fix_scanner_zoom_visual_build_v1.py
       - .github/workflows/apply-scanner-zoom-visual-v1.yml
   workflow_dispatch:
 
@@ -20,7 +21,9 @@ jobs:
         with:
           ref: fix/scanner-zoom-visual-gallery-v1
       - name: Apply scanner zoom, visual search, and gallery fixes
-        run: python3 tools/apply_scanner_zoom_visual_v1.py
+        run: |
+          python3 tools/apply_scanner_zoom_visual_v1.py
+          python3 tools/fix_scanner_zoom_visual_build_v1.py
       - name: Commit generated source changes
         run: |
           if git diff --quiet; then
