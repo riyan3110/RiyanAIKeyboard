@@ -3576,6 +3576,87 @@ resultCard.bringToFront()
         return location.takeIf { it.startsWith("http://", true) || it.startsWith("https://", true) }
     }
 
+
+    private fun uploadBitmapForVisualSearch(source: Bitmap, queryHint: String): String? {
+        val prepared = scaleBitmapForLens(source, 1280)
+        val jpeg = runCatching {
+            val output = ByteArrayOutputStream()
+            check(prepared.compress(Bitmap.CompressFormat.JPEG, 88, output))
+            output.toByteArray()
+        }.getOrNull()
+        if (prepared !== source && !prepared.isRecycled) prepared.recycle()
+        if (jpeg == null || jpeg.isEmpty()) return null
+
+        val timestamp = System.currentTimeMillis()
+        val endpoints = listOf(
+            "https://lens.google.com/v3/upload?ep=ccm&s=&st=$timestamp&hl=id" to true,
+            "https://images.google.com/searchbyimage/upload" to false
+        )
+        for ((endpoint, includeDimensions) in endpoints) {
+            val result = runCatching {
+                uploadVisualSearchMultipart(endpoint, jpeg, source.width, source.height, includeDimensions)
+            }.getOrNull()
+            if (!result.isNullOrBlank()) return refineLensResultUrl(result, queryHint)
+        }
+        return null
+    }
+
+    private fun uploadVisualSearchMultipart(
+        endpoint: String,
+        jpeg: ByteArray,
+        width: Int,
+        height: Int,
+        includeDimensions: Boolean
+    ): String? {
+        val boundary = "----AIAdsKeyboard${UUID.randomUUID().toString().replace("-", "")}" 
+        val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            doOutput = true
+            instanceFollowRedirects = false
+            connectTimeout = 15_000
+            readTimeout = 20_000
+            setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 Chrome/125 Mobile Safari/537.36")
+            setRequestProperty("Accept-Language", "id-ID,id;q=0.9,en;q=0.6")
+            setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+        }
+
+        java.io.DataOutputStream(connection.outputStream).use { body ->
+            fun text(value: String) = body.write(value.toByteArray(Charsets.UTF_8))
+            text("--$boundary\r\n")
+            text("Content-Disposition: form-data; name=\"encoded_image\"; filename=\"ai_ads_scan.jpg\"\r\n")
+            text("Content-Type: image/jpeg\r\n\r\n")
+            body.write(jpeg)
+            text("\r\n")
+            if (includeDimensions) {
+                text("--$boundary\r\n")
+                text("Content-Disposition: form-data; name=\"processed_image_dimensions\"\r\n\r\n")
+                text("$width,$height\r\n")
+            } else {
+                text("--$boundary\r\n")
+                text("Content-Disposition: form-data; name=\"image_content\"\r\n\r\n\r\n")
+            }
+            text("--$boundary--\r\n")
+            body.flush()
+        }
+
+        val responseCode = connection.responseCode
+        var location = connection.getHeaderField("Location").orEmpty().trim()
+        if (location.isBlank()) {
+            val stream = if (responseCode >= 400) connection.errorStream else connection.inputStream
+            val html = runCatching { stream?.bufferedReader()?.use { it.readText().take(160_000) } }.getOrNull().orEmpty()
+            location = Regex("(?i)href=[\\\"']([^\\\"']+)").find(html)?.groupValues?.getOrNull(1).orEmpty()
+                .replace("&amp;", "&")
+        }
+        connection.disconnect()
+
+        if (location.startsWith("//")) location = "https:$location"
+        if (location.startsWith("/")) {
+            val origin = Uri.parse(endpoint)
+            location = "${origin.scheme}://${origin.host}$location"
+        }
+        return location.takeIf { it.startsWith("http://", true) || it.startsWith("https://", true) }
+    }
+
     private fun refineLensResultUrl(rawUrl: String, mainText: String): String {
         return runCatching {
             val uri = Uri.parse(rawUrl)
