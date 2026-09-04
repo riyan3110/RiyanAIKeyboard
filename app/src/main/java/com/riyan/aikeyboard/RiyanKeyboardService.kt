@@ -650,46 +650,79 @@ class RiyanKeyboardService : InputMethodService() {
     }
 
     private fun addUtilityBar() {
+        val barHeight = dp(utilityHeightDp())
+        val barFrame = FrameLayout(this).apply {
+            setBackgroundColor(keyBg)
+            clipChildren = false
+            clipToPadding = false
+        }
+
         utilityBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, 0, 0, 0)
+            setPadding(dp(2), dp(2), dp(2), 0)
             setBackgroundColor(keyBg)
         }
-        utilityBar.addView(toolbarButton("✦ AI", dp(57)) { toggleAiPanel() })
-        utilityBar.addView(toolbarButton("⌨", dp(43)) {
+
+        utilityBar.addView(toolbarButton("✦ AI", dp(50)) { toggleAiPanel() })
+        utilityBar.addView(toolbarButton("⌨", dp(36)) {
             aiComposeActive = false
             mode = KeyboardMode.LETTERS
             renderKeyboard()
         })
-        utilityBar.addView(toolbarButton("😊", dp(43)) {
+        utilityBar.addView(toolbarButton("😊", dp(36)) {
             aiComposeActive = false
             emojiPage = 0
             mode = KeyboardMode.EMOJI
             renderKeyboard()
         })
-        utilityBar.addView(toolbarButton("📋", dp(43)) {
+        utilityBar.addView(toolbarButton("📋", dp(36)) {
             aiComposeActive = false
             addCurrentClipboardToHistory()
             mode = KeyboardMode.CLIPBOARD
             renderKeyboard()
         })
-        utilityBar.addView(toolbarButton("↕", dp(43)) { toggleResizePanel() })
+        utilityBar.addView(toolbarButton("Kursor", dp(50)) {
+            aiComposeActive = false
+            mode = KeyboardMode.CURSOR
+            renderKeyboard()
+        })
         utilityBar.addView(
-            toolbarIconButton(R.drawable.ic_camera_modern, "Kamera penelusuran", dp(43)) { launchScanner() }
+            toolbarIconButton(R.drawable.ic_camera_modern, "Kamera penelusuran", dp(36)) { launchScanner() }
         )
+        utilityBar.addView(toolbarButton("↕", dp(34)) { toggleResizePanel() })
+
         suggestionBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(2), 0, dp(2), 0)
+            setPadding(dp(1), 0, dp(1), 0)
             setBackgroundColor(keyBg)
             visibility = View.VISIBLE
         }
         utilityBar.addView(suggestionBar, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
         utilityBar.addView(
-            toolbarIconButton(R.drawable.ic_settings_modern, "Pengaturan", dp(43)) { openSettings() }
+            toolbarIconButton(R.drawable.ic_settings_modern, "Pengaturan", dp(38)) { openSettings() }
         )
-        root.addView(utilityBar, LinearLayout.LayoutParams(-1, dp(utilityHeightDp())).apply {
+
+        barFrame.addView(utilityBar, FrameLayout.LayoutParams(-1, barHeight))
+
+        // Purple light strip modeled after the reference: soft glow plus a crisp core line.
+        barFrame.addView(View(this).apply {
+            background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(
+                Color.TRANSPARENT,
+                Color.argb(150, 152, 73, 255),
+                Color.argb(230, 193, 92, 255),
+                Color.argb(150, 152, 73, 255),
+                Color.TRANSPARENT
+            ))
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) elevation = dpFloat(5f)
+        }, FrameLayout.LayoutParams(-1, dp(4), Gravity.TOP))
+        barFrame.addView(View(this).apply {
+            setBackgroundColor(Color.rgb(188, 82, 255))
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) elevation = dpFloat(6f)
+        }, FrameLayout.LayoutParams(-1, dp(1), Gravity.TOP))
+
+        root.addView(barFrame, LinearLayout.LayoutParams(-1, barHeight).apply {
             bottomMargin = dp(toolbarKeyboardGapDp())
         })
     }
@@ -1117,7 +1150,6 @@ class RiyanKeyboardService : InputMethodService() {
                 KeySpec(":", action = { commitPunctuation(":") }),
                 KeySpec("spasi", weight = 2.2f, action = { commitSpace() }),
                 KeySpec("?", action = { commitPunctuation("?") }),
-                KeySpec("2/2", weight = 1.25f, action = { mode = KeyboardMode.CURSOR; renderKeyboard() }),
                 KeySpec(enterKeyLabel(), weight = 1.62f, action = { pressEnter() })
             )
         )
@@ -1521,8 +1553,8 @@ class RiyanKeyboardService : InputMethodService() {
         val frame = FrameLayout(this).apply {
             // At the old 100% setting the regular caps now fill 90% of their cells instead of
             // only 78%. The new 110% maximum can reach 99%, while clamping prevents overlap.
-            scaleX = (keyBoxScale * if (referenceWideKey) 0.98f else 0.90f).coerceAtMost(1f)
-            scaleY = (keyBoxScale * if (referenceLargeKey) 0.98f else 0.94f).coerceAtMost(1f)
+            scaleX = (keyBoxScale * if (referenceWideKey) 0.98f else 0.94f).coerceAtMost(1f)
+            scaleY = (keyBoxScale * if (referenceLargeKey) 0.96f else 0.90f).coerceAtMost(1f)
             isClickable = true
             isFocusable = false
             clipChildren = false
@@ -1550,8 +1582,8 @@ class RiyanKeyboardService : InputMethodService() {
         frame.addView(View(this).apply {
             background = referenceTopRimBackground()
             alpha = 0.92f
-        }, FrameLayout.LayoutParams(-1, dp(8), Gravity.TOP).apply {
-            setMargins(dp(5), dp(3), dp(5), 0)
+        }, FrameLayout.LayoutParams(-1, dp(3), Gravity.TOP).apply {
+            setMargins(dp(5), dp(2), dp(5), 0)
         })
         frame.addView(TextView(this).apply {
             text = spec.label
@@ -1575,22 +1607,15 @@ class RiyanKeyboardService : InputMethodService() {
             frame.addView(TextView(this).apply {
                 text = alternate
                 textSize = 8f
-                setTextColor(Color.rgb(205, 202, 214))
-                gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-                setPadding(0, dp(4), 0, 0)
+                setTextColor(Color.rgb(176, 174, 184))
+                gravity = Gravity.TOP or Gravity.END
+                setPadding(0, dp(3), dp(6), 0)
                 setShadowLayer(dpFloat(0.8f), 0f, dpFloat(1f), Color.BLACK)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) elevation = dpFloat(7f)
             }, FrameLayout.LayoutParams(-1, -1))
         }
 
 
-        frame.addView(View(this).apply {
-            background = roundedBackground(Color.rgb(202, 105, 255), 2f)
-            alpha = 0.96f
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) elevation = dpFloat(5f)
-        }, FrameLayout.LayoutParams(dp(if (referenceLargeKey) 18 else 12), dp(2), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
-            bottomMargin = dp(1)
-        })
 
         var downX = 0f
         var downY = 0f
@@ -1706,13 +1731,13 @@ class RiyanKeyboardService : InputMethodService() {
         } else {
             intArrayOf(
                 Color.rgb(69, 67, 78),
-                Color.rgb(42, 41, 50),
-                Color.rgb(24, 23, 30),
-                Color.rgb(15, 15, 20)
+                Color.rgb(45, 44, 53),
+                Color.rgb(39, 38, 47),
+                Color.rgb(35, 34, 43)
             )
         }
         return GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, colors).apply {
-            cornerRadius = dpFloat(23f)
+            cornerRadius = dpFloat(11f)
             setStroke(
                 dp(1),
                 if (pressed) Color.rgb(67, 65, 77) else Color.rgb(97, 94, 108)
