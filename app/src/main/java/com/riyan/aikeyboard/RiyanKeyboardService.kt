@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Rect
 import android.graphics.Typeface
@@ -35,6 +36,7 @@ import android.view.inputmethod.InputConnection
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.PopupWindow
 import android.widget.ScrollView
@@ -137,6 +139,7 @@ class RiyanKeyboardService : InputMethodService() {
     private var searchWebView: WebView? = null
     private var searchInput: EditText? = null
     private var scannerPreviewView: PreviewView? = null
+    private var scannerGalleryImageView: ImageView? = null
     private var scannerStatusText: TextView? = null
     private var scannerResultText: TextView? = null
     private var scannerSearchButton: Button? = null
@@ -147,6 +150,8 @@ class RiyanKeyboardService : InputMethodService() {
     private var searchWebComposeActive = false
     private var scannerActive = false
     private var scannerTorchEnabled = false
+    private var scannerGalleryUri: Uri? = null
+    private var scannerGalleryPreviewBitmap: Bitmap? = null
     private var scannerBestScore = 0
     private var scannerSelectedQuery = ""
     private var scannerSelectedUrl = ""
@@ -355,7 +360,7 @@ class RiyanKeyboardService : InputMethodService() {
     override fun onWindowShown() {
         super.onWindowShown()
         consumePendingScanResult()
-        if (searchSurfaceVisible && scannerActive &&
+        if (searchSurfaceVisible && scannerActive && scannerGalleryUri == null &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
         ) {
             scannerPreviewView?.post { startEmbeddedScanner() }
@@ -1493,7 +1498,7 @@ class RiyanKeyboardService : InputMethodService() {
     }
 
     private fun keyView(spec: KeySpec): View {
-        val isSpecial = spec.label.length > 2 || spec.label in listOf("⇧", "⇪", "⌫", "↵", "◀", "▶")
+        val isSpecial = spec.label.length > 2 || spec.label in listOf("⇧", "⇪", "⌫", "↵", "🔍", "➤", "→", "←", "✓", "◀", "▶")
         val normalColor = if (isSpecial) specialKeyBg else keyBg
         val referenceLargeKey = spec.label in listOf(
             "⇧", "⇪", "⌫", "?123", "↵", "✓", "➤", "→", "←", "🔍"
@@ -2046,6 +2051,18 @@ class RiyanKeyboardService : InputMethodService() {
             scannerPreviewView?.post { startEmbeddedScanner() }
         }
 
+        if (prefs.getBoolean(GALLERY_READY_KEY, false)) {
+            val galleryUriText = prefs.getString(GALLERY_URI_KEY, "").orEmpty().trim()
+            prefs.edit().putBoolean(GALLERY_READY_KEY, false).apply()
+            if (galleryUriText.isNotBlank()) {
+                val galleryUri = runCatching { Uri.parse(galleryUriText) }.getOrNull()
+                if (galleryUri != null) {
+                    scannerGalleryUri = galleryUri
+                    showEmbeddedCameraPanel(resetCandidate = false)
+                }
+            }
+        }
+
         if (!prefs.getBoolean(SCAN_READY_KEY, false)) return
         val nonce = prefs.getLong(SCAN_NONCE_KEY, 0L)
         val query = prefs.getString(SCAN_QUERY_KEY, "").orEmpty().trim()
@@ -2067,6 +2084,7 @@ class RiyanKeyboardService : InputMethodService() {
         searchWebComposeActive = false
         searchInput?.clearFocus()
         searchInput = null
+        clearScannerGalleryImage()
         stopEmbeddedScanner()
         destroySearchWebView()
         if (::searchSurfaceContent.isInitialized) searchSurfaceContent.removeAllViews()
@@ -2082,6 +2100,7 @@ class RiyanKeyboardService : InputMethodService() {
         searchWebComposeActive = false
         searchInput = null
         if (resetCandidate) {
+            clearScannerGalleryImage()
             scannerBestScore = 0
             scannerSelectedQuery = ""
             scannerSelectedUrl = ""
@@ -2124,7 +2143,8 @@ class RiyanKeyboardService : InputMethodService() {
             setPadding(dp(7), 0, dp(3), 0)
         }
         header.addView(scannerStatusText, LinearLayout.LayoutParams(0, dp(searchHeaderHeightDp()), 1f))
-        header.addView(compactButton("⚡") { toggleScannerTorch() }, LinearLayout.LayoutParams(dp(38), dp(searchHeaderHeightDp())))
+        header.addView(compactButton("🖼") { launchGalleryPicker() }, LinearLayout.LayoutParams(dp(38), dp(searchHeaderHeightDp())))
+        header.addView(compactButton("⚡") { toggleScannerTorch() }, LinearLayout.LayoutParams(dp(38), dp(searchHeaderHeightDp())).apply { leftMargin = dp(2) })
         header.addView(compactButton("✕") { closeSearchSurface() }, LinearLayout.LayoutParams(dp(38), dp(searchHeaderHeightDp())).apply {
             leftMargin = dp(2)
         })
@@ -2144,6 +2164,12 @@ class RiyanKeyboardService : InputMethodService() {
             }
         }
         previewFrame.addView(scannerPreviewView, FrameLayout.LayoutParams(-1, -1))
+        scannerGalleryImageView = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            setBackgroundColor(Color.BLACK)
+            visibility = View.GONE
+        }
+        previewFrame.addView(scannerGalleryImageView, FrameLayout.LayoutParams(-1, -1))
         previewFrame.addView(View(this).apply {
             background = GradientDrawable().apply {
                 setColor(Color.TRANSPARENT)
@@ -2180,10 +2206,11 @@ class RiyanKeyboardService : InputMethodService() {
         content.addView(resultCard, LinearLayout.LayoutParams(-1, if (isLandscape()) dp(40) else dp(55)))
         searchSurfaceContent.addView(content, FrameLayout.LayoutParams(-1, -1))
         showSearchSurface()
+        scannerGalleryUri?.let(::showGalleryImage)
     }
 
     private fun startEmbeddedScanner() {
-        if (!scannerActive || !searchSurfaceVisible) return
+        if (!scannerActive || !searchSurfaceVisible || scannerGalleryUri != null) return
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) return
         val previewView = scannerPreviewView ?: return
         val providerFuture = ProcessCameraProvider.getInstance(this)
@@ -2230,6 +2257,91 @@ class RiyanKeyboardService : InputMethodService() {
         ).setAutoCancelDuration(3, TimeUnit.SECONDS).build()
         camera.cameraControl.startFocusAndMetering(action)
     }
+
+    private fun launchGalleryPicker() {
+        scannerStatusText?.text = "Pilih gambar dari galeri…"
+        runCatching {
+            startActivity(
+                Intent(this, GalleryPickerActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+            )
+        }.onFailure {
+            scannerStatusText?.text = "Galeri tidak dapat dibuka."
+            Toast.makeText(this, "Galeri tidak dapat dibuka.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun showGalleryImage(uri: Uri) {
+        scannerGalleryUri = uri
+        scannerVisualSearchPreferred = true
+        scannerSelectedQuery = ""
+        scannerSelectedUrl = ""
+        scannerMainProductText = ""
+        scannerBingVisualQuery = ""
+        scannerLocalShapeHint = ""
+        stopEmbeddedScanner(keepRequested = true)
+        scannerPreviewView?.visibility = View.GONE
+        scannerGalleryImageView?.apply {
+            setImageDrawable(null)
+            visibility = View.VISIBLE
+        }
+        scannerStatusText?.text = "Gambar galeri dipilih · tekan Cari untuk AI Vision"
+        scannerResultText?.text = "AI Vision akan mengenali gambar dari galeri"
+        scannerSearchButton?.isEnabled = true
+
+        thread {
+            val bitmap = decodeGalleryBitmap(uri, 1280)
+            handler.post {
+                if (scannerGalleryUri != uri) {
+                    bitmap?.recycle()
+                    return@post
+                }
+                scannerGalleryPreviewBitmap?.takeIf { it !== bitmap && !it.isRecycled }?.recycle()
+                scannerGalleryPreviewBitmap = bitmap
+                if (bitmap == null) {
+                    scannerStatusText?.text = "Gambar galeri tidak dapat dibaca · pilih gambar lain"
+                    scannerResultText?.text = "Format gambar tidak didukung atau file tidak tersedia"
+                    scannerSearchButton?.isEnabled = false
+                } else {
+                    scannerGalleryImageView?.setImageBitmap(bitmap)
+                }
+            }
+        }
+    }
+
+    private fun clearScannerGalleryImage() {
+        scannerGalleryUri = null
+        scannerGalleryImageView?.setImageDrawable(null)
+        scannerGalleryImageView = null
+        scannerGalleryPreviewBitmap?.takeIf { !it.isRecycled }?.recycle()
+        scannerGalleryPreviewBitmap = null
+    }
+
+    private fun decodeGalleryBitmap(uri: Uri, maxDimension: Int): Bitmap? = runCatching {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching null
+
+        var sample = 1
+        val longest = maxOf(bounds.outWidth, bounds.outHeight)
+        while (longest / sample > maxDimension * 2) sample *= 2
+
+        val options = BitmapFactory.Options().apply {
+            inSampleSize = sample.coerceAtLeast(1)
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+        }
+        val decoded = contentResolver.openInputStream(uri)?.use {
+            BitmapFactory.decodeStream(it, null, options)
+        } ?: return@runCatching null
+        val decodedLongest = maxOf(decoded.width, decoded.height)
+        if (decodedLongest <= maxDimension) return@runCatching decoded
+        val scale = maxDimension.toFloat() / decodedLongest.toFloat()
+        val width = (decoded.width * scale).toInt().coerceAtLeast(1)
+        val height = (decoded.height * scale).toInt().coerceAtLeast(1)
+        Bitmap.createScaledBitmap(decoded, width, height, true).also {
+            if (it !== decoded && !decoded.isRecycled) decoded.recycle()
+        }
+    }.getOrNull()
 
     private fun toggleScannerTorch() {
         val camera = scannerCamera
@@ -2965,6 +3077,11 @@ class RiyanKeyboardService : InputMethodService() {
             return
         }
 
+        scannerGalleryUri?.let {
+            performGalleryAiVisionSearch(it)
+            return
+        }
+
         val preview = scannerPreviewView ?: run {
             scannerStatusText?.text = "Kamera belum siap · coba lagi"
             return
@@ -3028,6 +3145,63 @@ class RiyanKeyboardService : InputMethodService() {
                     scannerSearchButton?.text = "Cari"
                     scannerSearchButton?.isEnabled = true
                 }
+            }
+        }
+    }
+
+    private fun performGalleryAiVisionSearch(uri: Uri) {
+        scannerSearchButton?.isEnabled = false
+        scannerSearchButton?.text = "…"
+        scannerStatusText?.text = "Menyiapkan gambar galeri untuk AI Vision…"
+
+        thread {
+            val frame = decodeGalleryBitmap(uri, 1400)
+            if (frame == null || frame.width < 40 || frame.height < 40) {
+                handler.post {
+                    scannerSearchButton?.text = "Cari"
+                    scannerSearchButton?.isEnabled = true
+                    scannerStatusText?.text = "Gambar galeri gagal dibaca · pilih gambar lain"
+                }
+                return@thread
+            }
+
+            val prepared = scaleBitmapForAiVision(frame, 896)
+            val encoded = runCatching {
+                val output = ByteArrayOutputStream()
+                check(prepared.compress(Bitmap.CompressFormat.JPEG, 82, output))
+                android.util.Base64.encodeToString(output.toByteArray(), android.util.Base64.NO_WRAP)
+            }.getOrNull()
+            val result = if (encoded.isNullOrBlank()) {
+                Result.failure<AiResponse>(IllegalStateException("Gambar galeri gagal disiapkan."))
+            } else {
+                AiClient.visionProduct(aiSettings(), encoded, "gambar dipilih dari galeri")
+            }
+
+            if (prepared !== frame && !prepared.isRecycled) prepared.recycle()
+            if (!frame.isRecycled) frame.recycle()
+
+            handler.post {
+                if (scannerGalleryUri != uri) return@post
+                val response = result.getOrNull()
+                val query = response?.text?.let(::cleanAiVisionSearchQuery).orEmpty()
+                if (query.isBlank()) {
+                    scannerSearchButton?.text = "Cari"
+                    scannerSearchButton?.isEnabled = true
+                    scannerStatusText?.text = aiVisionFailureMessage(result.exceptionOrNull())
+                    scannerResultText?.text = "Gambar tidak dikirim ke pencarian sampai AI mengenalinya"
+                    return@post
+                }
+
+                scannerSelectedQuery = query
+                scannerSelectedUrl = ""
+                scannerResultText?.text = query
+                scannerStatusText?.text = "AI Vision: $query"
+                searchQuery = query
+                searchUrl = "https://www.bing.com/images/search?q=${Uri.encode(query)}"
+                stopEmbeddedScanner()
+                showSearchWebPanel()
+                scannerSearchButton?.text = "Cari"
+                scannerSearchButton?.isEnabled = true
             }
         }
     }
@@ -3670,6 +3844,9 @@ class RiyanKeyboardService : InputMethodService() {
             nineRouterApiKey = prefs.getString("9router_api_key", "").orEmpty(),
             nineRouterBaseUrl = prefs.getString("9router_base_url", "http://43.159.50.231:20130/v1").orEmpty(),
             nineRouterModel = prefs.getString("9router_model", "cc/claude-sonnet-4-20250514").orEmpty(),
+            bluesMindsApiKey = prefs.getString("bluesminds_api_key", "").orEmpty(),
+            bluesMindsBaseUrl = prefs.getString("bluesminds_base_url", "https://api.bluesminds.com/v1").orEmpty(),
+            bluesMindsModel = prefs.getString("bluesminds_model", "deepseek-ai/deepseek-v4-flash").orEmpty(),
             fallbackEnabled = prefs.getBoolean("fallback_enabled", false),
             referenceUrls = prefs.getString("reference_urls", "").orEmpty()
                 .lineSequence()
@@ -3797,6 +3974,8 @@ class RiyanKeyboardService : InputMethodService() {
         private const val MAX_CLIPS = 12
         private const val MAX_CLIP_LENGTH = 1200
         private const val MAX_LEARNED_SUGGESTIONS = 180
+        private const val GALLERY_READY_KEY = "camera_gallery_ready"
+        private const val GALLERY_URI_KEY = "camera_gallery_uri"
         private const val SCAN_READY_KEY = "camera_search_ready"
         private const val SCAN_NONCE_KEY = "camera_search_nonce"
         private const val SCAN_QUERY_KEY = "camera_search_query"
