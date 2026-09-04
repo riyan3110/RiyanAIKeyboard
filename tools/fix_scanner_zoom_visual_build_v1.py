@@ -1,5 +1,7 @@
 from pathlib import Path
 
+# Keep this follow-up idempotent: it is also used to retrigger PR APK validation after
+# the generated source commit is written by GitHub Actions.
 SERVICE = Path("app/src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt")
 source = SERVICE.read_text()
 
