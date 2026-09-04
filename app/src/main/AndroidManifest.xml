@@ -46,7 +46,8 @@
             android:name=".ThemePhotoPickerActivity"
             android:exported="false"
             android:excludeFromRecents="true"
-            android:noHistory="true"
+            android:launchMode="singleTop"
+            android:taskAffinity="com.riyan.aikeyboard.settings"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
         <activity
             android:name=".SettingsActivity"
