@@ -1,0 +1,95 @@
+name: Apply AI Vision Unfiltered App Logic
+
+on:
+  push:
+    branches: [ rebuild/internal-gallery-v2 ]
+    paths: [ .github/workflows/apply-ai-vision-unfiltered.yml ]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: rebuild/internal-gallery-v2
+      - name: Remove app-side vision restrictions
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          ai_path = Path('app/src/main/java/com/riyan/aikeyboard/AiClient.kt')
+          ai = ai_path.read_text()
+          pattern = re.compile(r'    private fun visionInstruction\(localTextHint: String\): String = buildString \{.*?\n    \}\n\n    private fun requestOpenRouterVision', re.S)
+          replacement = '''    private fun visionInstruction(localTextHint: String): String = buildString {
+        append(
+            "Analisis gambar apa adanya berdasarkan seluruh isi visual yang benar-benar terlihat. " +
+                "Jangan menambahkan filter kategori dari aplikasi dan jangan memaksa gambar menjadi jenis objek tertentu. " +
+                "Kenali objek, produk, teks, logo, bahan, warna, bentuk, pola, fungsi, lingkungan, serta konteks visual lain yang relevan. " +
+                "Jika ada beberapa objek penting, gunakan kombinasinya bila itu membuat identifikasi lebih tepat. " +
+                "Jangan mengarang merek atau model yang tidak terlihat. " +
+                "Hasil akhir harus berupa satu query pencarian gambar yang paling spesifik dan natural untuk menemukan gambar atau objek yang sama atau sangat mirip."
+        )
+        val hint = localTextHint.trim().replace(Regex("\\\\s+"), " ").take(220)
+        if (hint.isNotBlank()) {
+            append("\\nKonteks lokal opsional, abaikan bila tidak cocok dengan gambar: ")
+            append(hint)
+        }
+    }
+
+    private fun requestOpenRouterVision'''
+          ai, count = pattern.subn(lambda _: replacement, ai, count=1)
+          if count != 1:
+              raise SystemExit('visionInstruction block not found')
+          ai_path.write_text(ai)
+
+          service_path = Path('app/src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt')
+          service = service_path.read_text()
+
+          old = '''            val crop = cropScannerVisualTarget(frame)
+            val prepared = scaleBitmapForAiVision(crop, 896)
+            val localHint = scannerMainProductText
+                .replace(Regex("\\\\s+"), " ")
+                .trim()
+                .take(120)
+'''
+          new = '''            // AI Vision receives the full camera frame so context is not lost by the old center crop.
+            val prepared = scaleBitmapForAiVision(frame, 1024)
+            // Do not bias the multimodal model with OCR/product guesses from the lightweight local detector.
+            val localHint = ""
+'''
+          if old not in service:
+              raise SystemExit('camera AI preparation block not found')
+          service = service.replace(old, new, 1)
+
+          old_cleanup = '''                if (prepared !== crop) prepared.recycle()
+                if (crop !== frame) crop.recycle()
+                frame.recycle()
+'''
+          new_cleanup = '''                if (prepared !== frame) prepared.recycle()
+                frame.recycle()
+'''
+          if old_cleanup not in service:
+              raise SystemExit('camera cleanup block not found')
+          service = service.replace(old_cleanup, new_cleanup, 1)
+
+          service = service.replace(
+              'AiClient.visionProduct(aiSettings(), encoded, "gambar dipilih dari galeri")',
+              'AiClient.visionProduct(aiSettings(), encoded, "")',
+              1,
+          )
+          service = service.replace('scaleBitmapForAiVision(frame, 896)', 'scaleBitmapForAiVision(frame, 1024)', 1)
+          service_path.write_text(service)
+          PY
+      - name: Commit source changes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/com/riyan/aikeyboard/AiClient.kt app/src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt
+          git commit -m "Remove app-side AI Vision filtering and use full-frame detection"
+          git push origin HEAD:rebuild/internal-gallery-v2
