@@ -25,6 +25,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -35,6 +36,7 @@ class InternalGalleryPanel(private val context: Context) {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val thumbnailExecutor = Executors.newFixedThreadPool(3)
     private val generation = AtomicInteger(0)
+    private val selectionGate = AtomicBoolean(false)
     @Volatile private var released = false
 
     fun show(
@@ -44,6 +46,7 @@ class InternalGalleryPanel(private val context: Context) {
         onPermissionRequired: () -> Unit
     ) {
         released = false
+        selectionGate.set(false)
         val token = generation.incrementAndGet()
         container.removeAllViews()
 
@@ -157,7 +160,11 @@ class InternalGalleryPanel(private val context: Context) {
                         contentDescription = "Pilih foto"
                         isClickable = true
                         setOnClickListener {
-                            if (!released && token == generation.get()) onSelected(uri)
+                            if (!released && token == generation.get() && selectionGate.compareAndSet(false, true)) {
+                                isEnabled = false
+                                alpha = 0.72f
+                                onSelected(uri)
+                            }
                         }
                     }
                     row.addView(image, LinearLayout.LayoutParams(0, cellHeight, 1f).apply {
