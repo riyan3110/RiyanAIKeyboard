@@ -175,9 +175,12 @@ object AiClient {
             "Analisis gambar apa adanya berdasarkan seluruh isi visual yang benar-benar terlihat. " +
                 "Jangan menambahkan filter kategori dari aplikasi dan jangan memaksa gambar menjadi jenis objek tertentu. " +
                 "Kenali objek, produk, teks, logo, bahan, warna, bentuk, pola, fungsi, lingkungan, serta konteks visual lain yang relevan. " +
-                "Jika ada beberapa objek penting, gunakan kombinasinya bila itu membuat identifikasi lebih tepat. " +
-                "Jangan mengarang merek atau model yang tidak terlihat. " +
-                "Hasil akhir harus berupa satu query pencarian gambar yang paling spesifik dan natural untuk menemukan gambar atau objek yang sama atau sangat mirip."
+                "Jika ada manusia, analisis ciri fisik yang benar-benar terlihat secara rinci untuk pencarian visual: siluet dan proporsi tubuh yang tampak, postur atau pose, bentuk wajah, bentuk dan kontur bibir, bentuk hidung termasuk pangkal dan ujungnya, bentuk dan jarak mata, kelopak mata, bentuk dan ketebalan alis, panjang/tekstur/gaya/warna rambut, serta bentuk atau posisi telinga yang terlihat. " +
+                "Gunakan juga pakaian, aksesori, arah pandang, dan ciri visual pembeda lain yang tampak bila membantu menemukan gambar serupa. " +
+                "Jangan mengidentifikasi siapa orangnya dan jangan menebak ras atau etnis, kondisi kesehatan, kepribadian, agama, orientasi seksual, atau atribut sensitif lain dari penampilan. " +
+                "Jika ada beberapa objek atau ciri penting, gunakan kombinasinya bila itu membuat identifikasi lebih tepat. " +
+                "Jangan mengarang merek, model, identitas, atau ciri yang tidak terlihat. " +
+                "Hasil akhir harus berupa satu query pencarian gambar yang paling spesifik dan natural untuk menemukan gambar, objek, atau tampilan visual yang sama atau sangat mirip."
         )
         val hint = localTextHint.trim().replace(Regex("\\s+"), " ").take(220)
         if (hint.isNotBlank()) {

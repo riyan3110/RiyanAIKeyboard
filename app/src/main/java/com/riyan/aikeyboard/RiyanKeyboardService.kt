@@ -2196,33 +2196,20 @@ class RiyanKeyboardService : InputMethodService() {
         scannerActive = true
         searchSurfaceContent.removeAllViews()
 
-        val content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = roundedBackground(Color.rgb(18, 18, 23), 20f)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) clipToOutline = true
-        }
+        val content = FrameLayout(this).apply {
+    background = roundedBackground(Color.TRANSPARENT, 20f)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) clipToOutline = true
+}
         val header = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(7), dp(2), dp(4), dp(2))
-            setBackgroundColor(Color.rgb(34, 33, 41))
-        }
-        val title = TextView(this).apply {
-            text = "Kamera penelusuran"
-            textSize = if (isLandscape()) 11f else 13f
-            setTextColor(Color.WHITE)
-            setTypeface(typeface, Typeface.BOLD)
-        }
-        header.addView(title, LinearLayout.LayoutParams(-2, dp(searchHeaderHeightDp())))
+    orientation = LinearLayout.HORIZONTAL
+    gravity = Gravity.CENTER_VERTICAL
+    setPadding(dp(7), dp(2), dp(4), dp(2))
+    elevation = dpFloat(8f)
+}
         scannerStatusText = TextView(this).apply {
-            text = "Pindai teks, kode, label, dokumen, dan objek…"
-            textSize = if (isLandscape()) 8f else 10f
-            maxLines = 1
-            ellipsize = TextUtils.TruncateAt.END
-            setTextColor(Color.LTGRAY)
-            setPadding(dp(7), 0, dp(3), 0)
-        }
-        header.addView(scannerStatusText, LinearLayout.LayoutParams(0, dp(searchHeaderHeightDp()), 1f))
+    visibility = View.GONE
+}
+header.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
         header.addView(
             premiumIconButton(R.drawable.ic_gallery_modern, "Buka galeri di keyboard") { showInternalGalleryPanel() },
             LinearLayout.LayoutParams(dp(38), dp(searchHeaderHeightDp()))
@@ -2235,7 +2222,11 @@ class RiyanKeyboardService : InputMethodService() {
             premiumIconButton(R.drawable.ic_close_modern, "Tutup kamera penelusuran") { closeSearchSurface() },
             LinearLayout.LayoutParams(dp(38), dp(searchHeaderHeightDp())).apply { leftMargin = dp(2) }
         )
-        content.addView(header, LinearLayout.LayoutParams(-1, dp(searchHeaderHeightDp() + 4)))
+        content.addView(header, FrameLayout.LayoutParams(-1, dp(searchHeaderHeightDp() + 4), Gravity.TOP).apply {
+    leftMargin = dp(3)
+    rightMargin = dp(3)
+    topMargin = dp(2)
+})
 
         val previewFrame = FrameLayout(this)
         scannerPreviewView = PreviewView(this).apply {
@@ -2257,23 +2248,16 @@ class RiyanKeyboardService : InputMethodService() {
             visibility = View.GONE
         }
         previewFrame.addView(scannerGalleryImageView, FrameLayout.LayoutParams(-1, -1))
-        previewFrame.addView(View(this).apply {
-            background = GradientDrawable().apply {
-                setColor(Color.TRANSPARENT)
-                cornerRadius = dpFloat(18f)
-                setStroke(dp(2), Color.WHITE)
-            }
-        }, FrameLayout.LayoutParams(-1, if (isLandscape()) dp(72) else dp(140), Gravity.CENTER).apply {
-            setMargins(dp(28), 0, dp(28), 0)
-        })
-        content.addView(previewFrame, LinearLayout.LayoutParams(-1, 0, 1f))
+
+        content.addView(previewFrame, FrameLayout.LayoutParams(-1, -1))
 
         val resultCard = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(6), dp(3), dp(4), dp(3))
-            setBackgroundColor(Color.rgb(31, 30, 38))
-        }
+    orientation = LinearLayout.HORIZONTAL
+    gravity = Gravity.CENTER_VERTICAL
+    setPadding(dp(6), dp(3), dp(4), dp(3))
+    setBackgroundColor(Color.TRANSPARENT)
+    elevation = dpFloat(8f)
+}
         scannerResultText = TextView(this).apply {
             text = scannerSelectedQuery.ifBlank { "Arahkan objek ke kotak, lalu ketuk layar untuk fokus." }
             textSize = if (isLandscape()) 9f else 11f
@@ -2290,7 +2274,9 @@ class RiyanKeyboardService : InputMethodService() {
         resultCard.addView(scannerSearchButton, LinearLayout.LayoutParams(dp(55), if (isLandscape()) dp(30) else dp(38)).apply {
             leftMargin = dp(3)
         })
-        content.addView(resultCard, LinearLayout.LayoutParams(-1, if (isLandscape()) dp(40) else dp(55)))
+        content.addView(resultCard, FrameLayout.LayoutParams(-1, if (isLandscape()) dp(40) else dp(55), Gravity.BOTTOM))
+header.bringToFront()
+resultCard.bringToFront()
         searchSurfaceContent.addView(content, FrameLayout.LayoutParams(-1, -1))
         showSearchSurface()
         scannerGalleryUri?.let(::showGalleryImage)
@@ -2936,7 +2922,39 @@ class RiyanKeyboardService : InputMethodService() {
             settings.cacheMode = WebSettings.LOAD_DEFAULT
             settings.loadsImagesAutomatically = true
             settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            settings.mediaPlaybackRequiresUserGesture = false
             settings.userAgentString = settings.userAgentString + " AIAdsKeyboard/0.20"
+            webChromeClient = object : android.webkit.WebChromeClient() {
+                override fun onPermissionRequest(request: android.webkit.PermissionRequest?) {
+                    request ?: return
+                    handler.post {
+                        val host = request.origin?.host?.lowercase().orEmpty()
+                        val trustedCameraOrigin =
+                            host == "bing.com" || host.endsWith(".bing.com") ||
+                            host == "google.com" || host.endsWith(".google.com")
+                        val cameraGranted = ContextCompat.checkSelfPermission(
+                            this@RiyanKeyboardService,
+                            Manifest.permission.CAMERA
+                        ) == PackageManager.PERMISSION_GRANTED
+                        val videoRequested = request.resources.any {
+                            it == android.webkit.PermissionRequest.RESOURCE_VIDEO_CAPTURE
+                        }
+
+                        if (trustedCameraOrigin && cameraGranted && videoRequested) {
+                            request.grant(arrayOf(android.webkit.PermissionRequest.RESOURCE_VIDEO_CAPTURE))
+                        } else {
+                            request.deny()
+                            if (videoRequested && !cameraGranted) {
+                                Toast.makeText(
+                                    this@RiyanKeyboardService,
+                                    "Izinkan akses kamera AI Ads Keyboard agar kamera Web Big dapat digunakan.",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+                    }
+                }
+            }
             setOnTouchListener { view, event ->
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {
@@ -3603,6 +3621,7 @@ class RiyanKeyboardService : InputMethodService() {
         searchWebComposeActive = false
         searchWebView?.let { webView ->
             webView.stopLoading()
+            webView.webChromeClient = android.webkit.WebChromeClient()
             webView.webViewClient = WebViewClient()
             webView.loadUrl("about:blank")
             webView.clearHistory()
