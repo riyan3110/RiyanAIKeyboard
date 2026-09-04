@@ -172,16 +172,17 @@ object AiClient {
 
     private fun visionInstruction(localTextHint: String): String = buildString {
         append(
-            "Lihat FOTO, bukan sekadar teks. Kenali SATU benda/produk fisik utama yang berada di tengah gambar. " +
-                "Buat query pencarian gambar yang paling mungkin menemukan benda yang sama atau model yang sangat mirip. " +
-                "Utamakan jenis/fungsi benda, konstruksi/bentuk khas, material, warna, dan ciri pembeda. " +
-                "Sebut merek atau model HANYA jika benar-benar terbaca jelas pada gambar. Jangan menebak merek/model. " +
-                "Abaikan benda latar belakang dan OCR kecil/noisy. Gunakan nama produk Indonesia atau Inggris yang umum dipakai di marketplace. " +
-                "Jawab tepat SATU BARIS query pencarian, 4 sampai 18 kata, tanpa penjelasan, tanpa tanda kutip, tanpa awalan 'query:'."
+            "Lihat gambar secara utuh dan kenali subjek yang paling penting berdasarkan bentuk visual nyata. " +
+                "Subjek bisa berupa produk, benda, makanan, kendaraan, hewan, tanaman, tempat, logo, kemasan, pakaian, perangkat, atau objek lain. " +
+                "Jangan memaksa semua gambar dianggap produk dan jangan terpaku hanya pada teks. " +
+                "Jika ada beberapa objek, pilih yang paling dominan dan gunakan objek lain hanya sebagai konteks. " +
+                "Gunakan bentuk, konstruksi, material, warna, pola, fungsi, logo, dan teks yang benar-benar terlihat untuk membuat query yang spesifik. " +
+                "Sebut merek atau model hanya jika terbaca jelas; jika tidak, gunakan deskripsi visual yang paling akurat. " +
+                "Jawab tepat satu baris query pencarian yang natural, 3 sampai 20 kata, tanpa penjelasan dan tanpa awalan 'query:'."
         )
-        val hint = localTextHint.trim().replace(Regex("\\s+"), " ").take(120)
+        val hint = localTextHint.trim().replace(Regex("\s+"), " ").take(180)
         if (hint.isNotBlank()) {
-            append("\nPetunjuk OCR lokal (boleh diabaikan jika bertentangan dengan foto): ")
+            append("\nPetunjuk OCR/label lokal (gunakan hanya bila membantu dan sesuai dengan gambar): ")
             append(hint)
         }
     }

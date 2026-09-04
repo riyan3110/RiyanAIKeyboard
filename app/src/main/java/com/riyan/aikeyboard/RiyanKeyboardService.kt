@@ -154,6 +154,7 @@ class RiyanKeyboardService : InputMethodService() {
     private var scannerTorchEnabled = false
     private var scannerGalleryUri: Uri? = null
     private var scannerGalleryPreviewBitmap: Bitmap? = null
+    private var internalGalleryPanel: InternalGalleryPanel? = null
     private var scannerBestScore = 0
     private var scannerSelectedQuery = ""
     private var scannerSelectedUrl = ""
@@ -279,6 +280,8 @@ class RiyanKeyboardService : InputMethodService() {
         clipboardManager.removePrimaryClipChangedListener(clipboardListener)
         dismissKeyPreview(release = true)
         handler.removeCallbacksAndMessages(null)
+        internalGalleryPanel?.release()
+        internalGalleryPanel = null
         stopEmbeddedScanner()
         destroySearchWebView()
         barcodeScanner.close()
@@ -2101,17 +2104,6 @@ class RiyanKeyboardService : InputMethodService() {
             scannerPreviewView?.post { startEmbeddedScanner() }
         }
 
-        if (prefs.getBoolean(GALLERY_READY_KEY, false)) {
-            val galleryUriText = prefs.getString(GALLERY_URI_KEY, "").orEmpty().trim()
-            prefs.edit().putBoolean(GALLERY_READY_KEY, false).apply()
-            if (galleryUriText.isNotBlank()) {
-                val galleryUri = runCatching { Uri.parse(galleryUriText) }.getOrNull()
-                if (galleryUri != null) {
-                    scannerGalleryUri = galleryUri
-                    showEmbeddedCameraPanel(resetCandidate = false)
-                }
-            }
-        }
 
         if (!prefs.getBoolean(SCAN_READY_KEY, false)) return
         val nonce = prefs.getLong(SCAN_NONCE_KEY, 0L)
@@ -2134,6 +2126,8 @@ class RiyanKeyboardService : InputMethodService() {
         searchWebComposeActive = false
         searchInput?.clearFocus()
         searchInput = null
+        internalGalleryPanel?.release()
+        internalGalleryPanel = null
         clearScannerGalleryImage()
         stopEmbeddedScanner()
         destroySearchWebView()
@@ -2144,6 +2138,8 @@ class RiyanKeyboardService : InputMethodService() {
     }
 
     private fun showEmbeddedCameraPanel(resetCandidate: Boolean) {
+        internalGalleryPanel?.release()
+        internalGalleryPanel = null
         stopEmbeddedScanner()
         destroySearchWebView()
         searchComposeActive = false
@@ -2194,7 +2190,7 @@ class RiyanKeyboardService : InputMethodService() {
         }
         header.addView(scannerStatusText, LinearLayout.LayoutParams(0, dp(searchHeaderHeightDp()), 1f))
         header.addView(
-            premiumIconButton(R.drawable.ic_gallery_modern, "Pilih foto dari galeri") { launchGalleryPicker() },
+            premiumIconButton(R.drawable.ic_gallery_modern, "Buka galeri di keyboard") { showInternalGalleryPanel() },
             LinearLayout.LayoutParams(dp(38), dp(searchHeaderHeightDp()))
         )
         header.addView(
@@ -2315,17 +2311,55 @@ class RiyanKeyboardService : InputMethodService() {
         camera.cameraControl.startFocusAndMetering(action)
     }
 
-    private fun launchGalleryPicker() {
-        scannerStatusText?.text = "Pilih gambar dari galeri…"
-        runCatching {
-            startActivity(
-                Intent(this, GalleryPickerActivity::class.java)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
-            )
-        }.onFailure {
-            scannerStatusText?.text = "Galeri tidak dapat dibuka."
-            Toast.makeText(this, "Galeri tidak dapat dibuka.", Toast.LENGTH_SHORT).show()
-        }
+    private fun showInternalGalleryPanel() {
+        if (!::searchSurfaceContent.isInitialized) return
+
+        stopEmbeddedScanner(keepRequested = true)
+        destroySearchWebView()
+        searchComposeActive = false
+        searchWebComposeActive = false
+        searchInput = null
+        scannerActive = true
+
+        internalGalleryPanel?.release()
+        val panel = InternalGalleryPanel(this)
+        internalGalleryPanel = panel
+
+        panel.show(
+            container = searchSurfaceContent,
+            onSelected = selected@ { uri ->
+                if (internalGalleryPanel !== panel) return@selected
+                panel.release()
+                internalGalleryPanel = null
+                scannerGalleryUri = uri
+                scannerVisualSearchPreferred = true
+                scannerSelectedQuery = ""
+                scannerSelectedUrl = ""
+                showEmbeddedCameraPanel(resetCandidate = false)
+            },
+            onCamera = camera@ {
+                if (internalGalleryPanel !== panel) return@camera
+                panel.release()
+                internalGalleryPanel = null
+                clearScannerGalleryImage()
+                scannerActive = true
+                showEmbeddedCameraPanel(resetCandidate = false)
+                scannerPreviewView?.post { startEmbeddedScanner() }
+            },
+            onPermissionRequired = permission@ {
+                if (internalGalleryPanel !== panel) return@permission
+                runCatching {
+                    startActivity(
+                        Intent(this, GalleryPermissionActivity::class.java)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+                    )
+                }.onFailure {
+                    scannerStatusText?.text = "Izin foto tidak dapat dibuka."
+                    Toast.makeText(this, "Buka aplikasi AI Ads Keyboard lalu izinkan akses Foto & Video.", Toast.LENGTH_LONG).show()
+                }
+            }
+        )
+        showSearchSurface()
     }
 
     private fun showGalleryImage(uri: Uri) {
@@ -2804,6 +2838,8 @@ class RiyanKeyboardService : InputMethodService() {
     }
 
     private fun showSearchWebPanel() {
+        internalGalleryPanel?.release()
+        internalGalleryPanel = null
         destroySearchWebView()
         searchWebComposeActive = false
         scannerPreviewView = null
@@ -3205,7 +3241,7 @@ class RiyanKeyboardService : InputMethodService() {
                     scannerResultText?.text = query
                     scannerStatusText?.text = "AI Vision: $query"
                     searchQuery = query
-                    searchUrl = "https://www.bing.com/images/search?q=${Uri.encode(query)}"
+                    searchUrl = "https://www.bing.com/images/search?q=${Uri.encode(query)}&adlt=off"
                     stopEmbeddedScanner()
                     showSearchWebPanel()
                     scannerSearchButton?.text = "Cari"
@@ -3263,7 +3299,7 @@ class RiyanKeyboardService : InputMethodService() {
                 scannerResultText?.text = query
                 scannerStatusText?.text = "AI Vision: $query"
                 searchQuery = query
-                searchUrl = "https://www.bing.com/images/search?q=${Uri.encode(query)}"
+                searchUrl = "https://www.bing.com/images/search?q=${Uri.encode(query)}&adlt=off"
                 stopEmbeddedScanner()
                 showSearchWebPanel()
                 scannerSearchButton?.text = "Cari"
@@ -3314,7 +3350,7 @@ class RiyanKeyboardService : InputMethodService() {
     private fun openBingImageResults(query: String) {
         val clean = query.replace(Regex("\\s+"), " ").trim().ifBlank { "produk benda fisik bentuk serupa" }
         searchQuery = clean
-        searchUrl = "https://www.bing.com/images/search?q=${Uri.encode(clean)}"
+        searchUrl = "https://www.bing.com/images/search?q=${Uri.encode(clean)}&adlt=off"
         stopEmbeddedScanner()
         showSearchWebPanel()
     }
@@ -4040,8 +4076,6 @@ class RiyanKeyboardService : InputMethodService() {
         private const val MAX_CLIPS = 12
         private const val MAX_CLIP_LENGTH = 1200
         private const val MAX_LEARNED_SUGGESTIONS = 180
-        private const val GALLERY_READY_KEY = "camera_gallery_ready"
-        private const val GALLERY_URI_KEY = "camera_gallery_uri"
         private const val SCAN_READY_KEY = "camera_search_ready"
         private const val SCAN_NONCE_KEY = "camera_search_nonce"
         private const val SCAN_QUERY_KEY = "camera_search_query"
