@@ -157,6 +157,7 @@ class RiyanKeyboardService : InputMethodService() {
     private var searchSurfaceVisible = false
     private var searchComposeActive = false
     private var searchWebComposeActive = false
+    private var searchWebBigMode = false
     private var scannerActive = false
     private var scannerTorchEnabled = false
     private var scannerGalleryUri: Uri? = null
@@ -2042,7 +2043,10 @@ class RiyanKeyboardService : InputMethodService() {
 
     private fun searchHeaderHeightDp(): Int = if (isLandscape()) 27 else 34
 
-    private fun searchSurfaceHeightDp(): Int {
+    private fun searchSurfaceHeightDp(): Int =
+        if (searchWebBigMode) webBigSurfaceHeightDp() else scannerSurfaceHeightDp()
+
+    private fun scannerSurfaceHeightDp(): Int {
         val density = resources.displayMetrics.density
         val screenHeightDp = (resources.displayMetrics.heightPixels / density).toInt()
         val screenWidthDp = (resources.displayMetrics.widthPixels / density).toInt()
@@ -2050,10 +2054,19 @@ class RiyanKeyboardService : InputMethodService() {
             (screenHeightDp * 0.42f).toInt().coerceIn(118, 205)
         } else {
             val proportionalHeight = (screenHeightDp * 0.50f).toInt().coerceIn(270, 480)
-            // The header sits above the WebView. Include it in the requested panel height so the
-            // actual page viewport stays taller than the usable width and sites detect portrait.
             val portraitViewportHeight = screenWidthDp + searchHeaderHeightDp() + 14
             maxOf(proportionalHeight, portraitViewportHeight).coerceAtMost(480)
+        }
+    }
+
+    private fun webBigSurfaceHeightDp(): Int {
+        val density = resources.displayMetrics.density
+        val screenHeightDp = (resources.displayMetrics.heightPixels / density).toInt()
+        return if (isLandscape()) {
+            (screenHeightDp * 0.60f).toInt().coerceIn(170, 300)
+        } else {
+            // Web Big is deliberately a different mode, not the camera panel with a WebView in it.
+            (screenHeightDp * 0.70f).toInt().coerceIn(340, 560)
         }
     }
 
@@ -2279,6 +2292,7 @@ class RiyanKeyboardService : InputMethodService() {
     }
 
     private fun closeSearchSurface() {
+        searchWebBigMode = false
         searchComposeActive = false
         searchWebComposeActive = false
         searchInput?.clearFocus()
@@ -2295,6 +2309,7 @@ class RiyanKeyboardService : InputMethodService() {
     }
 
     private fun showEmbeddedCameraPanel(resetCandidate: Boolean) {
+        searchWebBigMode = false
         internalGalleryPanel?.release()
         internalGalleryPanel = null
         stopEmbeddedScanner()
@@ -2555,6 +2570,7 @@ resultCard.bringToFront()
     }
 
     private fun showInternalGalleryPanel() {
+        searchWebBigMode = false
         if (!::searchSurfaceContent.isInitialized) return
 
         stopEmbeddedScanner(keepRequested = true)
@@ -3171,6 +3187,7 @@ resultCard.bringToFront()
     }
 
     private fun showSearchWebPanel() {
+        searchWebBigMode = true
         internalGalleryPanel?.release()
         internalGalleryPanel = null
         destroySearchWebView()
@@ -3241,7 +3258,7 @@ resultCard.bringToFront()
             settings.displayZoomControls = false
             settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
             settings.mediaPlaybackRequiresUserGesture = false
-            settings.userAgentString = settings.userAgentString + " AIAdsKeyboard/0.20"
+            settings.userAgentString = WebSettings.getDefaultUserAgent(this@RiyanKeyboardService)
             webChromeClient = object : android.webkit.WebChromeClient() {
                 override fun onPermissionRequest(request: android.webkit.PermissionRequest?) {
                     request ?: return
@@ -3318,9 +3335,16 @@ resultCard.bringToFront()
                     return openInstalledAppForLink(target)
                 }
             }
-            loadUrl(searchUrl)
         }
         searchWebView = webView
+        runCatching {
+            val cookieManager = android.webkit.CookieManager.getInstance()
+            cookieManager.setAcceptCookie(true)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                cookieManager.setAcceptThirdPartyCookies(webView, true)
+            }
+        }
+        webView.loadUrl(searchUrl)
         content.addView(webView, LinearLayout.LayoutParams(-1, 0, 1f))
         searchSurfaceContent.addView(content, FrameLayout.LayoutParams(-1, -1))
         showSearchSurface()
@@ -3590,6 +3614,10 @@ resultCard.bringToFront()
         }
 
         val responseCode = connection.responseCode
+        val responseCookies = connection.headerFields.entries
+            .filter { (key, _) -> key?.equals("Set-Cookie", ignoreCase = true) == true }
+            .flatMap { it.value.orEmpty() }
+            .filter { it.isNotBlank() }
         var location = connection.getHeaderField("Location").orEmpty().trim()
         if (location.isBlank()) {
             val stream = if (responseCode >= 400) connection.errorStream else connection.inputStream
@@ -3597,13 +3625,21 @@ resultCard.bringToFront()
             location = Regex("(?i)href=[\\\"']([^\\\"']+)").find(html)?.groupValues?.getOrNull(1).orEmpty()
                 .replace("&amp;", "&")
         }
-        connection.disconnect()
-
         if (location.startsWith("//")) location = "https:$location"
         if (location.startsWith("/")) {
             val origin = Uri.parse(endpoint)
             location = "${origin.scheme}://${origin.host}$location"
         }
+        val cookieTarget = location.takeIf { it.startsWith("http://", true) || it.startsWith("https://", true) } ?: endpoint
+        if (responseCookies.isNotEmpty()) {
+            runCatching {
+                val cookieManager = android.webkit.CookieManager.getInstance()
+                cookieManager.setAcceptCookie(true)
+                responseCookies.forEach { cookie -> cookieManager.setCookie(cookieTarget, cookie) }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) cookieManager.flush()
+            }
+        }
+        connection.disconnect()
         return location.takeIf { it.startsWith("http://", true) || it.startsWith("https://", true) }
     }
 
