@@ -126,6 +126,7 @@ class RiyanKeyboardService : InputMethodService() {
     private lateinit var root: LinearLayout
     private lateinit var keyboardPanel: LinearLayout
     private lateinit var utilityBar: LinearLayout
+    private lateinit var utilityBarFrame: FrameLayout
     private lateinit var resizePanel: LinearLayout
     private lateinit var suggestionBar: LinearLayout
     private lateinit var bottomBrandBar: LinearLayout
@@ -650,46 +651,79 @@ class RiyanKeyboardService : InputMethodService() {
     }
 
     private fun addUtilityBar() {
+        val barHeight = dp(utilityHeightDp())
+        utilityBarFrame = FrameLayout(this).apply {
+            setBackgroundColor(keyBg)
+            clipChildren = false
+            clipToPadding = false
+        }
+
         utilityBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, 0, 0, 0)
+            setPadding(dp(2), dp(2), dp(2), 0)
             setBackgroundColor(keyBg)
         }
-        utilityBar.addView(toolbarButton("✦ AI", dp(57)) { toggleAiPanel() })
-        utilityBar.addView(toolbarButton("⌨", dp(43)) {
+
+        utilityBar.addView(toolbarButton("✦ AI", dp(50)) { toggleAiPanel() })
+        utilityBar.addView(toolbarButton("⌨", dp(36)) {
             aiComposeActive = false
             mode = KeyboardMode.LETTERS
             renderKeyboard()
         })
-        utilityBar.addView(toolbarButton("😊", dp(43)) {
+        utilityBar.addView(toolbarButton("😊", dp(36)) {
             aiComposeActive = false
             emojiPage = 0
             mode = KeyboardMode.EMOJI
             renderKeyboard()
         })
-        utilityBar.addView(toolbarButton("📋", dp(43)) {
+        utilityBar.addView(toolbarButton("📋", dp(36)) {
             aiComposeActive = false
             addCurrentClipboardToHistory()
             mode = KeyboardMode.CLIPBOARD
             renderKeyboard()
         })
-        utilityBar.addView(toolbarButton("↕", dp(43)) { toggleResizePanel() })
+        utilityBar.addView(toolbarButton("Kursor", dp(50)) {
+            aiComposeActive = false
+            mode = KeyboardMode.CURSOR
+            renderKeyboard()
+        })
         utilityBar.addView(
-            toolbarIconButton(R.drawable.ic_camera_modern, "Kamera penelusuran", dp(43)) { launchScanner() }
+            toolbarIconButton(R.drawable.ic_camera_modern, "Kamera penelusuran", dp(36)) { launchScanner() }
         )
+        utilityBar.addView(toolbarButton("↕", dp(34)) { toggleResizePanel() })
+
         suggestionBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(2), 0, dp(2), 0)
+            setPadding(dp(1), 0, dp(1), 0)
             setBackgroundColor(keyBg)
             visibility = View.VISIBLE
         }
         utilityBar.addView(suggestionBar, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
         utilityBar.addView(
-            toolbarIconButton(R.drawable.ic_settings_modern, "Pengaturan", dp(43)) { openSettings() }
+            toolbarIconButton(R.drawable.ic_settings_modern, "Pengaturan", dp(38)) { openSettings() }
         )
-        root.addView(utilityBar, LinearLayout.LayoutParams(-1, dp(utilityHeightDp())).apply {
+
+        utilityBarFrame.addView(utilityBar, FrameLayout.LayoutParams(-1, barHeight))
+
+        // Purple light strip modeled after the reference: soft glow plus a crisp core line.
+        utilityBarFrame.addView(View(this).apply {
+            background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(
+                Color.TRANSPARENT,
+                Color.argb(150, 152, 73, 255),
+                Color.argb(230, 193, 92, 255),
+                Color.argb(150, 152, 73, 255),
+                Color.TRANSPARENT
+            ))
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) elevation = dpFloat(5f)
+        }, FrameLayout.LayoutParams(-1, dp(4), Gravity.TOP))
+        utilityBarFrame.addView(View(this).apply {
+            setBackgroundColor(Color.rgb(188, 82, 255))
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) elevation = dpFloat(6f)
+        }, FrameLayout.LayoutParams(-1, dp(1), Gravity.TOP))
+
+        root.addView(utilityBarFrame, LinearLayout.LayoutParams(-1, barHeight).apply {
             bottomMargin = dp(toolbarKeyboardGapDp())
         })
     }
@@ -856,11 +890,19 @@ class RiyanKeyboardService : InputMethodService() {
     private fun applyRootHeight() {
         if (!::root.isInitialized) return
         updateRootPadding(root)
-        if (::utilityBar.isInitialized) {
-            utilityBar.layoutParams = (utilityBar.layoutParams as? LinearLayout.LayoutParams
+        if (::utilityBarFrame.isInitialized) {
+            utilityBarFrame.layoutParams = (utilityBarFrame.layoutParams as? LinearLayout.LayoutParams
                 ?: LinearLayout.LayoutParams(-1, dp(utilityHeightDp()))).apply {
+                width = ViewGroup.LayoutParams.MATCH_PARENT
                 height = dp(utilityHeightDp())
                 bottomMargin = dp(toolbarKeyboardGapDp())
+            }
+        }
+        if (::utilityBar.isInitialized) {
+            utilityBar.layoutParams = (utilityBar.layoutParams as? FrameLayout.LayoutParams
+                ?: FrameLayout.LayoutParams(-1, dp(utilityHeightDp()))).apply {
+                width = ViewGroup.LayoutParams.MATCH_PARENT
+                height = dp(utilityHeightDp())
             }
         }
         if (::suggestionBar.isInitialized) suggestionBar.layoutParams = suggestionBar.layoutParams.apply {
@@ -1117,7 +1159,6 @@ class RiyanKeyboardService : InputMethodService() {
                 KeySpec(":", action = { commitPunctuation(":") }),
                 KeySpec("spasi", weight = 2.2f, action = { commitSpace() }),
                 KeySpec("?", action = { commitPunctuation("?") }),
-                KeySpec("2/2", weight = 1.25f, action = { mode = KeyboardMode.CURSOR; renderKeyboard() }),
                 KeySpec(enterKeyLabel(), weight = 1.62f, action = { pressEnter() })
             )
         )
@@ -1521,8 +1562,8 @@ class RiyanKeyboardService : InputMethodService() {
         val frame = FrameLayout(this).apply {
             // At the old 100% setting the regular caps now fill 90% of their cells instead of
             // only 78%. The new 110% maximum can reach 99%, while clamping prevents overlap.
-            scaleX = (keyBoxScale * if (referenceWideKey) 0.98f else 0.90f).coerceAtMost(1f)
-            scaleY = (keyBoxScale * if (referenceLargeKey) 0.98f else 0.94f).coerceAtMost(1f)
+            scaleX = (keyBoxScale * if (referenceWideKey) 0.98f else 0.94f).coerceAtMost(1f)
+            scaleY = (keyBoxScale * if (referenceLargeKey) 0.96f else 0.90f).coerceAtMost(1f)
             isClickable = true
             isFocusable = false
             clipChildren = false
@@ -1550,8 +1591,8 @@ class RiyanKeyboardService : InputMethodService() {
         frame.addView(View(this).apply {
             background = referenceTopRimBackground()
             alpha = 0.92f
-        }, FrameLayout.LayoutParams(-1, dp(8), Gravity.TOP).apply {
-            setMargins(dp(5), dp(3), dp(5), 0)
+        }, FrameLayout.LayoutParams(-1, dp(3), Gravity.TOP).apply {
+            setMargins(dp(5), dp(2), dp(5), 0)
         })
         frame.addView(TextView(this).apply {
             text = spec.label
@@ -1575,22 +1616,15 @@ class RiyanKeyboardService : InputMethodService() {
             frame.addView(TextView(this).apply {
                 text = alternate
                 textSize = 8f
-                setTextColor(Color.rgb(205, 202, 214))
-                gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-                setPadding(0, dp(4), 0, 0)
+                setTextColor(Color.rgb(176, 174, 184))
+                gravity = Gravity.TOP or Gravity.END
+                setPadding(0, dp(3), dp(6), 0)
                 setShadowLayer(dpFloat(0.8f), 0f, dpFloat(1f), Color.BLACK)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) elevation = dpFloat(7f)
             }, FrameLayout.LayoutParams(-1, -1))
         }
 
 
-        frame.addView(View(this).apply {
-            background = roundedBackground(Color.rgb(202, 105, 255), 2f)
-            alpha = 0.96f
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) elevation = dpFloat(5f)
-        }, FrameLayout.LayoutParams(dp(if (referenceLargeKey) 18 else 12), dp(2), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
-            bottomMargin = dp(1)
-        })
 
         var downX = 0f
         var downY = 0f
@@ -1706,13 +1740,13 @@ class RiyanKeyboardService : InputMethodService() {
         } else {
             intArrayOf(
                 Color.rgb(69, 67, 78),
-                Color.rgb(42, 41, 50),
-                Color.rgb(24, 23, 30),
-                Color.rgb(15, 15, 20)
+                Color.rgb(45, 44, 53),
+                Color.rgb(39, 38, 47),
+                Color.rgb(35, 34, 43)
             )
         }
         return GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, colors).apply {
-            cornerRadius = dpFloat(23f)
+            cornerRadius = dpFloat(11f)
             setStroke(
                 dp(1),
                 if (pressed) Color.rgb(67, 65, 77) else Color.rgb(97, 94, 108)
@@ -2162,33 +2196,20 @@ class RiyanKeyboardService : InputMethodService() {
         scannerActive = true
         searchSurfaceContent.removeAllViews()
 
-        val content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = roundedBackground(Color.rgb(18, 18, 23), 20f)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) clipToOutline = true
-        }
+        val content = FrameLayout(this).apply {
+    background = roundedBackground(Color.TRANSPARENT, 20f)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) clipToOutline = true
+}
         val header = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(7), dp(2), dp(4), dp(2))
-            setBackgroundColor(Color.rgb(34, 33, 41))
-        }
-        val title = TextView(this).apply {
-            text = "Kamera penelusuran"
-            textSize = if (isLandscape()) 11f else 13f
-            setTextColor(Color.WHITE)
-            setTypeface(typeface, Typeface.BOLD)
-        }
-        header.addView(title, LinearLayout.LayoutParams(-2, dp(searchHeaderHeightDp())))
+    orientation = LinearLayout.HORIZONTAL
+    gravity = Gravity.CENTER_VERTICAL
+    setPadding(dp(7), dp(2), dp(4), dp(2))
+    elevation = dpFloat(8f)
+}
         scannerStatusText = TextView(this).apply {
-            text = "Pindai teks, kode, label, dokumen, dan objek…"
-            textSize = if (isLandscape()) 8f else 10f
-            maxLines = 1
-            ellipsize = TextUtils.TruncateAt.END
-            setTextColor(Color.LTGRAY)
-            setPadding(dp(7), 0, dp(3), 0)
-        }
-        header.addView(scannerStatusText, LinearLayout.LayoutParams(0, dp(searchHeaderHeightDp()), 1f))
+    visibility = View.GONE
+}
+header.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
         header.addView(
             premiumIconButton(R.drawable.ic_gallery_modern, "Buka galeri di keyboard") { showInternalGalleryPanel() },
             LinearLayout.LayoutParams(dp(38), dp(searchHeaderHeightDp()))
@@ -2201,7 +2222,11 @@ class RiyanKeyboardService : InputMethodService() {
             premiumIconButton(R.drawable.ic_close_modern, "Tutup kamera penelusuran") { closeSearchSurface() },
             LinearLayout.LayoutParams(dp(38), dp(searchHeaderHeightDp())).apply { leftMargin = dp(2) }
         )
-        content.addView(header, LinearLayout.LayoutParams(-1, dp(searchHeaderHeightDp() + 4)))
+        content.addView(header, FrameLayout.LayoutParams(-1, dp(searchHeaderHeightDp() + 4), Gravity.TOP).apply {
+    leftMargin = dp(3)
+    rightMargin = dp(3)
+    topMargin = dp(2)
+})
 
         val previewFrame = FrameLayout(this)
         scannerPreviewView = PreviewView(this).apply {
@@ -2223,23 +2248,16 @@ class RiyanKeyboardService : InputMethodService() {
             visibility = View.GONE
         }
         previewFrame.addView(scannerGalleryImageView, FrameLayout.LayoutParams(-1, -1))
-        previewFrame.addView(View(this).apply {
-            background = GradientDrawable().apply {
-                setColor(Color.TRANSPARENT)
-                cornerRadius = dpFloat(18f)
-                setStroke(dp(2), Color.WHITE)
-            }
-        }, FrameLayout.LayoutParams(-1, if (isLandscape()) dp(72) else dp(140), Gravity.CENTER).apply {
-            setMargins(dp(28), 0, dp(28), 0)
-        })
-        content.addView(previewFrame, LinearLayout.LayoutParams(-1, 0, 1f))
+
+        content.addView(previewFrame, FrameLayout.LayoutParams(-1, -1))
 
         val resultCard = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(6), dp(3), dp(4), dp(3))
-            setBackgroundColor(Color.rgb(31, 30, 38))
-        }
+    orientation = LinearLayout.HORIZONTAL
+    gravity = Gravity.CENTER_VERTICAL
+    setPadding(dp(6), dp(3), dp(4), dp(3))
+    setBackgroundColor(Color.TRANSPARENT)
+    elevation = dpFloat(8f)
+}
         scannerResultText = TextView(this).apply {
             text = scannerSelectedQuery.ifBlank { "Arahkan objek ke kotak, lalu ketuk layar untuk fokus." }
             textSize = if (isLandscape()) 9f else 11f
@@ -2256,7 +2274,9 @@ class RiyanKeyboardService : InputMethodService() {
         resultCard.addView(scannerSearchButton, LinearLayout.LayoutParams(dp(55), if (isLandscape()) dp(30) else dp(38)).apply {
             leftMargin = dp(3)
         })
-        content.addView(resultCard, LinearLayout.LayoutParams(-1, if (isLandscape()) dp(40) else dp(55)))
+        content.addView(resultCard, FrameLayout.LayoutParams(-1, if (isLandscape()) dp(40) else dp(55), Gravity.BOTTOM))
+header.bringToFront()
+resultCard.bringToFront()
         searchSurfaceContent.addView(content, FrameLayout.LayoutParams(-1, -1))
         showSearchSurface()
         scannerGalleryUri?.let(::showGalleryImage)
@@ -2902,7 +2922,39 @@ class RiyanKeyboardService : InputMethodService() {
             settings.cacheMode = WebSettings.LOAD_DEFAULT
             settings.loadsImagesAutomatically = true
             settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            settings.mediaPlaybackRequiresUserGesture = false
             settings.userAgentString = settings.userAgentString + " AIAdsKeyboard/0.20"
+            webChromeClient = object : android.webkit.WebChromeClient() {
+                override fun onPermissionRequest(request: android.webkit.PermissionRequest?) {
+                    request ?: return
+                    handler.post {
+                        val host = request.origin?.host?.lowercase().orEmpty()
+                        val trustedCameraOrigin =
+                            host == "bing.com" || host.endsWith(".bing.com") ||
+                            host == "google.com" || host.endsWith(".google.com")
+                        val cameraGranted = ContextCompat.checkSelfPermission(
+                            this@RiyanKeyboardService,
+                            Manifest.permission.CAMERA
+                        ) == PackageManager.PERMISSION_GRANTED
+                        val videoRequested = request.resources.any {
+                            it == android.webkit.PermissionRequest.RESOURCE_VIDEO_CAPTURE
+                        }
+
+                        if (trustedCameraOrigin && cameraGranted && videoRequested) {
+                            request.grant(arrayOf(android.webkit.PermissionRequest.RESOURCE_VIDEO_CAPTURE))
+                        } else {
+                            request.deny()
+                            if (videoRequested && !cameraGranted) {
+                                Toast.makeText(
+                                    this@RiyanKeyboardService,
+                                    "Izinkan akses kamera AI Ads Keyboard agar kamera Web Big dapat digunakan.",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+                    }
+                }
+            }
             setOnTouchListener { view, event ->
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {
@@ -3569,6 +3621,7 @@ class RiyanKeyboardService : InputMethodService() {
         searchWebComposeActive = false
         searchWebView?.let { webView ->
             webView.stopLoading()
+            webView.webChromeClient = android.webkit.WebChromeClient()
             webView.webViewClient = WebViewClient()
             webView.loadUrl("about:blank")
             webView.clearHistory()
