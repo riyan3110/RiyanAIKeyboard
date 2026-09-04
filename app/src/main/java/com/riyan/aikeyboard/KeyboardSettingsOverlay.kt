@@ -390,10 +390,11 @@ class KeyboardSettingsOverlay(
             photoCard.addView(description(if (hasPhoto) "✓ Foto perangkat sudah dipilih. Tekan tombol di bawah untuk mengganti." else "Pilih foto langsung dari galeri HP untuk dijadikan latar keyboard."))
             photoCard.addView(actionButton(if (hasPhoto) "Ganti Foto dari HP" else "Pilih Foto dari HP") {
                 draft.themeMode = KeyboardTheme.MODE_PHOTO
-                context.startActivity(
-                    Intent(context, ThemePhotoPickerActivity::class.java)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                )
+                val pickerIntent = Intent(context, ThemePhotoPickerActivity::class.java)
+                if (context !is android.app.Activity) {
+                    pickerIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(pickerIntent)
             }, LinearLayout.LayoutParams(-1, dp(44)).apply { topMargin = dp(6) })
             if (hasPhoto) {
                 photoCard.addView(actionButton("Hapus Foto", danger = true) {
