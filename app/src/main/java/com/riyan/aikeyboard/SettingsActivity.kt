@@ -59,11 +59,13 @@ class SettingsActivity : AppCompatActivity() {
             onClose = { closeSettingsTask() },
             onInputFocusChanged = { hasFocus ->
                 if (hasFocus && ::settingsView.isInitialized) {
-                    settingsView.activeInput?.post { field ->
-                        field.showSoftInputOnFocus = true
-                        field.requestFocus()
-                        val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
-                        imm.showSoftInput(field, InputMethodManager.SHOW_IMPLICIT)
+                    settingsView.activeInput?.let { field ->
+                        field.post {
+                            field.showSoftInputOnFocus = true
+                            field.requestFocus()
+                            val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
+                            imm.showSoftInput(field, InputMethodManager.SHOW_IMPLICIT)
+                        }
                     }
                 }
             }
