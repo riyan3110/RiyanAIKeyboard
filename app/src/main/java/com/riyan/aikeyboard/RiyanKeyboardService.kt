@@ -2574,6 +2574,9 @@ resultCard.bringToFront()
                 if (internalGalleryPanel !== panel) return@selected
                 panel.release()
                 internalGalleryPanel = null
+                scannerGalleryZoom = 1f
+                scannerGalleryFocusX = 0.5f
+                scannerGalleryFocusY = 0.5f
                 scannerGalleryUri = uri
                 scannerVisualSearchPreferred = true
                 scannerSelectedQuery = ""
@@ -3501,7 +3504,7 @@ resultCard.bringToFront()
             output.toByteArray()
         }.getOrNull()
         if (prepared !== source && !prepared.isRecycled) prepared.recycle()
-        if (jpeg.isNullOrEmpty()) return null
+        if (jpeg == null || jpeg.isEmpty()) return null
 
         val timestamp = System.currentTimeMillis()
         val endpoints = listOf(
