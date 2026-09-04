@@ -180,7 +180,7 @@ object AiClient {
                 "Sebut merek atau model hanya jika terbaca jelas; jika tidak, gunakan deskripsi visual yang paling akurat. " +
                 "Jawab tepat satu baris query pencarian yang natural, 3 sampai 20 kata, tanpa penjelasan dan tanpa awalan 'query:'."
         )
-        val hint = localTextHint.trim().replace(Regex("\s+"), " ").take(180)
+        val hint = localTextHint.trim().replace(Regex("\\s+"), " ").take(180)
         if (hint.isNotBlank()) {
             append("\nPetunjuk OCR/label lokal (gunakan hanya bila membantu dan sesuai dengan gambar): ")
             append(hint)

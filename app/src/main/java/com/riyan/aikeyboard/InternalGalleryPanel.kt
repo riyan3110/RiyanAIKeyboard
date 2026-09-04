@@ -113,7 +113,7 @@ class InternalGalleryPanel(private val context: Context) {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(4), dp(2), dp(4), dp(8))
         }
-        scroll.addView(rows, ScrollView.LayoutParams(-1, -2))
+        scroll.addView(rows, ViewGroup.LayoutParams(-1, -2))
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         container.addView(root, FrameLayout.LayoutParams(-1, -1))
 
