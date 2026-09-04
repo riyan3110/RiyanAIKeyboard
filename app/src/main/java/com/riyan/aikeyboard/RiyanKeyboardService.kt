@@ -123,6 +123,7 @@ class RiyanKeyboardService : InputMethodService() {
         val labels: List<Pair<String, Float>>
     )
 
+    private lateinit var inputHost: FrameLayout
     private lateinit var root: LinearLayout
     private lateinit var keyboardPanel: LinearLayout
     private lateinit var utilityBar: LinearLayout
@@ -130,6 +131,10 @@ class RiyanKeyboardService : InputMethodService() {
     private lateinit var resizePanel: LinearLayout
     private lateinit var suggestionBar: LinearLayout
     private lateinit var bottomBrandBar: LinearLayout
+    private lateinit var settingsPanel: KeyboardSettingsOverlay
+    private lateinit var settingsScrim: View
+    private var settingsPanelVisible = false
+    private var settingsEditingMode = false
     private lateinit var aiPanel: LinearLayout
     private lateinit var aiStatus: TextView
     private lateinit var aiAnswer: TextView
@@ -326,13 +331,19 @@ class RiyanKeyboardService : InputMethodService() {
     override fun onCreateInputView(): View {
         loadPreferences()
 
+        inputHost = FrameLayout(this).apply {
+            clipChildren = false
+            clipToPadding = false
+        }
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             updateRootPadding(this)
         }
+        inputHost.addView(root, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
 
         addAiConversationPanel()
         addSearchSurfacePanel()
+        addSettingsPanel()
         addUtilityBar()
         addSuggestionBar()
         addResizePanel()
@@ -347,7 +358,7 @@ class RiyanKeyboardService : InputMethodService() {
         applyRootHeight()
         renderKeyboard()
         refreshSuggestionsSoon()
-        return root
+        return inputHost
     }
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
@@ -366,6 +377,7 @@ class RiyanKeyboardService : InputMethodService() {
     override fun onWindowShown() {
         super.onWindowShown()
         consumePendingScanResult()
+        if (settingsPanelVisible && ::settingsPanel.isInitialized) settingsPanel.refreshExternalChanges()
         if (searchSurfaceVisible && scannerActive && scannerGalleryUri == null &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
         ) {
@@ -650,6 +662,68 @@ class RiyanKeyboardService : InputMethodService() {
         })
     }
 
+    private fun addSettingsPanel() {
+        settingsScrim = View(this).apply {
+            setBackgroundColor(Color.argb(150, 0, 0, 0))
+            visibility = View.GONE
+            isClickable = true
+            setOnClickListener { toggleSettingsPanel(false) }
+        }
+        inputHost.addView(settingsScrim, FrameLayout.LayoutParams(-1, -1))
+
+        settingsPanel = KeyboardSettingsOverlay(
+            context = this,
+            prefs = getSharedPreferences(PREFS, MODE_PRIVATE),
+            onApply = {
+                loadPreferences()
+                if (::heightLabel.isInitialized) heightLabel.text = keyboardHeightLabel()
+                renderKeyboard()
+                refreshSuggestionsSoon()
+            },
+            onClose = {
+                settingsPanelVisible = false
+                settingsEditingMode = false
+                if (::settingsPanel.isInitialized) settingsPanel.visibility = View.GONE
+                if (::settingsScrim.isInitialized) settingsScrim.visibility = View.GONE
+                applyRootHeight()
+                renderKeyboard()
+            },
+            onInputFocusChanged = { focused ->
+                settingsEditingMode = focused
+                applyRootHeight()
+            }
+        ).apply {
+            visibility = View.GONE
+            elevation = dpFloat(18f)
+        }
+        inputHost.addView(settingsPanel, FrameLayout.LayoutParams(-1, dp(560), Gravity.CENTER).apply {
+            leftMargin = dp(14)
+            rightMargin = dp(14)
+        })
+    }
+
+    private fun toggleSettingsPanel(force: Boolean? = null) {
+        val show = force ?: !settingsPanelVisible
+        if (show == settingsPanelVisible) return
+        if (show) {
+            if (searchSurfaceVisible) closeSearchSurface()
+            aiPanelVisible = false
+            aiFullscreen = false
+            aiComposeActive = false
+            aiPanel.visibility = View.GONE
+            resizePanelVisible = false
+            resizePanel.visibility = View.GONE
+            settingsEditingMode = false
+            settingsPanelVisible = true
+            settingsScrim.visibility = View.VISIBLE
+            settingsPanel.show()
+        } else {
+            settingsPanel.hidePanel()
+            return
+        }
+        applyRootHeight()
+    }
+
     private fun addUtilityBar() {
         val barHeight = dp(utilityHeightDp())
         utilityBarFrame = FrameLayout(this).apply {
@@ -930,35 +1004,75 @@ class RiyanKeyboardService : InputMethodService() {
                 weight = if (aiFullscreen) 1f else 0f
             }
         }
+
         if (aiFullscreen) {
             applyAiDisplayMode()
             val screenHeight = fullscreenRootHeightPx()
             root.minimumHeight = screenHeight
-            root.layoutParams = (root.layoutParams ?: ViewGroup.LayoutParams(-1, screenHeight)).apply {
+            root.layoutParams = (root.layoutParams ?: FrameLayout.LayoutParams(-1, screenHeight, Gravity.BOTTOM)).apply {
+                width = ViewGroup.LayoutParams.MATCH_PARENT
+                height = screenHeight
+            }
+            inputHost.minimumHeight = screenHeight
+            inputHost.layoutParams = (inputHost.layoutParams ?: ViewGroup.LayoutParams(-1, screenHeight)).apply {
                 width = ViewGroup.LayoutParams.MATCH_PARENT
                 height = screenHeight
             }
             root.requestLayout()
+            inputHost.requestLayout()
             window?.window?.decorView?.requestLayout()
             return
         }
+
         applyAiDisplayMode()
-        val suggestionReduction = 0
         val extra = brandBarHeightDp() +
             (if (aiPanelVisible) currentAiPanelHeightDp() else 0) +
             (if (resizePanelVisible) resizePanelHeightDp() else 0) +
             (if (searchSurfaceVisible) searchSurfaceHeightDp() + 7 else 0)
-        val height = dp((baseKeyboardHeightDp - suggestionReduction).coerceAtLeast(1) + extra)
-        root.minimumHeight = height
-        root.layoutParams = (root.layoutParams ?: ViewGroup.LayoutParams(-1, height)).apply {
+        val rootHeight = dp(baseKeyboardHeightDp.coerceAtLeast(1) + extra)
+        root.minimumHeight = rootHeight
+        root.layoutParams = (root.layoutParams ?: FrameLayout.LayoutParams(-1, rootHeight, Gravity.BOTTOM)).apply {
             width = ViewGroup.LayoutParams.MATCH_PARENT
-            this.height = height
+            height = rootHeight
         }
+
+        if (settingsPanelVisible) {
+            val screenHeight = fullscreenRootHeightPx()
+            inputHost.minimumHeight = screenHeight
+            inputHost.layoutParams = (inputHost.layoutParams ?: ViewGroup.LayoutParams(-1, screenHeight)).apply {
+                width = ViewGroup.LayoutParams.MATCH_PARENT
+                height = screenHeight
+            }
+            settingsScrim.visibility = View.VISIBLE
+            settingsPanel.visibility = View.VISIBLE
+            val compactHeight = (screenHeight - rootHeight - dp(18)).coerceAtLeast(dp(300))
+            val floatingHeight = (screenHeight * 0.78f).toInt().coerceIn(dp(360), screenHeight - dp(36))
+            settingsPanel.layoutParams = FrameLayout.LayoutParams(
+                -1,
+                if (settingsEditingMode) compactHeight else floatingHeight,
+                if (settingsEditingMode) Gravity.TOP or Gravity.CENTER_HORIZONTAL else Gravity.CENTER
+            ).apply {
+                leftMargin = dp(14)
+                rightMargin = dp(14)
+                topMargin = if (settingsEditingMode) dp(10) else 0
+                bottomMargin = if (settingsEditingMode) rootHeight + dp(8) else 0
+            }
+        } else {
+            if (::settingsScrim.isInitialized) settingsScrim.visibility = View.GONE
+            if (::settingsPanel.isInitialized) settingsPanel.visibility = View.GONE
+            inputHost.minimumHeight = rootHeight
+            inputHost.layoutParams = (inputHost.layoutParams ?: ViewGroup.LayoutParams(-1, rootHeight)).apply {
+                width = ViewGroup.LayoutParams.MATCH_PARENT
+                height = rootHeight
+            }
+        }
+
         root.requestLayout()
+        inputHost.requestLayout()
         window?.window?.decorView?.requestLayout()
-        root.post {
+        inputHost.post {
             root.requestLayout()
-            root.parent?.let { parent -> if (parent is View) parent.requestLayout() }
+            inputHost.requestLayout()
             window?.window?.decorView?.requestLayout()
         }
     }
@@ -3632,14 +3746,11 @@ resultCard.bringToFront()
     }
 
     private fun openSettings() {
-        runCatching {
-            startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        }.onFailure {
-            if (::aiStatus.isInitialized) aiStatus.text = "Buka aplikasi AI Ads Keyboard untuk pengaturan"
-        }
+        toggleSettingsPanel(true)
     }
 
     private fun activeInternalInput(): EditText? = when {
+        settingsPanelVisible && ::settingsPanel.isInitialized && settingsPanel.activeInput != null -> settingsPanel.activeInput
         searchComposeActive -> searchInput
         aiComposeActive && ::aiInput.isInitialized -> aiInput
         else -> null

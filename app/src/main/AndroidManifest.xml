@@ -42,6 +42,12 @@
             android:noHistory="true"
             android:label="Izin Galeri"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+        <activity
+            android:name=".ThemePhotoPickerActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

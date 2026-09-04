@@ -1,0 +1,38 @@
+name: Apply Settings Overlay V3
+
+on:
+  push:
+    branches:
+      - ui/settings-overlay-v1
+    paths:
+      - tools/apply_settings_overlay_v3.py
+      - app/src/main/java/com/riyan/aikeyboard/ThemePhotoPickerActivity.kt
+      - .github/workflows/apply-settings-overlay-v3.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ui/settings-overlay-v1
+      - name: Apply overlay polish
+        run: python3 tools/apply_settings_overlay_v3.py
+      - name: Commit generated source changes
+        run: |
+          if git diff --quiet; then
+            echo "No generated changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/com/riyan/aikeyboard/KeyboardSettingsOverlay.kt \
+                  app/src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt \
+                  app/src/main/java/com/riyan/aikeyboard/KeyboardTheme.kt \
+                  app/src/main/AndroidManifest.xml
+          git commit -m "Polish settings into true modal overlay"
+          git push origin HEAD:ui/settings-overlay-v1
