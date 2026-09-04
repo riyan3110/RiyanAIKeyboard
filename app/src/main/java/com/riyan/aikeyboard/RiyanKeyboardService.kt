@@ -2725,15 +2725,46 @@ resultCard.bringToFront()
     }
 
     private fun cropGalleryForCurrentZoom(source: Bitmap): Bitmap {
+        val view = scannerGalleryImageView
+        val viewWidth = view?.width ?: 0
+        val viewHeight = view?.height ?: 0
         val zoom = scannerGalleryZoom.coerceIn(1f, 6f)
-        if (zoom <= 1.02f) return source
-        val cropWidth = (source.width / zoom).toInt().coerceIn(1, source.width)
-        val cropHeight = (source.height / zoom).toInt().coerceIn(1, source.height)
-        val centerX = (source.width * scannerGalleryFocusX.coerceIn(0f, 1f)).toInt()
-        val centerY = (source.height * scannerGalleryFocusY.coerceIn(0f, 1f)).toInt()
-        val left = (centerX - cropWidth / 2).coerceIn(0, source.width - cropWidth)
-        val top = (centerY - cropHeight / 2).coerceIn(0, source.height - cropHeight)
-        return Bitmap.createBitmap(source, left, top, cropWidth, cropHeight)
+
+        // ImageView uses CENTER_CROP, so direct normalized source coordinates are wrong whenever
+        // image and panel aspect ratios differ. Convert the exact visible view rectangle back into
+        // bitmap coordinates, then apply the user's pinch zoom around the same pivot.
+        if (viewWidth <= 1 || viewHeight <= 1) {
+            if (zoom <= 1.02f) return source
+            val cropWidth = (source.width / zoom).toInt().coerceIn(1, source.width)
+            val cropHeight = (source.height / zoom).toInt().coerceIn(1, source.height)
+            val centerX = (source.width * scannerGalleryFocusX.coerceIn(0f, 1f)).toInt()
+            val centerY = (source.height * scannerGalleryFocusY.coerceIn(0f, 1f)).toInt()
+            val left = (centerX - cropWidth / 2).coerceIn(0, source.width - cropWidth)
+            val top = (centerY - cropHeight / 2).coerceIn(0, source.height - cropHeight)
+            return Bitmap.createBitmap(source, left, top, cropWidth, cropHeight)
+        }
+
+        val baseScale = maxOf(
+            viewWidth.toFloat() / source.width.coerceAtLeast(1).toFloat(),
+            viewHeight.toFloat() / source.height.coerceAtLeast(1).toFloat()
+        )
+        val renderedWidth = source.width * baseScale
+        val renderedHeight = source.height * baseScale
+        val offsetX = (renderedWidth - viewWidth) / 2f
+        val offsetY = (renderedHeight - viewHeight) / 2f
+        val pivotX = scannerGalleryFocusX.coerceIn(0f, 1f) * viewWidth
+        val pivotY = scannerGalleryFocusY.coerceIn(0f, 1f) * viewHeight
+
+        val leftView = pivotX - (pivotX / zoom)
+        val topView = pivotY - (pivotY / zoom)
+        val rightView = pivotX + ((viewWidth - pivotX) / zoom)
+        val bottomView = pivotY + ((viewHeight - pivotY) / zoom)
+
+        val left = ((leftView + offsetX) / baseScale).toInt().coerceIn(0, source.width - 1)
+        val top = ((topView + offsetY) / baseScale).toInt().coerceIn(0, source.height - 1)
+        val right = ((rightView + offsetX) / baseScale).toInt().coerceIn(left + 1, source.width)
+        val bottom = ((bottomView + offsetY) / baseScale).toInt().coerceIn(top + 1, source.height)
+        return Bitmap.createBitmap(source, left, top, right - left, bottom - top)
     }
 
     private fun toggleScannerTorch() {
@@ -3578,18 +3609,13 @@ resultCard.bringToFront()
 
 
     private fun refineLensResultUrl(rawUrl: String, mainText: String): String {
+        // A Lens upload result already contains the visual-search token that identifies the image.
+        // Appending q/udm turns that URL into a normal text/image Google search and discards the
+        // visual-search experience. Preserve the original result and only localize the language.
         return runCatching {
             val uri = Uri.parse(rawUrl)
-            val builder = uri.buildUpon()
-            if (uri.getQueryParameter("hl").isNullOrBlank()) builder.appendQueryParameter("hl", "id")
-            if (uri.host?.endsWith("google.com", ignoreCase = true) == true &&
-                uri.path?.startsWith("/search") == true && uri.getQueryParameter("udm").isNullOrBlank()) {
-                builder.appendQueryParameter("udm", "26")
-            }
-            if (mainText.isNotBlank() && uri.getQueryParameter("q").isNullOrBlank()) {
-                builder.appendQueryParameter("q", mainText)
-            }
-            builder.build().toString()
+            if (!uri.getQueryParameter("hl").isNullOrBlank()) return@runCatching rawUrl
+            uri.buildUpon().appendQueryParameter("hl", "id").build().toString()
         }.getOrDefault(rawUrl)
     }
 
@@ -3622,15 +3648,25 @@ resultCard.bringToFront()
                 return@post
             }
 
-            // Send the full camera frame to multimodal AI so app-side cropping cannot remove context.
-            val prepared = scaleBitmapForAiVision(frame, 1024)
-            // Do not bias AI with local OCR/product guesses; let the image itself drive recognition.
-            val localHint = ""
+            // Search exactly what the user is aiming at. PreviewView already reflects CameraX zoom,
+            // then we crop to the scanner target so background outside the aimed area cannot dominate.
+            val targetFrame = cropScannerVisualTarget(frame)
+            val prepared = scaleBitmapForAiVision(targetFrame, 1536)
+            val localHint = buildString {
+                if (scannerCameraZoomRatio > 1.05f) {
+                    append("Pengguna sedang memperbesar area target sekitar %.1fx. ".format(scannerCameraZoomRatio))
+                }
+                append("Prioritaskan subjek utama pada area ini dan detail kecil pembeda yang benar-benar terlihat; abaikan latar yang tidak relevan.")
+                scannerMainProductText.trim().takeIf { it.isNotBlank() }?.let {
+                    append(" Teks lokal yang mungkin relevan: ")
+                    append(it.take(120))
+                }
+            }
 
             thread {
                 val encoded = runCatching {
                     val output = java.io.ByteArrayOutputStream()
-                    check(prepared.compress(Bitmap.CompressFormat.JPEG, 80, output))
+                    check(prepared.compress(Bitmap.CompressFormat.JPEG, 92, output))
                     android.util.Base64.encodeToString(output.toByteArray(), android.util.Base64.NO_WRAP)
                 }.getOrNull()
 
@@ -3641,8 +3677,9 @@ resultCard.bringToFront()
                     AiClient.visionProduct(aiSettings(), encoded, localHint)
                 }
 
-                if (prepared !== frame) prepared.recycle()
-                frame.recycle()
+                if (prepared !== targetFrame && !prepared.isRecycled) prepared.recycle()
+                if (targetFrame !== frame && !targetFrame.isRecycled) targetFrame.recycle()
+                if (!frame.isRecycled) frame.recycle()
 
                 handler.post {
                     val response = result.getOrNull()
@@ -3701,10 +3738,10 @@ resultCard.bringToFront()
 
             val frame = cropGalleryForCurrentZoom(decodedFrame)
             if (frame !== decodedFrame && !decodedFrame.isRecycled) decodedFrame.recycle()
-            val prepared = scaleBitmapForAiVision(frame, 1024)
+            val prepared = scaleBitmapForAiVision(frame, 1536)
             val encoded = runCatching {
                 val output = ByteArrayOutputStream()
-                check(prepared.compress(Bitmap.CompressFormat.JPEG, 82, output))
+                check(prepared.compress(Bitmap.CompressFormat.JPEG, 92, output))
                 android.util.Base64.encodeToString(output.toByteArray(), android.util.Base64.NO_WRAP)
             }.getOrNull()
             val visualUrl = uploadBitmapForVisualSearch(prepared, "")

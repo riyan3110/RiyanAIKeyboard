@@ -172,19 +172,17 @@ object AiClient {
 
     private fun visionInstruction(localTextHint: String): String = buildString {
         append(
-            "Analisis gambar apa adanya berdasarkan seluruh isi visual yang benar-benar terlihat. " +
-                "Jangan menambahkan filter kategori dari aplikasi dan jangan memaksa gambar menjadi jenis objek tertentu. " +
-                "Kenali objek, produk, teks, logo, bahan, warna, bentuk, pola, fungsi, lingkungan, serta konteks visual lain yang relevan. " +
-                "Jika ada manusia, analisis ciri fisik yang benar-benar terlihat secara rinci untuk pencarian visual: siluet dan proporsi tubuh yang tampak, postur atau pose, bentuk wajah, bentuk dan kontur bibir, bentuk hidung termasuk pangkal dan ujungnya, bentuk dan jarak mata, kelopak mata, bentuk dan ketebalan alis, panjang/tekstur/gaya/warna rambut, serta bentuk atau posisi telinga yang terlihat. " +
-                "Gunakan juga pakaian, aksesori, arah pandang, dan ciri visual pembeda lain yang tampak bila membantu menemukan gambar serupa. " +
-                "Jangan mengidentifikasi siapa orangnya dan jangan menebak ras atau etnis, kondisi kesehatan, kepribadian, agama, orientasi seksual, atau atribut sensitif lain dari penampilan. " +
-                "Jika ada beberapa objek atau ciri penting, gunakan kombinasinya bila itu membuat identifikasi lebih tepat. " +
-                "Jangan mengarang merek, model, identitas, atau ciri yang tidak terlihat. " +
-                "Hasil akhir harus berupa satu query pencarian gambar yang paling spesifik dan natural untuk menemukan gambar, objek, atau tampilan visual yang sama atau sangat mirip."
+            "Gambar yang diterima adalah area target yang sedang dilihat pengguna setelah crop/zoom. " +
+                "Anggap area ini sebagai subjek pencarian utama dan jangan membiarkan latar di luar subjek mendominasi hasil. " +
+                "Analisis sedetail mungkin ciri visual yang benar-benar terlihat: bentuk, warna, pola, ilustrasi, logo, tulisan kecil, simbol, bahan, tekstur, bagian produk, serta detail pembeda lain. " +
+                "Untuk teks atau logo, salin hanya yang benar-benar terbaca; jangan mengarang huruf, merek, model, atau identitas. " +
+                "Jika ada beberapa objek, prioritaskan objek yang paling besar/terpusat atau yang tampak sengaja diperbesar pengguna. " +
+                "Jika ada manusia, analisis hanya ciri visual non-sensitif yang benar-benar tampak untuk pencarian kemiripan, tanpa mencoba menentukan identitas orang. " +
+                "Hasil akhir harus berupa satu query pencarian visual yang spesifik, ringkas, dan memuat detail pembeda utama dari area zoom tersebut, bukan deskripsi umum seluruh latar."
         )
-        val hint = localTextHint.trim().replace(Regex("\\s+"), " ").take(220)
+        val hint = localTextHint.trim().replace(Regex("\s+"), " ").take(260)
         if (hint.isNotBlank()) {
-            append("\nKonteks lokal opsional, abaikan bila tidak cocok dengan gambar: ")
+            append("\nKonteks lokal opsional; gunakan hanya jika cocok dengan gambar: ")
             append(hint)
         }
     }
