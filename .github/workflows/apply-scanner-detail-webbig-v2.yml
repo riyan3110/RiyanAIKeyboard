@@ -1,0 +1,37 @@
+name: Apply scanner detail Web Big v2
+
+on:
+  push:
+    branches:
+      - fix/scanner-zoom-visual-gallery-v1
+    paths:
+      - tools/apply_scanner_detail_webbig_v2.py
+      - .github/workflows/apply-scanner-detail-webbig-v2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/scanner-zoom-visual-gallery-v1
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Apply source changes
+        run: python tools/apply_scanner_detail_webbig_v2.py
+      - name: Commit source changes
+        run: |
+          if git diff --quiet; then
+            echo "No changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt app/src/main/java/com/riyan/aikeyboard/AiClient.kt
+          git commit -m "fix: make zoom search use visible detail and preserve Web Big visual results"
+          git push origin HEAD:fix/scanner-zoom-visual-gallery-v1
