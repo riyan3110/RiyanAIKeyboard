@@ -1,0 +1,39 @@
+name: Apply browser functional fixes
+
+on:
+  push:
+    branches:
+      - feat/brave-search-latest
+    paths:
+      - tools/apply_browser_functional_fixes.py
+      - .github/workflows/apply_browser_functional_fixes.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/brave-search-latest
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Apply source fixes
+        run: python tools/apply_browser_functional_fixes.py
+      - name: Remove one-shot helpers
+        run: rm -f tools/apply_browser_functional_fixes.py .github/workflows/apply_browser_functional_fixes.yml
+      - name: Commit source fixes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "fix: make embedded Brave browser features functional"
+            git push origin HEAD:feat/brave-search-latest
+          fi
