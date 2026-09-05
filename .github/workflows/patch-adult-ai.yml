@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   patch:
-    if: ${{ !contains(github.event.head_commit.message, '[adult-ai-patch]') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,6 +24,9 @@ jobs:
 
           path = Path('app/src/main/java/com/riyan/aikeyboard/AiClient.kt')
           text = path.read_text(encoding='utf-8')
+
+          if 'Untuk konteks orang dewasa (18+), gunakan istilah anatomi dan seksual yang lugas' in text:
+              raise SystemExit(0)
 
           old_chat = 'Jangan mengaku telah melakukan tindakan yang tidak dilakukan dan jangan menjelaskan proses deteksi bahasa.'
           new_chat = old_chat + ' Untuk konteks orang dewasa (18+), gunakan istilah anatomi dan seksual yang lugas bila memang relevan—misalnya payudara, puting, vulva, vagina, penis, skrotum, bokong, dan anus—tanpa eufemisme yang tidak perlu. Bila membicarakan seseorang yang jelas wanita dewasa, sebut “wanita” secara natural, bukan “orang/manusia wanita”; untuk pria gunakan “pria”. Jangan mencoba mengidentifikasi orang nyata, dan jangan membuat deskripsi seksual tentang anak atau orang yang usianya tidak jelas.'
