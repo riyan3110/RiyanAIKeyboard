@@ -1,209 +1,142 @@
 from pathlib import Path
+import runpy
 
 ROOT = Path(__file__).resolve().parents[1]
-AI_CLIENT = ROOT / "app/src/main/java/com/riyan/aikeyboard/AiClient.kt"
-MAIN_ACTIVITY = ROOT / "app/src/main/java/com/riyan/aikeyboard/MainActivity.kt"
+CORE_PATCH = ROOT / "tools/apply_bluesminds_provider_patch_core.py"
 KEYBOARD_SERVICE = ROOT / "app/src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt"
 
+# Preserve the existing BluesMinds patch exactly, then apply only the requested
+# keyboard visual/touch fixes on top of the generated service source.
+runpy.run_path(str(CORE_PATCH), run_name="__main__")
 
-def replace_once(text: str, old: str, new: str, label: str) -> str:
-    if new in text:
-        return text
-    if old not in text:
-        raise RuntimeError(f"BluesMinds patch marker not found: {label}")
-    return text.replace(old, new, 1)
+text = KEYBOARD_SERVICE.read_text()
 
 
-def patch_ai_client() -> None:
-    text = AI_CLIENT.read_text()
+def replace_once(source: str, old: str, new: str, label: str) -> str:
+    if new in source:
+        return source
+    if old not in source:
+        raise RuntimeError(f"Keyboard visual patch marker not found: {label}")
+    return source.replace(old, new, 1)
 
-    text = replace_once(
-        text,
-        '    NINEROUTER("9router", "9Router");',
-        '    NINEROUTER("9router", "9Router"),\n    BLUESMINDS("bluesminds", "BluesMinds");',
-        "provider enum",
+
+def patch_key_view(source: str) -> str:
+    start_marker = "    private fun keyView(spec: KeySpec): View {"
+    end_marker = "\n    private fun keyFeedback(view: View, longPress: Boolean) {"
+    start = source.find(start_marker)
+    end = source.find(end_marker, start)
+    if start < 0 or end < 0:
+        raise RuntimeError("Keyboard visual patch marker not found: keyView block")
+
+    block = source[start:end]
+
+    # Keep the previous optical centering correction for descender letters.
+    old_label = '            if (spec.alternate != null) translationY = dpFloat(4f)'
+    new_label = '''            if (spec.label in setOf("q", "y", "p", "g", "j")) {
+                translationY = dpFloat(-2f)
+            } else if (spec.alternate != null && spec.label.none { it.isLetterOrDigit() }) translationY = dpFloat(4f)'''
+    block = replace_once(block, old_label, new_label, "descender centering")
+
+    # Keep the proven working touch path on the actual key frame. The border is
+    # part of this frame, so pressing anywhere on the visible face/border uses
+    # the same listener and action as the legend area.
+    block = replace_once(
+        block,
+        '''                    actionTriggered = false
+                    if (instantKeyResponse) {''',
+        '''                    actionTriggered = false
+                    keyFace.background = referenceBubbleKeyBackground(pressed = true)
+                    if (instantKeyResponse) {''',
+        "pressed key border feedback",
+    )
+    block = replace_once(
+        block,
+        '''                    dismissKeyPreview()
+                    val moved = hypot(event.x - downX, event.y - downY)''',
+        '''                    dismissKeyPreview()
+                    keyFace.background = referenceBubbleKeyBackground(pressed = false)
+                    val moved = hypot(event.x - downX, event.y - downY)''',
+        "release key border feedback",
+    )
+    block = replace_once(
+        block,
+        '''                MotionEvent.ACTION_CANCEL -> {
+                    longRunnable?.let(handler::removeCallbacks)
+                    dismissKeyPreview()
+                    true''',
+        '''                MotionEvent.ACTION_CANCEL -> {
+                    longRunnable?.let(handler::removeCallbacks)
+                    dismissKeyPreview()
+                    keyFace.background = referenceBubbleKeyBackground(pressed = false)
+                    true''',
+        "cancel key border feedback",
     )
 
-    text = replace_once(
-        text,
-        '    val nineRouterModel: String,\n    val fallbackEnabled: Boolean,',
-        '    val nineRouterModel: String,\n    val bluesMindsApiKey: String,\n    val bluesMindsBaseUrl: String,\n    val bluesMindsModel: String,\n    val fallbackEnabled: Boolean,',
-        "settings fields",
+    return source[:start] + block + source[end:]
+
+
+def patch_neon_key_border(source: str) -> str:
+    start_marker = "    private fun referenceBubbleKeyBackground(pressed: Boolean): GradientDrawable {"
+    end_marker = "\n    private fun referenceTopRimBackground(): GradientDrawable ="
+    start = source.find(start_marker)
+    end = source.find(end_marker, start)
+    if start < 0 or end < 0:
+        raise RuntimeError("Keyboard visual patch marker not found: reference key background")
+
+    block = source[start:end]
+    old_stroke = '''            setStroke(
+                dp(1),
+                if (pressed) Color.rgb(67, 65, 77) else Color.rgb(97, 94, 108)
+            )'''
+    new_stroke = '''            setStroke(
+                dp(if (pressed) 3 else 2),
+                if (pressed) Color.rgb(205, 124, 255) else Color.rgb(181, 86, 249)
+            )'''
+    block = replace_once(block, old_stroke, new_stroke, "reference neon purple border")
+    return source[:start] + block + source[end:]
+
+
+def patch_cursor_keys(source: str) -> str:
+    # Cursor-arrow buttons keep their original proven touch listener directly on
+    # the visible frame, while using the same thinner neon purple border.
+    start_marker = "    private fun cursorDirectionButton(label: String, keyCode: Int): View {"
+    end_marker = "\n    private fun cursorPadTouchListener(): View.OnTouchListener {"
+    start = source.find(start_marker)
+    end = source.find(end_marker, start)
+    if start < 0 or end < 0:
+        raise RuntimeError("Keyboard visual patch marker not found: cursorDirectionButton")
+
+    block = source[start:end]
+    block = replace_once(
+        block,
+        "            background = roundedBackground(specialKeyBg, 11f)\n",
+        "            background = roundedStrokedBackground(specialKeyBg, 11f, Color.rgb(181, 86, 249), 2)\n",
+        "cursor normal purple border",
     )
-
-    if 'AiProvider.BLUESMINDS -> requestBluesMindsVision' not in text:
-        vision_inserted = False
-        for hint_expr in ('localTextHint', '""'):
-            marker = f'                    AiProvider.NINEROUTER -> request9RouterVision(settings, jpegBase64, {hint_expr})\n'
-            if marker in text:
-                addition = marker + f'                    AiProvider.BLUESMINDS -> requestBluesMindsVision(settings, jpegBase64, {hint_expr})\n'
-                text = text.replace(marker, addition, 1)
-                vision_inserted = True
-                break
-        if not vision_inserted:
-            raise RuntimeError("BluesMinds patch marker not found: vision provider branch")
-
-    text = replace_once(
-        text,
-        '                    AiProvider.NINEROUTER -> request9Router(settings, personalizedInstruction, text, temperature, maxTokens)\n',
-        '                    AiProvider.NINEROUTER -> request9Router(settings, personalizedInstruction, text, temperature, maxTokens)\n                    AiProvider.BLUESMINDS -> requestBluesMinds(settings, personalizedInstruction, text, temperature, maxTokens)\n',
-        "text provider branch",
+    block = replace_once(
+        block,
+        "                    view.background = roundedBackground(pressedKeyBg, 11f)\n",
+        "                    view.background = roundedStrokedBackground(pressedKeyBg, 11f, Color.rgb(205, 124, 255), 3)\n",
+        "cursor pressed border",
     )
-
-    marker = '    private fun request9Router(\n'
-    if 'private fun requestBluesMinds(' not in text:
-        if marker not in text:
-            raise RuntimeError("BluesMinds patch marker not found: request9Router")
-        helper = r'''    private fun requestBluesMinds(
-        settings: AiSettings,
-        systemInstruction: String,
-        text: String,
-        temperature: Double,
-        maxTokens: Int
-    ): String {
-        require(settings.bluesMindsApiKey.isNotBlank()) { "API key BluesMinds belum diisi." }
-        require(settings.bluesMindsModel.isNotBlank()) { "Model BluesMinds belum diisi." }
-
-        val body = JSONObject()
-            .put("model", settings.bluesMindsModel.trim())
-            .put("temperature", temperature)
-            .put("max_tokens", maxTokens)
-            .put(
-                "messages", JSONArray()
-                    .put(JSONObject().put("role", "system").put("content", systemInstruction))
-                    .put(JSONObject().put("role", "user").put("content", text))
-            )
-
-        val response = postJson(
-            url = bluesMindsChatUrl(settings.bluesMindsBaseUrl),
-            headers = mapOf("Authorization" to "Bearer ${settings.bluesMindsApiKey.trim()}"),
-            body = body
-        )
-        return response.getJSONArray("choices").getJSONObject(0)
-            .getJSONObject("message").getString("content").trim()
-    }
-
-    private fun requestBluesMindsVision(
-        settings: AiSettings,
-        jpegBase64: String,
-        localTextHint: String
-    ): String {
-        require(settings.bluesMindsApiKey.isNotBlank()) { "API key BluesMinds belum diisi." }
-        require(settings.bluesMindsModel.isNotBlank()) { "Model BluesMinds belum diisi." }
-
-        val userContent = JSONArray()
-            .put(JSONObject().put("type", "text").put("text", visionInstruction(localTextHint)))
-            .put(
-                JSONObject()
-                    .put("type", "image_url")
-                    .put("image_url", JSONObject().put("url", "data:image/jpeg;base64,$jpegBase64"))
-            )
-
-        val body = JSONObject()
-            .put("model", settings.bluesMindsModel.trim())
-            .put("temperature", 0.05)
-            .put("max_tokens", 220)
-            .put(
-                "messages",
-                JSONArray().put(
-                    JSONObject()
-                        .put("role", "user")
-                        .put("content", userContent)
-                )
-            )
-
-        val response = postJson(
-            url = bluesMindsChatUrl(settings.bluesMindsBaseUrl),
-            headers = mapOf("Authorization" to "Bearer ${settings.bluesMindsApiKey.trim()}"),
-            body = body
-        )
-        val message = response.getJSONArray("choices").getJSONObject(0).getJSONObject("message")
-        val content = message.opt("content")
-        val output = when (content) {
-            is String -> content
-            is JSONArray -> buildString {
-                for (index in 0 until content.length()) {
-                    val block = content.optJSONObject(index) ?: continue
-                    if (block.optString("type") == "text") append(block.optString("text"))
-                }
-            }
-            else -> ""
-        }.trim()
-        require(output.isNotBlank()) { "Model BluesMinds tidak mengembalikan hasil vision." }
-        return output
-    }
-
-    private fun bluesMindsChatUrl(baseUrl: String): String {
-        val clean = baseUrl.trim().ifBlank { "https://api.bluesminds.com/v1" }.trimEnd('/')
-        require(URL(clean).protocol.equals("https", ignoreCase = true)) {
-            "Base URL BluesMinds harus memakai HTTPS."
-        }
-        return when {
-            clean.endsWith("/chat/completions", ignoreCase = true) -> clean
-            clean.endsWith("/v1", ignoreCase = true) -> "$clean/chat/completions"
-            else -> "$clean/v1/chat/completions"
-        }
-    }
-
-'''
-        text = text.replace(marker, helper + marker, 1)
-
-    AI_CLIENT.write_text(text)
-
-
-def patch_main_activity() -> None:
-    text = MAIN_ACTIVITY.read_text()
-
-    text = replace_once(
-        text,
-        '                    AiProvider.NINEROUTER -> "9Router (OpenAI-compatible)"\n                    else -> it.label',
-        '                    AiProvider.NINEROUTER -> "9Router (OpenAI-compatible)"\n                    AiProvider.BLUESMINDS -> "BluesMinds (OpenAI-compatible)"\n                    else -> it.label',
-        "provider label",
+    block = replace_once(
+        block,
+        "                    view.background = roundedBackground(specialKeyBg, 11f)\n",
+        "                    view.background = roundedStrokedBackground(specialKeyBg, 11f, Color.rgb(181, 86, 249), 2)\n",
+        "cursor released border",
     )
+    source = source[:start] + block + source[end:]
 
-    marker = '        val fallback = CheckBox(this).apply {\n'
-    if 'sectionTitle("BluesMinds")' not in text:
-        if marker not in text:
-            raise RuntimeError("BluesMinds patch marker not found: fallback")
-        section = '''        root.addView(sectionTitle("BluesMinds"))
-        val bluesMindsKey = secretField("API key BluesMinds", prefs.getString("bluesminds_api_key", ""))
-        val bluesMindsBaseUrl = textField("Base URL BluesMinds", prefs.getString("bluesminds_base_url", "https://api.bluesminds.com/v1"))
-        val bluesMindsModel = textField("Model BluesMinds", prefs.getString("bluesminds_model", "deepseek-ai/deepseek-v4-flash"))
-        root.addView(bluesMindsKey, ViewGroup.LayoutParams(-1, -2))
-        root.addView(bluesMindsBaseUrl, ViewGroup.LayoutParams(-1, -2))
-        root.addView(bluesMindsModel, ViewGroup.LayoutParams(-1, -2))
-        root.addView(description("OpenAI-compatible · /v1/chat/completions · Authorization: Bearer. Model harus sesuai nama model yang tersedia di akun BluesMinds."))
-
-'''
-        text = text.replace(marker, section + marker, 1)
-
-    text = replace_once(
-        text,
-        '                    .putString("9router_model", nineRouterModel.text.toString().trim().ifBlank { "cc/claude-sonnet-4-20250514" })\n                    .putString("reference_urls", referenceUrls.text.toString().trim())',
-        '                    .putString("9router_model", nineRouterModel.text.toString().trim().ifBlank { "cc/claude-sonnet-4-20250514" })\n                    .putString("bluesminds_api_key", bluesMindsKey.text.toString().trim())\n                    .putString("bluesminds_base_url", bluesMindsBaseUrl.text.toString().trim().ifBlank { "https://api.bluesminds.com/v1" })\n                    .putString("bluesminds_model", bluesMindsModel.text.toString().trim().ifBlank { "deepseek-ai/deepseek-v4-flash" })\n                    .putString("reference_urls", referenceUrls.text.toString().trim())',
-        "save settings",
-    )
-
-    MAIN_ACTIVITY.write_text(text)
+    # Touchpad/d-pad container borders use the same thinner reference purple.
+    old_cursor_stroke = "        setStroke(dp(2), if (pressed) Color.rgb(214, 133, 255) else Color.rgb(127, 86, 180))"
+    new_cursor_stroke = "        setStroke(dp(if (pressed) 3 else 2), if (pressed) Color.rgb(205, 124, 255) else Color.rgb(181, 86, 249))"
+    source = replace_once(source, old_cursor_stroke, new_cursor_stroke, "cursor pad neon border")
+    return source
 
 
-def patch_keyboard_service() -> None:
-    text = KEYBOARD_SERVICE.read_text()
-    text = replace_once(
-        text,
-        '            nineRouterModel = prefs.getString("9router_model", "cc/claude-sonnet-4-20250514").orEmpty(),\n            fallbackEnabled = prefs.getBoolean("fallback_enabled", false),',
-        '            nineRouterModel = prefs.getString("9router_model", "cc/claude-sonnet-4-20250514").orEmpty(),\n            bluesMindsApiKey = prefs.getString("bluesminds_api_key", "").orEmpty(),\n            bluesMindsBaseUrl = prefs.getString("bluesminds_base_url", "https://api.bluesminds.com/v1").orEmpty(),\n            bluesMindsModel = prefs.getString("bluesminds_model", "deepseek-ai/deepseek-v4-flash").orEmpty(),\n            fallbackEnabled = prefs.getBoolean("fallback_enabled", false),',
-        "service settings",
-    )
-    KEYBOARD_SERVICE.write_text(text)
+text = patch_key_view(text)
+text = patch_neon_key_border(text)
+text = patch_cursor_keys(text)
+KEYBOARD_SERVICE.write_text(text)
 
-
-def main() -> None:
-    patch_ai_client()
-    patch_main_activity()
-    patch_keyboard_service()
-    print("BluesMinds provider patch applied")
-
-
-if __name__ == "__main__":
-    main()
+print("Keyboard thinner neon border + restored direct touch patch applied")
