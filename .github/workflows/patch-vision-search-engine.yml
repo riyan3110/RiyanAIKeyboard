@@ -22,22 +22,11 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
           service = Path('app/src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt')
           s = service.read_text()
 
-          old_clean = '''    private fun cleanAiVisionSearchQuery(raw: String): String {
-              val line = raw.lineSequence()
-                  .map { it.trim().trim('"', '\\'', '`') }
-                  .firstOrNull { it.isNotBlank() }
-                  .orEmpty()
-              return line
-                  .replace(Regex("(?i)^(?:query|search query|pencarian|hasil)\\\\s*:\\\\s*"), "")
-                  .replace(Regex("\\\\s+"), " ")
-                  .trim()
-                  .take(220)
-          }
-          '''
           new_clean = '''    private fun cleanAiVisionSearchQuery(raw: String): String {
               val line = raw.lineSequence()
                   .map { it.trim().trim('"', '\\'', '`') }
@@ -56,34 +45,38 @@ jobs:
                   .trim()
           }
           '''
-          if old_clean not in s:
-              raise SystemExit('cleanAiVisionSearchQuery block not found')
-          s = s.replace(old_clean, new_clean, 1)
+          pattern = r'    private fun cleanAiVisionSearchQuery\(raw: String\): String \{.*?\n    \}\n\n    private fun aiVisionFailureMessage'
+          s, n = re.subn(pattern, new_clean + '\n    private fun aiVisionFailureMessage', s, count=1, flags=re.S)
+          if n != 1:
+              raise SystemExit(f'cleanAiVisionSearchQuery replacement count={n}')
 
-          old_open = 'searchUrl = directUrl.takeIf(::isWebUrl) ?: if (isWebUrl(cleanQuery)) cleanQuery else braveSearchUrl(cleanQuery)'
-          if old_open not in s:
-              raise SystemExit('openSearchResults URL assignment not found')
-          s = s.replace(old_open, 'searchUrl = directUrl.takeIf(::isWebUrl) ?: if (isWebUrl(cleanQuery)) cleanQuery else selectedWebSearchUrl(cleanQuery)', 1)
+          s, n = re.subn(
+              r'searchUrl = directUrl\.takeIf\(::isWebUrl\) \?: if \(isWebUrl\(cleanQuery\)\) cleanQuery else braveSearchUrl\(cleanQuery\)',
+              'searchUrl = directUrl.takeIf(::isWebUrl) ?: if (isWebUrl(cleanQuery)) cleanQuery else selectedWebSearchUrl(cleanQuery)',
+              s, count=1
+          )
+          if n != 1:
+              raise SystemExit(f'openSearchResults replacement count={n}')
 
-          old_input = 'searchUrl = if (isWebUrl(query)) query else braveSearchUrl(query)'
-          if old_input not in s:
-              raise SystemExit('performSearchFromInput URL assignment not found')
-          s = s.replace(old_input, 'searchUrl = if (isWebUrl(query)) query else selectedWebSearchUrl(query)', 1)
+          s, n = re.subn(
+              r'searchUrl = if \(isWebUrl\(query\)\) query else braveSearchUrl\(query\)',
+              'searchUrl = if (isWebUrl(query)) query else selectedWebSearchUrl(query)',
+              s, count=1
+          )
+          if n != 1:
+              raise SystemExit(f'performSearchFromInput replacement count={n}')
 
-          old_brave_images = 'searchUrl = "https://search.brave.com/images?q=${Uri.encode(query)}&source=web"'
-          count = s.count(old_brave_images)
-          if count != 2:
-              raise SystemExit(f'expected 2 direct Brave image assignments, found {count}')
-          s = s.replace(old_brave_images, 'searchUrl = selectedImageSearchUrl(query)')
+          old_images = 'searchUrl = "https://search.brave.com/images?q=${Uri.encode(query)}&source=web"'
+          if s.count(old_images) != 2:
+              raise SystemExit(f'expected 2 camera/gallery Brave image assignments, found {s.count(old_images)}')
+          s = s.replace(old_images, 'searchUrl = selectedImageSearchUrl(query)')
 
-          old_open_brave = 'searchUrl = "https://search.brave.com/images?q=${Uri.encode(clean)}&source=web"'
-          if old_open_brave not in s:
+          old_open_image = 'searchUrl = "https://search.brave.com/images?q=${Uri.encode(clean)}&source=web"'
+          if old_open_image not in s:
               raise SystemExit('openBraveImageResults assignment not found')
-          s = s.replace(old_open_brave, 'searchUrl = selectedImageSearchUrl(clean)', 1)
+          s = s.replace(old_open_image, 'searchUrl = selectedImageSearchUrl(clean)', 1)
 
           marker = '    private fun braveSearchUrl(query: String): String = Uri.Builder()\n'
-          if marker not in s:
-              raise SystemExit('braveSearchUrl marker not found')
           helpers = '''    private fun selectedSearchEngineId(): String =
               getSharedPreferences(PREFS, MODE_PRIVATE).getString("browser_search_engine", "brave") ?: "brave"
 
@@ -108,6 +101,8 @@ jobs:
           }
 
           '''
+          if marker not in s:
+              raise SystemExit('braveSearchUrl marker not found')
           s = s.replace(marker, helpers + marker, 1)
           service.write_text(s)
 
@@ -120,19 +115,16 @@ jobs:
               raise SystemExit('chat adult instruction not found')
           a = a.replace(old_chat, new_chat, 1)
 
-          old_person = '''            .replace(Regex("(?i)^\\\\s*(orang\\\\s*/\\\\s*manusia|orang|manusia)\\\\s+(wanita|perempuan)\\\\b"), "wanita")
-              .replace(Regex("(?i)^\\\\s*(orang\\\\s*/\\\\s*manusia|orang|manusia)\\\\s+(pria|laki-laki|lelaki)\\\\b"), "pria")
-              .replace(Regex("(?i)^\\\\s*perempuan\\\\b"), "wanita")
-              .replace(Regex("(?i)^\\\\s*(laki-laki|lelaki)\\\\b"), "pria")
-          '''
-          new_person = '''            .replace(Regex("(?i)^\\\\s*(orang\\\\s*/\\\\s*manusia|orang|manusia)\\\\s+(wanita|perempuan|woman|women|female)\\\\b"), "wanita")
-              .replace(Regex("(?i)^\\\\s*(orang\\\\s*/\\\\s*manusia|orang|manusia)\\\\s+(pria|laki-laki|lelaki|man|men|male)\\\\b"), "pria")
-              .replace(Regex("(?i)^\\\\s*(perempuan|woman|women|female)\\\\b"), "wanita")
-              .replace(Regex("(?i)^\\\\s*(laki-laki|lelaki|man|men|male)\\\\b"), "pria")
-          '''
-          if old_person not in a:
-              raise SystemExit('person normalization block not found')
-          a = a.replace(old_person, new_person, 1)
+          replacements = [
+              ('(wanita|perempuan)\\\\b"), "wanita")', '(wanita|perempuan|woman|women|female)\\\\b"), "wanita")'),
+              ('(pria|laki-laki|lelaki)\\\\b"), "pria")', '(pria|laki-laki|lelaki|man|men|male)\\\\b"), "pria")'),
+              ('^\\\\s*perempuan\\\\b"), "wanita")', '^\\\\s*(perempuan|woman|women|female)\\\\b"), "wanita")'),
+              ('^\\\\s*(laki-laki|lelaki)\\\\b"), "pria")', '^\\\\s*(laki-laki|lelaki|man|men|male)\\\\b"), "pria")'),
+          ]
+          for old, new in replacements:
+              if old not in a:
+                  raise SystemExit(f'person normalization token not found: {old}')
+              a = a.replace(old, new, 1)
 
           old_vision = 'Setelah jenis subjek benar, tulis query pencarian visual yang menyebut bentuk/subjek dulu, lalu detail pembeda seperti pose, bagian tubuh/objek, warna, pola, pakaian, logo, tulisan yang benar-benar terbaca, bahan, tekstur, dan konteks. '
           new_vision = 'Setelah jenis subjek benar, buat query pencarian visual yang SANGAT PENDEK dan natural: bahasa Indonesia, 3–7 kata, maksimal sekitar 60 karakter, tanpa kalimat penjelasan atau gaya prompt. Sebut subjek utama lalu paling banyak 2–3 ciri visual yang paling membedakan. Hindari filler seperti setting, with, arms, terlihat, sedang, atau detail latar yang tidak penting. Untuk subjek dewasa, pahami deskripsi tubuh dan pakaian secara natural, termasuk bokong, payudara besar, pinggul, rok mini, rok ketat, legging ketat, celana pendek ketat, baju ketat, rok satin ketat; pahami memek sebagai slang vulva dan itil sebagai slang klitoris. Gunakan hanya ciri yang benar-benar terlihat dan jangan mengarang tindakan seksual dari pose atau ekspresi. '
@@ -141,15 +133,16 @@ jobs:
           a = a.replace(old_vision, new_vision, 1)
 
           old_return = '        return query.take(280)\n'
-          if old_return not in a:
-              raise SystemExit('vision return cap not found')
-          a = a.replace(old_return, '''        return query.split(Regex("\\\\s+"))
+          new_return = '''        return query.split(Regex("\\\\s+"))
               .filter { it.isNotBlank() }
               .take(7)
               .joinToString(" ")
               .take(64)
               .trim()
-          ''', 1)
+          '''
+          if old_return not in a:
+              raise SystemExit('vision return cap not found')
+          a = a.replace(old_return, new_return, 1)
           client.write_text(a)
           PY
 
