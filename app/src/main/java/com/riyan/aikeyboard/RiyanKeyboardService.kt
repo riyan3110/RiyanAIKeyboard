@@ -3169,7 +3169,7 @@ resultCard.bringToFront()
         val cleanQuery = query.trim().ifBlank { directUrl.trim() }
         if (cleanQuery.isBlank()) return
         searchQuery = cleanQuery
-        searchUrl = directUrl.takeIf(::isWebUrl) ?: if (isWebUrl(cleanQuery)) cleanQuery else googleSearchUrl(cleanQuery)
+        searchUrl = directUrl.takeIf(::isWebUrl) ?: if (isWebUrl(cleanQuery)) cleanQuery else braveSearchUrl(cleanQuery)
         stopEmbeddedScanner()
         showSearchWebPanel()
     }
@@ -3248,12 +3248,14 @@ resultCard.bringToFront()
             settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
             settings.mediaPlaybackRequiresUserGesture = false
             settings.userAgentString = WebSettings.getDefaultUserAgent(this@RiyanKeyboardService)
+        // Brave Search is server-updated; keep the actual WebView UA for renderer compatibility.
             webChromeClient = object : android.webkit.WebChromeClient() {
                 override fun onPermissionRequest(request: android.webkit.PermissionRequest?) {
                     request ?: return
                     handler.post {
                         val host = request.origin?.host?.lowercase().orEmpty()
                         val trustedCameraOrigin =
+                            host == "search.brave.com" || host.endsWith(".brave.com") ||
                             host == "bing.com" || host.endsWith(".bing.com") ||
                             host == "google.com" || host.endsWith(".google.com")
                         val cameraGranted = ContextCompat.checkSelfPermission(
@@ -3271,7 +3273,7 @@ resultCard.bringToFront()
                             if (videoRequested && !cameraGranted) {
                                 Toast.makeText(
                                     this@RiyanKeyboardService,
-                                    "Izinkan akses kamera AI Ads Keyboard agar kamera Microsoft Bing dapat digunakan.",
+                                    "Izinkan akses kamera AI Ads Keyboard agar kamera di halaman Brave dapat digunakan.",
                                     Toast.LENGTH_SHORT
                                 ).show()
                             }
@@ -3751,7 +3753,7 @@ resultCard.bringToFront()
                     android.util.Base64.encodeToString(output.toByteArray(), android.util.Base64.NO_WRAP)
                 }.getOrNull()
 
-                val visualUrl: String? = null // Microsoft Bing remains the embedded visual-search surface.
+                val visualUrl: String? = null // Brave Search remains the embedded search surface.
                 val result = if (encoded.isNullOrBlank()) {
                     Result.failure<AiResponse>(IllegalStateException("Foto kamera gagal disiapkan."))
                 } else {
@@ -3791,7 +3793,7 @@ resultCard.bringToFront()
                     scannerResultText?.text = query
                     scannerStatusText?.text = "AI Vision: $query"
                     searchQuery = query
-                    searchUrl = "https://www.bing.com/images/search?q=${Uri.encode(query)}&adlt=off"
+                    searchUrl = "https://search.brave.com/images?q=${Uri.encode(query)}&source=web"
                     stopEmbeddedScanner()
                     showSearchWebPanel()
                     scannerSearchButton?.text = "Cari"
@@ -3825,7 +3827,7 @@ resultCard.bringToFront()
                 check(prepared.compress(Bitmap.CompressFormat.JPEG, 92, output))
                 android.util.Base64.encodeToString(output.toByteArray(), android.util.Base64.NO_WRAP)
             }.getOrNull()
-            val visualUrl: String? = null // Microsoft Bing remains the embedded visual-search surface.
+            val visualUrl: String? = null // Brave Search remains the embedded search surface.
             val result = if (encoded.isNullOrBlank()) {
                 Result.failure<AiResponse>(IllegalStateException("Gambar galeri gagal disiapkan."))
             } else {
@@ -3865,7 +3867,7 @@ resultCard.bringToFront()
                 scannerResultText?.text = query
                 scannerStatusText?.text = "AI Vision: $query"
                 searchQuery = query
-                searchUrl = "https://www.bing.com/images/search?q=${Uri.encode(query)}&adlt=off"
+                searchUrl = "https://search.brave.com/images?q=${Uri.encode(query)}&source=web"
                 stopEmbeddedScanner()
                 showSearchWebPanel()
                 scannerSearchButton?.text = "Cari"
@@ -3913,10 +3915,10 @@ resultCard.bringToFront()
         return Bitmap.createBitmap(frame, left, top, right - left, bottom - top)
     }
 
-    private fun openBingImageResults(query: String) {
+    private fun openBraveImageResults(query: String) {
         val clean = query.replace(Regex("\\s+"), " ").trim().ifBlank { "produk benda fisik bentuk serupa" }
         searchQuery = clean
-        searchUrl = "https://www.bing.com/images/search?q=${Uri.encode(clean)}&adlt=off"
+        searchUrl = "https://search.brave.com/images?q=${Uri.encode(clean)}&source=web"
         stopEmbeddedScanner()
         showSearchWebPanel()
     }
@@ -3938,7 +3940,7 @@ resultCard.bringToFront()
         val query = searchInput?.text?.toString()?.trim().orEmpty()
         if (query.isBlank()) return
         searchQuery = query
-        searchUrl = if (isWebUrl(query)) query else googleSearchUrl(query)
+        searchUrl = if (isWebUrl(query)) query else braveSearchUrl(query)
         searchWebView?.loadUrl(searchUrl)
         searchInput?.setSelection(searchInput?.text?.length ?: 0)
     }
@@ -4122,11 +4124,12 @@ resultCard.bringToFront()
         return rawUrl
     }
 
-    private fun googleSearchUrl(query: String): String = Uri.Builder()
+    private fun braveSearchUrl(query: String): String = Uri.Builder()
         .scheme("https")
-        .authority("www.bing.com")
+        .authority("search.brave.com")
         .path("search")
         .appendQueryParameter("q", query)
+        .appendQueryParameter("source", "web")
         .build()
         .toString()
 
