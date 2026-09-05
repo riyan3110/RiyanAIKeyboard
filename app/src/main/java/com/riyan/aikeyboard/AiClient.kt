@@ -16,7 +16,8 @@ enum class AiProvider(val id: String, val label: String) {
     NINEROUTER("9router", "9Router"),
     BLUESMINDS("bluesminds", "BluesMinds"),
     XKIRO("xkiro", "xKiro"),
-    ORCAROUTER("orcarouter", "OrcaRouter");
+    ORCAROUTER("orcarouter", "OrcaRouter"),
+    AIHORDE("aihorde", "AI Horde");
 
     companion object {
         fun fromId(id: String?): AiProvider = entries.firstOrNull { it.id == id } ?: OPENROUTER
@@ -42,6 +43,8 @@ data class AiSettings(
     val orcaRouterApiKey: String,
     val orcaRouterBaseUrl: String,
     val orcaRouterModel: String,
+    val aiHordeApiKey: String,
+    val aiHordeModel: String,
     val fallbackEnabled: Boolean,
     val referenceUrls: List<String>,
     val writingStyleProfile: String
@@ -134,6 +137,7 @@ object AiClient {
                     AiProvider.BLUESMINDS -> requestCompatibleVision(settings.bluesMindsApiKey, settings.bluesMindsBaseUrl, settings.bluesMindsModel, "BluesMinds", jpegBase64, localTextHint)
                     AiProvider.XKIRO -> requestCompatibleVision(settings.xKiroApiKey, settings.xKiroBaseUrl, settings.xKiroModel, "xKiro", jpegBase64, localTextHint)
                     AiProvider.ORCAROUTER -> requestCompatibleVision(settings.orcaRouterApiKey, settings.orcaRouterBaseUrl, settings.orcaRouterModel, "OrcaRouter", jpegBase64, localTextHint)
+                    AiProvider.AIHORDE -> throw IllegalStateException("AI Horde saat ini dipakai untuk chat; Vision otomatis mencoba provider vision berikutnya.")
                 }
                 val query = normalizeVisionResult(raw)
                     ?: throw IllegalStateException("Model ${provider.label} tidak membuktikan bahwa gambar benar-benar dibaca.")
@@ -181,6 +185,7 @@ object AiClient {
                     AiProvider.BLUESMINDS -> requestCompatibleChat(settings.bluesMindsApiKey, settings.bluesMindsBaseUrl, settings.bluesMindsModel, "BluesMinds", personalizedInstruction, text, temperature, maxTokens)
                     AiProvider.XKIRO -> requestCompatibleChat(settings.xKiroApiKey, settings.xKiroBaseUrl, settings.xKiroModel, "xKiro", personalizedInstruction, text, temperature, maxTokens)
                     AiProvider.ORCAROUTER -> requestCompatibleChat(settings.orcaRouterApiKey, settings.orcaRouterBaseUrl, settings.orcaRouterModel, "OrcaRouter", personalizedInstruction, text, temperature, maxTokens)
+                    AiProvider.AIHORDE -> requestAiHordeChat(settings, personalizedInstruction, text, temperature, maxTokens)
                 }
                 AiResponse(output, provider)
             }
@@ -293,6 +298,111 @@ object AiClient {
             .joinToString(" ")
             .take(64)
             .trim()
+    }
+
+
+    private fun requestAiHordeChat(
+        settings: AiSettings,
+        systemInstruction: String,
+        text: String,
+        temperature: Double,
+        maxTokens: Int
+    ): String {
+        val apiKey = settings.aiHordeApiKey.trim().ifBlank { "0000000000" }
+        val modelNames = settings.aiHordeModel
+            .split(',', '\n')
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .distinct()
+        require(modelNames.isNotEmpty()) { "Model AI Horde belum diisi." }
+
+        val prompt = buildString {
+            append("[System]\n")
+            append(systemInstruction)
+            append("\n\n[User]\n")
+            append(text.takeLast(24_000))
+            append("\n\n[Assistant]\n")
+        }
+        val models = JSONArray().apply { modelNames.forEach(::put) }
+        val params = JSONObject()
+            .put("max_length", maxTokens.coerceIn(64, 1024))
+            .put("max_context_length", 8192)
+            .put("temperature", temperature.coerceIn(0.1, 1.5))
+            .put("top_p", 0.95)
+            .put("n", 1)
+        val body = JSONObject()
+            .put("prompt", prompt)
+            .put("params", params)
+            .put("models", models)
+            .put("slow_workers", true)
+            .put("trusted_workers", false)
+
+        val headers = mapOf(
+            "apikey" to apiKey,
+            "Client-Agent" to "AI-Ads-Keyboard:0.21:https://github.com/riyan3110/RiyanAIKeyboard"
+        )
+        val submitted = postJson(
+            url = "https://aihorde.net/api/v2/generate/text/async",
+            headers = headers,
+            body = body
+        )
+        val requestId = submitted.optString("id").trim()
+        require(requestId.isNotBlank()) {
+            submitted.optString("message").ifBlank { "AI Horde tidak mengembalikan ID antrean." }
+        }
+
+        val deadline = System.currentTimeMillis() + 120_000L
+        while (System.currentTimeMillis() < deadline) {
+            Thread.sleep(1_500L)
+            val status = getJson(
+                "https://aihorde.net/api/v2/generate/text/status/$requestId",
+                headers
+            )
+            if (status.optBoolean("faulted", false)) {
+                error("AI Horde gagal memproses permintaan.")
+            }
+            if (!status.optBoolean("is_possible", true) &&
+                status.optInt("processing", 0) == 0 &&
+                status.optInt("waiting", 0) == 0
+            ) {
+                error("Model AI Horde sedang tidak tersedia di worker komunitas.")
+            }
+            if (status.optBoolean("done", false)) {
+                val generations = status.optJSONArray("generations")
+                if (generations != null) {
+                    for (index in 0 until generations.length()) {
+                        val generation = generations.optJSONObject(index) ?: continue
+                        val output = generation.optString("text").trim()
+                        if (output.isNotBlank()) return output
+                    }
+                }
+                error("AI Horde selesai tetapi tidak mengembalikan teks.")
+            }
+        }
+        error("AI Horde masih antre terlalu lama. Coba lagi atau aktifkan fallback provider.")
+    }
+
+    private fun getJson(url: String, headers: Map<String, String>): JSONObject {
+        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 10_000
+            readTimeout = 20_000
+            setRequestProperty("Accept", "application/json")
+            headers.forEach { (name, value) -> setRequestProperty(name, value) }
+        }
+        return try {
+            val status = connection.responseCode
+            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+            val raw = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            if (status !in 200..299) {
+                val message = extractError(raw)
+                error(message ?: "Permintaan AI Horde gagal ($status).")
+            }
+            require(raw.isNotBlank()) { "AI Horde mengembalikan respons kosong." }
+            JSONObject(raw)
+        } finally {
+            connection.disconnect()
+        }
     }
 
     private fun requestOpenRouterVision(

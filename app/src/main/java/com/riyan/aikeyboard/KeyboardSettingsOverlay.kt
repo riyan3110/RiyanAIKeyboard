@@ -54,6 +54,8 @@ class KeyboardSettingsOverlay(
         var orcaRouterKey: String,
         var orcaRouterBaseUrl: String,
         var orcaRouterModel: String,
+        var aiHordeKey: String,
+        var aiHordeModel: String,
         var fallbackEnabled: Boolean,
         var referenceUrls: String,
         var styleMemoryEnabled: Boolean,
@@ -233,7 +235,7 @@ class KeyboardSettingsOverlay(
 
     private fun renderModelTab() {
         body.addView(section("Penyedia AI Utama"))
-        val providers = listOf(AiProvider.OPENROUTER, AiProvider.TABIAI, AiProvider.NINEROUTER, AiProvider.BLUESMINDS, AiProvider.XKIRO, AiProvider.ORCAROUTER)
+        val providers = listOf(AiProvider.OPENROUTER, AiProvider.TABIAI, AiProvider.NINEROUTER, AiProvider.BLUESMINDS, AiProvider.XKIRO, AiProvider.ORCAROUTER, AiProvider.AIHORDE)
         val grid = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
         providers.chunked(2).forEach { rowItems ->
             val row = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
@@ -290,6 +292,11 @@ class KeyboardSettingsOverlay(
                 config.addView(textInput("API Key OrcaRouter", draft.orcaRouterKey, secret = true) { draft.orcaRouterKey = it })
                 config.addView(textInput("Base URL OrcaRouter", draft.orcaRouterBaseUrl) { draft.orcaRouterBaseUrl = it })
                 config.addView(textInput("Nama Model", draft.orcaRouterModel) { draft.orcaRouterModel = it })
+            }
+            AiProvider.AIHORDE -> {
+                config.addView(textInput("API Key AI Horde (kosong = anonim)", draft.aiHordeKey, secret = true) { draft.aiHordeKey = it })
+                config.addView(textInput("Model / fallback model", draft.aiHordeModel) { draft.aiHordeModel = it })
+                config.addView(description("Gratis berbasis worker komunitas. Pisahkan beberapa model dengan koma. Vision tetap memakai provider vision lain sebagai fallback."))
             }
         }
         body.addView(config, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
@@ -472,6 +479,8 @@ class KeyboardSettingsOverlay(
             .putString("orcarouter_api_key", draft.orcaRouterKey.trim())
             .putString("orcarouter_base_url", draft.orcaRouterBaseUrl.trim().ifBlank { "https://api.orcarouter.ai/v1" })
             .putString("orcarouter_model", draft.orcaRouterModel.trim().ifBlank { "orcarouter/free" })
+            .putString("aihorde_api_key", draft.aiHordeKey.trim())
+            .putString("aihorde_model", draft.aiHordeModel.trim().ifBlank { "aphrodite/TheDrummer/Cydonia-24B-v4.3,koboldcpp/DarkIdol-Llama-3.1-8B-Instruct-1.2-Uncensored.Q8_0" })
             .putBoolean("fallback_enabled", draft.fallbackEnabled)
             .putString("reference_urls", draft.referenceUrls.trim())
             .putBoolean("style_memory_enabled", draft.styleMemoryEnabled)
@@ -529,6 +538,8 @@ class KeyboardSettingsOverlay(
         orcaRouterKey = prefs.getString("orcarouter_api_key", "").orEmpty(),
         orcaRouterBaseUrl = prefs.getString("orcarouter_base_url", "https://api.orcarouter.ai/v1").orEmpty(),
         orcaRouterModel = prefs.getString("orcarouter_model", "orcarouter/free").orEmpty(),
+        aiHordeKey = prefs.getString("aihorde_api_key", "").orEmpty(),
+        aiHordeModel = prefs.getString("aihorde_model", "aphrodite/TheDrummer/Cydonia-24B-v4.3,koboldcpp/DarkIdol-Llama-3.1-8B-Instruct-1.2-Uncensored.Q8_0").orEmpty(),
         fallbackEnabled = prefs.getBoolean("fallback_enabled", false),
         referenceUrls = prefs.getString("reference_urls", "").orEmpty(),
         styleMemoryEnabled = prefs.getBoolean("style_memory_enabled", true),
@@ -573,6 +584,8 @@ class KeyboardSettingsOverlay(
         orcaRouterKey = draft.orcaRouterKey,
         orcaRouterBaseUrl = "https://api.orcarouter.ai/v1",
         orcaRouterModel = "orcarouter/free",
+        aiHordeKey = draft.aiHordeKey,
+        aiHordeModel = "aphrodite/TheDrummer/Cydonia-24B-v4.3,koboldcpp/DarkIdol-Llama-3.1-8B-Instruct-1.2-Uncensored.Q8_0",
         fallbackEnabled = false,
         referenceUrls = "",
         styleMemoryEnabled = true,
@@ -605,6 +618,7 @@ class KeyboardSettingsOverlay(
         AiProvider.BLUESMINDS -> "BluesMinds"
         AiProvider.XKIRO -> "xKiro"
         AiProvider.ORCAROUTER -> "OrcaRouter"
+        AiProvider.AIHORDE -> "AI Horde"
     }
 
     private fun textInput(

@@ -4438,6 +4438,8 @@ private fun selectedImageSearchUrl(query: String): String {
             orcaRouterApiKey = prefs.getString("orcarouter_api_key", "").orEmpty(),
             orcaRouterBaseUrl = prefs.getString("orcarouter_base_url", "https://api.orcarouter.ai/v1").orEmpty(),
             orcaRouterModel = prefs.getString("orcarouter_model", "orcarouter/free").orEmpty(),
+            aiHordeApiKey = prefs.getString("aihorde_api_key", "").orEmpty(),
+            aiHordeModel = prefs.getString("aihorde_model", "aphrodite/TheDrummer/Cydonia-24B-v4.3,koboldcpp/DarkIdol-Llama-3.1-8B-Instruct-1.2-Uncensored.Q8_0").orEmpty(),
             fallbackEnabled = prefs.getBoolean("fallback_enabled", false),
             referenceUrls = prefs.getString("reference_urls", "").orEmpty()
                 .lineSequence()

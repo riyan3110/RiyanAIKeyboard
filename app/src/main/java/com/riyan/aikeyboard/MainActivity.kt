@@ -324,6 +324,13 @@ class MainActivity : AppCompatActivity() {
         root.addView(orcaRouterModel, ViewGroup.LayoutParams(-1, -2))
         root.addView(description("OpenAI-compatible · model bebas diganti sesuai katalog OrcaRouter."))
 
+        root.addView(sectionTitle("AI Horde"))
+        val aiHordeKey = secretField("API key AI Horde (kosong = anonim)", prefs.getString("aihorde_api_key", ""))
+        val aiHordeModel = textField("Model AI Horde", prefs.getString("aihorde_model", "aphrodite/TheDrummer/Cydonia-24B-v4.3,koboldcpp/DarkIdol-Llama-3.1-8B-Instruct-1.2-Uncensored.Q8_0"))
+        root.addView(aiHordeKey, ViewGroup.LayoutParams(-1, -2))
+        root.addView(aiHordeModel, ViewGroup.LayoutParams(-1, -2))
+        root.addView(description("Gratis berbasis worker komunitas. API key boleh dikosongkan untuk akun anonim 0000000000; akun terdaftar mendapat prioritas lebih baik. Beberapa model dapat dipisahkan dengan koma sebagai fallback."))
+
         val fallback = CheckBox(this).apply {
             text = "Coba provider lain jika provider utama gagal"
             isChecked = prefs.getBoolean("fallback_enabled", false)
@@ -349,6 +356,8 @@ class MainActivity : AppCompatActivity() {
                     .putString("orcarouter_api_key", orcaRouterKey.text.toString().trim())
                     .putString("orcarouter_base_url", orcaRouterBaseUrl.text.toString().trim().ifBlank { "https://api.orcarouter.ai/v1" })
                     .putString("orcarouter_model", orcaRouterModel.text.toString().trim().ifBlank { "orcarouter/free" })
+                    .putString("aihorde_api_key", aiHordeKey.text.toString().trim())
+                    .putString("aihorde_model", aiHordeModel.text.toString().trim().ifBlank { "aphrodite/TheDrummer/Cydonia-24B-v4.3,koboldcpp/DarkIdol-Llama-3.1-8B-Instruct-1.2-Uncensored.Q8_0" })
                     .putString("reference_urls", referenceUrls.text.toString().trim())
                     .putBoolean("fallback_enabled", fallback.isChecked)
                     .apply()
