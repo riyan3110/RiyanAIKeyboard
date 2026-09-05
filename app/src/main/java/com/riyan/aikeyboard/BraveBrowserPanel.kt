@@ -239,7 +239,7 @@ class BraveBrowserPanel(
             setTextColor(lightText)
             setPadding(dp(12), 0, dp(10), 0)
             background = rounded(darkField, 12f)
-            selectAllOnFocus = false
+            setSelectAllOnFocus(false)
             showSoftInputOnFocus = false
             setOnFocusChangeListener { view, focused ->
                 onActiveInputChanged(if (focused) view as EditText else null)
@@ -603,7 +603,7 @@ class BraveBrowserPanel(
 
     private fun showEntryList(title: String, items: List<Pair<String, String>>, emptyText: String) {
         val scroll = ScrollView(context)
-        val wrap = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(10), dp(8), dp(10), dp(12)); background = darkBg }
+        val wrap = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(10), dp(8), dp(10), dp(12)); setBackgroundColor(darkBg) }
         wrap.addView(overlayHeader(title) { showMainMenu() })
         if (items.isEmpty()) {
             wrap.addView(TextView(context).apply { text = emptyText; textSize = 14f; gravity = Gravity.CENTER; setTextColor(mutedText) }, LinearLayout.LayoutParams(-1, dp(120)))
