@@ -103,29 +103,32 @@ object AiClient {
             return Result.failure(IllegalArgumentException("Gambar kamera kosong."))
         }
 
+        // Vision is routed by capability, not merely by whichever text model is primary.
+        // Some coding/text models accept image_url syntactically but silently ignore the image.
+        // Therefore every configured provider is tried and its answer is accepted only when it
+        // returns a structured semantic classification of the image itself.
         val providers = buildList {
             add(settings.primaryProvider)
-            if (settings.fallbackEnabled) {
-                AiProvider.entries
-                    .filter { it != settings.primaryProvider }
-                    .forEach(::add)
-            }
-        }
+            AiProvider.entries.filter { it != settings.primaryProvider }.forEach(::add)
+        }.distinct()
 
         var lastError: Throwable? = null
         providers.forEach { provider ->
             val attempt = runCatching {
-                val output = when (provider) {
-                    AiProvider.OPENROUTER -> requestOpenRouterVision(settings, jpegBase64, localTextHint)
-                    AiProvider.TABIAI -> requestTabiAiVision(settings, jpegBase64, localTextHint)
-                    AiProvider.NINEROUTER -> request9RouterVision(settings, jpegBase64, localTextHint)
+                val raw = when (provider) {
+                    AiProvider.OPENROUTER -> requestOpenRouterVision(settings, jpegBase64, "")
+                    AiProvider.TABIAI -> requestTabiAiVision(settings, jpegBase64, "")
+                    AiProvider.NINEROUTER -> request9RouterVision(settings, jpegBase64, "")
                 }
-                AiResponse(output, provider)
+                val query = normalizeVisionResult(raw)
+                    ?: throw IllegalStateException("Model ${provider.label} tidak membuktikan bahwa gambar benar-benar dibaca.")
+                AiResponse(query, provider)
             }
             attempt.getOrNull()?.let { return Result.success(it) }
             lastError = attempt.exceptionOrNull()
         }
-        return Result.failure(lastError ?: IllegalStateException("AI Vision gagal mengenali gambar."))
+
+        return Result.failure(lastError ?: IllegalStateException("Tidak ada model vision yang berhasil membaca gambar."))
     }
 
     private fun execute(
@@ -172,21 +175,70 @@ object AiClient {
 
     private fun visionInstruction(localTextHint: String): String = buildString {
         append(
-            "Analisis gambar apa adanya berdasarkan seluruh isi visual yang benar-benar terlihat. " +
-                "Jangan menambahkan filter kategori dari aplikasi dan jangan memaksa gambar menjadi jenis objek tertentu. " +
-                "Kenali objek, produk, teks, logo, bahan, warna, bentuk, pola, fungsi, lingkungan, serta konteks visual lain yang relevan. " +
-                "Jika ada manusia, analisis ciri fisik yang benar-benar terlihat secara rinci untuk pencarian visual: siluet dan proporsi tubuh yang tampak, postur atau pose, bentuk wajah, bentuk dan kontur bibir, bentuk hidung termasuk pangkal dan ujungnya, bentuk dan jarak mata, kelopak mata, bentuk dan ketebalan alis, panjang/tekstur/gaya/warna rambut, serta bentuk atau posisi telinga yang terlihat. " +
-                "Gunakan juga pakaian, aksesori, arah pandang, dan ciri visual pembeda lain yang tampak bila membantu menemukan gambar serupa. " +
-                "Jangan mengidentifikasi siapa orangnya dan jangan menebak ras atau etnis, kondisi kesehatan, kepribadian, agama, orientasi seksual, atau atribut sensitif lain dari penampilan. " +
-                "Jika ada beberapa objek atau ciri penting, gunakan kombinasinya bila itu membuat identifikasi lebih tepat. " +
-                "Jangan mengarang merek, model, identitas, atau ciri yang tidak terlihat. " +
-                "Hasil akhir harus berupa satu query pencarian gambar yang paling spesifik dan natural untuk menemukan gambar, objek, atau tampilan visual yang sama atau sangat mirip."
+            "Analisis isi gambar yang benar-benar diterima, bukan tebakan dari warna atau teks pendamping. " +
+                "LANGKAH PERTAMA wajib menentukan BENTUK/SUBJEK utama: manusia nyata, figur manusia/humanoid, hewan, kendaraan, produk, makanan, tanaman, teks/dokumen, ilustrasi, objek lain, atau adegan. " +
+                "Gambar kartun, gambar tangan, poster, mainan, patung, atau karakter bergaya yang jelas berbentuk manusia harus diklasifikasikan sebagai human_figure, bukan sekadar warna/pola. " +
+                "Jika manusia nyata terlihat, cukup klasifikasikan sebagai person dan jelaskan ciri visual non-sensitif yang relevan; jangan mencoba menentukan identitas orang. " +
+                "Setelah jenis subjek benar, tulis query pencarian visual yang menyebut bentuk/subjek dulu, lalu detail pembeda seperti pose, bagian tubuh/objek, warna, pola, pakaian, logo, tulisan yang benar-benar terbaca, bahan, tekstur, dan konteks. " +
+                "Jangan mengarang merek, nama karakter, identitas, atau tulisan yang tidak terlihat. " +
+                "Balas HANYA JSON minified tanpa markdown dengan format: " +
+                "{\"subject_type\":\"person|human_figure|animal|vehicle|product|food|plant|text|illustration|object|scene|unknown\",\"confidence\":0.0,\"query\":\"...\",\"evidence\":\"...\"}. " +
+                "Gunakan unknown jika gambar memang tidak dapat dilihat atau subjek tidak dapat ditentukan."
         )
-        val hint = localTextHint.trim().replace(Regex("\\s+"), " ").take(220)
-        if (hint.isNotBlank()) {
-            append("\nKonteks lokal opsional, abaikan bila tidak cocok dengan gambar: ")
-            append(hint)
+    }
+
+    private fun normalizeVisionResult(raw: String): String? {
+        val clean = raw.trim()
+        if (clean.isBlank()) return null
+        val lower = clean.lowercase()
+        if (listOf(
+                "cannot see", "can't see", "unable to view", "unable to see",
+                "tidak dapat melihat", "tidak bisa melihat", "gambar tidak tersedia",
+                "image is not available", "no image"
+            ).any(lower::contains)
+        ) return null
+
+        val start = clean.indexOf('{')
+        val end = clean.lastIndexOf('}')
+        if (start < 0 || end <= start) return null
+        val obj = runCatching { JSONObject(clean.substring(start, end + 1)) }.getOrNull() ?: return null
+        val subject = obj.optString("subject_type").trim().lowercase()
+        val confidence = obj.optDouble("confidence", 0.0)
+        var query = obj.optString("query").trim().replace(Regex("\\s+"), " ")
+        if (subject.isBlank() || subject == "unknown" || query.isBlank() || confidence < 0.30) return null
+
+        val prefix = when (subject) {
+            "person" -> "orang/manusia"
+            "human_figure" -> "figur manusia/humanoid"
+            "animal" -> "hewan"
+            "vehicle" -> "kendaraan"
+            "product" -> "produk"
+            "food" -> "makanan"
+            "plant" -> "tanaman"
+            "text" -> "teks/dokumen"
+            "illustration" -> "ilustrasi"
+            "object" -> "objek"
+            "scene" -> "adegan"
+            else -> return null
         }
+
+        // Reject the failure visible in the scanner screenshots: a supposed vision result that
+        // only repeats colors/background/frame and never names a semantic subject.
+        val generic = setOf(
+            "merah", "biru", "hijau", "hitam", "putih", "krem", "abu", "warna",
+            "latar", "background", "bingkai", "frame", "tebal", "tipis", "pola",
+            "red", "blue", "green", "black", "white", "cream", "gray", "colour", "color"
+        )
+        val semanticTokens = query.lowercase()
+            .split(Regex("[^a-z0-9À-ÿ_/-]+"))
+            .filter { it.length >= 3 && it !in generic }
+        if (subject !in setOf("text", "scene") && semanticTokens.size < 2) return null
+
+        val subjectWords = prefix.lowercase().split('/', ' ')
+        if (subjectWords.none { it.length >= 4 && query.lowercase().contains(it) }) {
+            query = "$prefix $query"
+        }
+        return query.take(280)
     }
 
     private fun requestOpenRouterVision(
@@ -211,7 +263,7 @@ object AiClient {
         val body = JSONObject()
             .put("model", settings.openRouterModel.trim())
             .put("temperature", 0.05)
-            .put("max_tokens", 160)
+            .put("max_tokens", 220)
             .put(
                 "messages",
                 JSONArray().put(
@@ -273,7 +325,7 @@ object AiClient {
 
         val body = JSONObject()
             .put("model", settings.tabiModel.trim())
-            .put("max_tokens", 160)
+            .put("max_tokens", 220)
             .put("temperature", 0.05)
             .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", content)))
 
@@ -344,7 +396,7 @@ object AiClient {
         val body = JSONObject()
             .put("model", settings.nineRouterModel.trim())
             .put("temperature", 0.05)
-            .put("max_tokens", 160)
+            .put("max_tokens", 220)
             .put(
                 "messages",
                 JSONArray().put(
