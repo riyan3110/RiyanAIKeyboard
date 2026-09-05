@@ -492,7 +492,11 @@ class BraveBrowserPanel(
         ))
 
         body.addView(TextView(context).apply {
-            val webViewVersion = WebView.getCurrentWebViewPackage()?.versionName ?: "tidak diketahui"
+            val webViewVersion = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                WebView.getCurrentWebViewPackage()?.versionName ?: "tidak diketahui"
+            } else {
+                "renderer sistem"
+            }
             text = "Tampilan mengikuti Brave Android 1.94.x • renderer aktual Android System WebView $webViewVersion"
             textSize = 10.5f; setTextColor(Color.rgb(145, 145, 151)); setPadding(dp(8), dp(16), dp(8), dp(10))
         })
