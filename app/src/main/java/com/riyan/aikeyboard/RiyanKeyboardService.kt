@@ -3177,7 +3177,7 @@ resultCard.bringToFront()
         val cleanQuery = query.trim().ifBlank { directUrl.trim() }
         if (cleanQuery.isBlank()) return
         searchQuery = cleanQuery
-        searchUrl = directUrl.takeIf(::isWebUrl) ?: if (isWebUrl(cleanQuery)) cleanQuery else braveSearchUrl(cleanQuery)
+        searchUrl = directUrl.takeIf(::isWebUrl) ?: if (isWebUrl(cleanQuery)) cleanQuery else selectedWebSearchUrl(cleanQuery)
         stopEmbeddedScanner()
         showSearchWebPanel()
     }
@@ -3680,7 +3680,7 @@ resultCard.bringToFront()
                     scannerResultText?.text = query
                     scannerStatusText?.text = "AI Vision: $query"
                     searchQuery = query
-                    searchUrl = "https://search.brave.com/images?q=${Uri.encode(query)}&source=web"
+                    searchUrl = selectedImageSearchUrl(query)
                     stopEmbeddedScanner()
                     showSearchWebPanel()
                     scannerSearchButton?.text = "Cari"
@@ -3754,7 +3754,7 @@ resultCard.bringToFront()
                 scannerResultText?.text = query
                 scannerStatusText?.text = "AI Vision: $query"
                 searchQuery = query
-                searchUrl = "https://search.brave.com/images?q=${Uri.encode(query)}&source=web"
+                searchUrl = selectedImageSearchUrl(query)
                 stopEmbeddedScanner()
                 showSearchWebPanel()
                 scannerSearchButton?.text = "Cari"
@@ -3773,16 +3773,22 @@ resultCard.bringToFront()
     }
 
     private fun cleanAiVisionSearchQuery(raw: String): String {
-        val line = raw.lineSequence()
-            .map { it.trim().trim('"', '\'', '`') }
-            .firstOrNull { it.isNotBlank() }
-            .orEmpty()
-        return line
-            .replace(Regex("(?i)^(?:query|search query|pencarian|hasil)\\s*:\\s*"), "")
-            .replace(Regex("\\s+"), " ")
-            .trim()
-            .take(220)
-    }
+    val line = raw.lineSequence()
+        .map { it.trim().trim('"', '\'', '`') }
+        .firstOrNull { it.isNotBlank() }
+        .orEmpty()
+    val cleaned = line
+        .replace(Regex("(?i)^(?:query|search query|pencarian|hasil)\s*:\s*"), "")
+        .replace(Regex("\s+"), " ")
+        .trim()
+    val filler = setOf("the", "a", "an", "and", "in", "with", "setting", "of", "at", "on", "yang", "sedang", "terlihat")
+    return cleaned.split(Regex("\s+"))
+        .filter { it.isNotBlank() && it.lowercase() !in filler }
+        .take(7)
+        .joinToString(" ")
+        .take(64)
+        .trim()
+}
 
     private fun aiVisionFailureMessage(error: Throwable?): String {
         val message = error?.message.orEmpty()
@@ -3805,7 +3811,7 @@ resultCard.bringToFront()
     private fun openBraveImageResults(query: String) {
         val clean = query.replace(Regex("\\s+"), " ").trim().ifBlank { "produk benda fisik bentuk serupa" }
         searchQuery = clean
-        searchUrl = "https://search.brave.com/images?q=${Uri.encode(clean)}&source=web"
+        searchUrl = selectedImageSearchUrl(clean)
         stopEmbeddedScanner()
         showSearchWebPanel()
     }
@@ -3827,7 +3833,7 @@ resultCard.bringToFront()
         val query = searchInput?.text?.toString()?.trim().orEmpty()
         if (query.isBlank()) return
         searchQuery = query
-        searchUrl = if (isWebUrl(query)) query else braveSearchUrl(query)
+        searchUrl = if (isWebUrl(query)) query else selectedWebSearchUrl(query)
         searchWebView?.loadUrl(searchUrl)
         searchInput?.setSelection(searchInput?.text?.length ?: 0)
     }
@@ -4010,6 +4016,29 @@ resultCard.bringToFront()
         }
         return rawUrl
     }
+
+    private fun selectedSearchEngineId(): String =
+    getSharedPreferences(PREFS, MODE_PRIVATE).getString("browser_search_engine", "brave") ?: "brave"
+
+private fun selectedWebSearchUrl(query: String): String {
+    val encoded = Uri.encode(query.trim())
+    return when (selectedSearchEngineId()) {
+        "google" -> "https://www.google.com/search?q=$encoded"
+        "bing" -> "https://www.bing.com/search?q=$encoded"
+        "ddg" -> "https://duckduckgo.com/?q=$encoded"
+        else -> "https://search.brave.com/search?q=$encoded&source=web"
+    }
+}
+
+private fun selectedImageSearchUrl(query: String): String {
+    val encoded = Uri.encode(query.trim())
+    return when (selectedSearchEngineId()) {
+        "google" -> "https://www.google.com/search?tbm=isch&q=$encoded"
+        "bing" -> "https://www.bing.com/images/search?q=$encoded"
+        "ddg" -> "https://duckduckgo.com/?q=$encoded&iax=images&ia=images"
+        else -> "https://search.brave.com/images?q=$encoded&source=web"
+    }
+}
 
     private fun braveSearchUrl(query: String): String = Uri.Builder()
         .scheme("https")
