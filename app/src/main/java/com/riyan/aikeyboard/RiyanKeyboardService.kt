@@ -146,6 +146,7 @@ class RiyanKeyboardService : InputMethodService() {
     private lateinit var searchSurfacePanel: FrameLayout
     private lateinit var searchSurfaceContent: FrameLayout
     private var searchWebView: WebView? = null
+    private var braveBrowserPanel: BraveBrowserPanel? = null
     private var searchInput: EditText? = null
     private var scannerPreviewView: PreviewView? = null
     private var scannerGalleryImageView: ImageView? = null
@@ -295,6 +296,9 @@ class RiyanKeyboardService : InputMethodService() {
         internalGalleryPanel?.release()
         internalGalleryPanel = null
         stopEmbeddedScanner()
+        braveBrowserPanel?.release()
+        braveBrowserPanel = null
+        searchWebView = null
         destroySearchWebView()
         barcodeScanner.close()
         scannerTextRecognizer.close()
@@ -2280,6 +2284,10 @@ class RiyanKeyboardService : InputMethodService() {
     }
 
     private fun closeSearchSurface() {
+        braveBrowserPanel?.release()
+        braveBrowserPanel = null
+        searchWebView = null
+
         searchWebBigMode = false
         searchComposeActive = false
         searchWebComposeActive = false
@@ -3169,7 +3177,7 @@ resultCard.bringToFront()
         val cleanQuery = query.trim().ifBlank { directUrl.trim() }
         if (cleanQuery.isBlank()) return
         searchQuery = cleanQuery
-        searchUrl = directUrl.takeIf(::isWebUrl) ?: if (isWebUrl(cleanQuery)) cleanQuery else googleSearchUrl(cleanQuery)
+        searchUrl = directUrl.takeIf(::isWebUrl) ?: if (isWebUrl(cleanQuery)) cleanQuery else braveSearchUrl(cleanQuery)
         stopEmbeddedScanner()
         showSearchWebPanel()
     }
@@ -3177,183 +3185,64 @@ resultCard.bringToFront()
     private fun showSearchWebPanel() {
         internalGalleryPanel?.release()
         internalGalleryPanel = null
-        destroySearchWebView()
+        stopEmbeddedScanner()
+        braveBrowserPanel?.release()
+        braveBrowserPanel = null
+        searchWebView = null
         searchWebComposeActive = false
         scannerPreviewView = null
         searchSurfaceContent.removeAllViews()
-        val content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = roundedBackground(Color.WHITE, 20f)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) clipToOutline = true
-        }
-        val header = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(4), dp(2), dp(3), dp(2))
-            setBackgroundColor(Color.rgb(239, 239, 243))
-        }
-        val queryInput = EditText(this).apply {
-            setText(searchQuery)
-            textSize = if (isLandscape()) 10f else 12f
-            setTextColor(Color.rgb(28, 28, 33))
-            setHintTextColor(Color.GRAY)
-            hint = "Ketik pencarian…"
-            maxLines = 1
-            isSingleLine = true
-            showSoftInputOnFocus = false
-            setPadding(dp(9), 0, dp(7), 0)
-            background = roundedBackground(Color.WHITE, 12f)
-            setSelection(text.length)
-            setOnClickListener {
+
+        val browser = BraveBrowserPanel(
+            context = this,
+            prefs = getSharedPreferences(PREFS, MODE_PRIVATE),
+            initialQuery = searchQuery,
+            initialUrl = searchUrl,
+            onClose = { closeSearchSurface() },
+            onOpenScanner = {
+                braveBrowserPanel?.release()
+                braveBrowserPanel = null
+                searchWebView = null
+                showEmbeddedCameraPanel(resetCandidate = true)
+                if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                    scannerPreviewView?.post { startEmbeddedScanner() }
+                }
+            },
+            onOpenKeyboardAi = {
+                closeSearchSurface()
+                toggleAiPanel(true)
+            },
+            onActiveInputChanged = { field ->
+                searchInput = field
+                val active = field != null
+                searchComposeActive = active
+                // Native Brave controls are not webpage inputs. Web focus is probed separately.
                 searchWebComposeActive = false
-                searchComposeActive = true
                 aiComposeActive = false
             }
-            setOnFocusChangeListener { _, focused ->
-                searchComposeActive = focused
-                if (focused) searchWebComposeActive = false
+        )
+        braveBrowserPanel = browser
+        searchWebView = browser.webView
+        searchInput = browser.addressField
+        browser.webView.setOnTouchListener { _, event ->
+            if (event.actionMasked == MotionEvent.ACTION_DOWN || event.actionMasked == MotionEvent.ACTION_UP) {
+                handler.postDelayed({
+                    if (searchWebView === browser.webView) probeFocusedWebInput()
+                }, 24L)
+            }
+            false
+        }
+        browser.webView.setOnFocusChangeListener { _, hasFocus ->
+            if (hasFocus) {
+                handler.postDelayed({
+                    if (searchWebView === browser.webView) probeFocusedWebInput()
+                }, 24L)
+            } else {
+                searchWebComposeActive = false
             }
         }
-        searchInput = queryInput
-        header.addView(queryInput, LinearLayout.LayoutParams(0, dp(searchHeaderHeightDp()), 1f))
-        header.addView(compactButton("Cari") { performSearchFromInput() }, LinearLayout.LayoutParams(dp(46), dp(searchHeaderHeightDp())).apply { leftMargin = dp(3) })
-        header.addView(
-            premiumIconButton(R.drawable.ic_back_modern, "Kembali") { navigateEmbeddedSearchBack() },
-            LinearLayout.LayoutParams(dp(38), dp(searchHeaderHeightDp())).apply { leftMargin = dp(2) }
-        )
-        header.addView(
-            premiumIconButton(R.drawable.ic_open_external_modern, "Buka di aplikasi atau browser") { openExternalLink(searchUrl) },
-            LinearLayout.LayoutParams(dp(38), dp(searchHeaderHeightDp())).apply { leftMargin = dp(2) }
-        )
-        header.addView(
-            premiumIconButton(R.drawable.ic_close_modern, "Tutup penelusuran") { closeSearchSurface() },
-            LinearLayout.LayoutParams(dp(38), dp(searchHeaderHeightDp())).apply { leftMargin = dp(2) }
-        )
-        content.addView(header, LinearLayout.LayoutParams(-1, dp(searchHeaderHeightDp() + 5)))
-
-        var userTouchedPage = false
-        val webView = WebView(this).apply {
-            setBackgroundColor(Color.WHITE)
-            setLayerType(View.LAYER_TYPE_HARDWARE, null)
-            settings.javaScriptEnabled = true
-            settings.domStorageEnabled = true
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) settings.offscreenPreRaster = true
-            settings.cacheMode = WebSettings.LOAD_DEFAULT
-            settings.loadsImagesAutomatically = true
-            settings.useWideViewPort = true
-            settings.loadWithOverviewMode = true
-            settings.setSupportZoom(true)
-            settings.builtInZoomControls = true
-            settings.displayZoomControls = false
-            settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
-            settings.mediaPlaybackRequiresUserGesture = false
-            settings.userAgentString = WebSettings.getDefaultUserAgent(this@RiyanKeyboardService)
-            webChromeClient = object : android.webkit.WebChromeClient() {
-                override fun onPermissionRequest(request: android.webkit.PermissionRequest?) {
-                    request ?: return
-                    handler.post {
-                        val host = request.origin?.host?.lowercase().orEmpty()
-                        val trustedCameraOrigin =
-                            host == "bing.com" || host.endsWith(".bing.com") ||
-                            host == "google.com" || host.endsWith(".google.com")
-                        val cameraGranted = ContextCompat.checkSelfPermission(
-                            this@RiyanKeyboardService,
-                            Manifest.permission.CAMERA
-                        ) == PackageManager.PERMISSION_GRANTED
-                        val videoRequested = request.resources.any {
-                            it == android.webkit.PermissionRequest.RESOURCE_VIDEO_CAPTURE
-                        }
-
-                        if (trustedCameraOrigin && cameraGranted && videoRequested) {
-                            request.grant(arrayOf(android.webkit.PermissionRequest.RESOURCE_VIDEO_CAPTURE))
-                        } else {
-                            request.deny()
-                            if (videoRequested && !cameraGranted) {
-                                Toast.makeText(
-                                    this@RiyanKeyboardService,
-                                    "Izinkan akses kamera AI Ads Keyboard agar kamera Microsoft Bing dapat digunakan.",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            }
-                        }
-                    }
-                }
-
-                override fun onShowFileChooser(
-                    webView: WebView?,
-                    filePathCallback: android.webkit.ValueCallback<Array<Uri>>?,
-                    fileChooserParams: android.webkit.WebChromeClient.FileChooserParams?
-                ): Boolean {
-                    filePathCallback ?: return false
-                    return WebImagePickerActivity.launch(
-                        context = this@RiyanKeyboardService,
-                        callback = filePathCallback,
-                        acceptTypes = fileChooserParams?.acceptTypes
-                    )
-                }
-
-            }
-            setOnTouchListener { view, event ->
-                when (event.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> {
-                        userTouchedPage = true
-                        searchComposeActive = false
-                        searchWebComposeActive = true
-                        searchInput?.clearFocus()
-                    }
-                    MotionEvent.ACTION_UP -> {
-                        view.postDelayed({ probeFocusedWebInput() }, WEB_FOCUS_PROBE_DELAY_MS)
-                        view.postDelayed({ userTouchedPage = false }, WEB_USER_GESTURE_TIMEOUT_MS)
-                    }
-                }
-                false
-            }
-            webViewClient = object : WebViewClient() {
-                override fun onPageFinished(view: WebView?, url: String?) {
-                    super.onPageFinished(view, url)
-                    view ?: return
-                    installBingCameraQualityShim(view, url)
-                    applyPortraitWebCompatibility(view)
-                    view.postDelayed({
-                        applyPortraitWebCompatibility(view)
-                        probeFocusedWebInput()
-                    }, WEB_FOCUS_PROBE_DELAY_MS)
-                    view.postDelayed({ applyPortraitWebCompatibility(view) }, WEB_ORIENTATION_RECHECK_DELAY_MS)
-                }
-
-                override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                    val target = request?.url?.toString().orEmpty()
-                    val isUserNavigation = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                        request?.hasGesture() == true || userTouchedPage
-                    } else userTouchedPage
-                    userTouchedPage = false
-                    if (!isUserNavigation || target.isBlank()) return false
-                    return openInstalledAppForLink(target)
-                }
-
-                @Suppress("DEPRECATION")
-                override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
-                    val target = url.orEmpty()
-                    if (!userTouchedPage || target.isBlank()) return false
-                    userTouchedPage = false
-                    return openInstalledAppForLink(target)
-                }
-            }
-        }
-        searchWebView = webView
-        runCatching {
-            val cookieManager = android.webkit.CookieManager.getInstance()
-            cookieManager.setAcceptCookie(true)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                cookieManager.setAcceptThirdPartyCookies(webView, true)
-            }
-        }
-        webView.loadUrl(searchUrl)
-        content.addView(webView, LinearLayout.LayoutParams(-1, 0, 1f))
-        searchSurfaceContent.addView(content, FrameLayout.LayoutParams(-1, -1))
+        searchSurfaceContent.addView(browser, FrameLayout.LayoutParams(-1, -1))
         showSearchSurface()
-        queryInput.requestFocus()
-        searchComposeActive = true
     }
 
     /**
@@ -3751,7 +3640,7 @@ resultCard.bringToFront()
                     android.util.Base64.encodeToString(output.toByteArray(), android.util.Base64.NO_WRAP)
                 }.getOrNull()
 
-                val visualUrl: String? = null // Microsoft Bing remains the embedded visual-search surface.
+                val visualUrl: String? = null // Brave Search remains the embedded search surface.
                 val result = if (encoded.isNullOrBlank()) {
                     Result.failure<AiResponse>(IllegalStateException("Foto kamera gagal disiapkan."))
                 } else {
@@ -3791,7 +3680,7 @@ resultCard.bringToFront()
                     scannerResultText?.text = query
                     scannerStatusText?.text = "AI Vision: $query"
                     searchQuery = query
-                    searchUrl = "https://www.bing.com/images/search?q=${Uri.encode(query)}&adlt=off"
+                    searchUrl = "https://search.brave.com/images?q=${Uri.encode(query)}&source=web"
                     stopEmbeddedScanner()
                     showSearchWebPanel()
                     scannerSearchButton?.text = "Cari"
@@ -3825,7 +3714,7 @@ resultCard.bringToFront()
                 check(prepared.compress(Bitmap.CompressFormat.JPEG, 92, output))
                 android.util.Base64.encodeToString(output.toByteArray(), android.util.Base64.NO_WRAP)
             }.getOrNull()
-            val visualUrl: String? = null // Microsoft Bing remains the embedded visual-search surface.
+            val visualUrl: String? = null // Brave Search remains the embedded search surface.
             val result = if (encoded.isNullOrBlank()) {
                 Result.failure<AiResponse>(IllegalStateException("Gambar galeri gagal disiapkan."))
             } else {
@@ -3865,7 +3754,7 @@ resultCard.bringToFront()
                 scannerResultText?.text = query
                 scannerStatusText?.text = "AI Vision: $query"
                 searchQuery = query
-                searchUrl = "https://www.bing.com/images/search?q=${Uri.encode(query)}&adlt=off"
+                searchUrl = "https://search.brave.com/images?q=${Uri.encode(query)}&source=web"
                 stopEmbeddedScanner()
                 showSearchWebPanel()
                 scannerSearchButton?.text = "Cari"
@@ -3913,10 +3802,10 @@ resultCard.bringToFront()
         return Bitmap.createBitmap(frame, left, top, right - left, bottom - top)
     }
 
-    private fun openBingImageResults(query: String) {
+    private fun openBraveImageResults(query: String) {
         val clean = query.replace(Regex("\\s+"), " ").trim().ifBlank { "produk benda fisik bentuk serupa" }
         searchQuery = clean
-        searchUrl = "https://www.bing.com/images/search?q=${Uri.encode(clean)}&adlt=off"
+        searchUrl = "https://search.brave.com/images?q=${Uri.encode(clean)}&source=web"
         stopEmbeddedScanner()
         showSearchWebPanel()
     }
@@ -3938,7 +3827,7 @@ resultCard.bringToFront()
         val query = searchInput?.text?.toString()?.trim().orEmpty()
         if (query.isBlank()) return
         searchQuery = query
-        searchUrl = if (isWebUrl(query)) query else googleSearchUrl(query)
+        searchUrl = if (isWebUrl(query)) query else braveSearchUrl(query)
         searchWebView?.loadUrl(searchUrl)
         searchInput?.setSelection(searchInput?.text?.length ?: 0)
     }
@@ -4122,11 +4011,12 @@ resultCard.bringToFront()
         return rawUrl
     }
 
-    private fun googleSearchUrl(query: String): String = Uri.Builder()
+    private fun braveSearchUrl(query: String): String = Uri.Builder()
         .scheme("https")
-        .authority("www.bing.com")
+        .authority("search.brave.com")
         .path("search")
         .appendQueryParameter("q", query)
+        .appendQueryParameter("source", "web")
         .build()
         .toString()
 
