@@ -162,6 +162,57 @@ val patchSettingsInputAndGallery by tasks.registering {
     }
 }
 
+// Only apply the three requested visual changes: AI header branding and centered
+// alphanumeric key legends. This intentionally leaves all existing keyboard behavior untouched.
+val patchReferenceBrandingAndKeyCentering by tasks.registering {
+    doLast {
+        val sourceFile = file("src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt")
+        var source = sourceFile.readText()
+
+        val oldHeader = """
+header.addView(TextView(this).apply {
+    text = "✨ Obrolan AI"
+    textSize = if (isLandscape()) 15f else 18f
+    setTextColor(Color.rgb(43, 40, 50))
+    gravity = Gravity.CENTER_VERTICAL
+    setPadding(dp(9), 0, dp(10), 0)
+    typeface = aiBoldTypeface
+    background = roundedBackground(purple, 8f)
+}, LinearLayout.LayoutParams(-2, headerControlHeight))
+header.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
+""".trimIndent().prependIndent("        ")
+
+        val newHeader = """
+header.addView(ImageView(this).apply {
+    setImageResource(R.drawable.ai_ads_keyboard_header)
+    scaleType = ImageView.ScaleType.FIT_CENTER
+    adjustViewBounds = true
+    contentDescription = "AI Ads Keyboard"
+}, LinearLayout.LayoutParams(0, headerControlHeight, 1f).apply {
+    rightMargin = dp(4)
+})
+""".trimIndent().prependIndent("        ")
+
+        when {
+            source.contains("R.drawable.ai_ads_keyboard_header") -> Unit
+            source.contains(oldHeader) -> source = source.replace(oldHeader, newHeader)
+            else -> error("AI conversation header patch did not match the source")
+        }
+
+        val oldLegendOffset = "if (spec.alternate != null) translationY = dpFloat(4f)"
+        val centeredLegendOffset =
+            "if (spec.alternate != null && spec.label.none { it.isLetterOrDigit() }) translationY = dpFloat(4f)"
+
+        when {
+            source.contains(centeredLegendOffset) -> Unit
+            source.contains(oldLegendOffset) -> source = source.replace(oldLegendOffset, centeredLegendOffset)
+            else -> error("Keyboard legend centering patch did not match the source")
+        }
+
+        sourceFile.writeText(source)
+    }
+}
+
 // Keep the version text shown on the keyboard synchronized with this test build.
 val patchVisibleVersionLabel by tasks.registering {
     doLast {
@@ -186,15 +237,22 @@ patchSettingsInputAndGallery.configure {
     mustRunAfter(patchBluesMindsProvider)
 }
 
+patchReferenceBrandingAndKeyCentering.configure {
+    mustRunAfter(patchDynamicImeAction)
+    mustRunAfter(patchBluesMindsProvider)
+}
+
 patchVisibleVersionLabel.configure {
     mustRunAfter(patchDynamicImeAction)
     mustRunAfter(patchBluesMindsProvider)
     mustRunAfter(patchSettingsInputAndGallery)
+    mustRunAfter(patchReferenceBrandingAndKeyCentering)
 }
 
 tasks.named("preBuild").configure {
     dependsOn(patchDynamicImeAction)
     dependsOn(patchBluesMindsProvider)
     dependsOn(patchSettingsInputAndGallery)
+    dependsOn(patchReferenceBrandingAndKeyCentering)
     dependsOn(patchVisibleVersionLabel)
 }
