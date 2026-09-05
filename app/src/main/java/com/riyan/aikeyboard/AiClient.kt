@@ -196,8 +196,8 @@ object AiClient {
             "Analisis isi gambar yang benar-benar diterima, bukan tebakan dari warna atau teks pendamping. " +
                 "LANGKAH PERTAMA wajib menentukan BENTUK/SUBJEK utama: manusia nyata, figur manusia/humanoid, hewan, kendaraan, produk, makanan, tanaman, teks/dokumen, ilustrasi, objek lain, atau adegan. " +
                 "Gambar kartun, gambar tangan, poster, mainan, patung, atau karakter bergaya yang jelas berbentuk manusia harus diklasifikasikan sebagai human_figure, bukan sekadar warna/pola. " +
-                "Jika manusia nyata terlihat, klasifikasikan sebagai person dan jangan mencoba menentukan identitas orang. Untuk subjek yang jelas dewasa, gunakan sebutan ringkas yang terlihat paling tepat: wanita atau pria; jangan menulis orang/manusia wanita atau orang/manusia pria. Jika wanita dewasa terlihat, query cukup diawali wanita; jika pria dewasa, cukup pria; jika jenis kelamin/presentasi tidak jelas, gunakan orang dewasa. Untuk orang dewasa, kenali bagian tubuh sensitif yang benar-benar terlihat dan sebut dengan istilah anatomi yang tepat dan lugas dalam query/evidence, termasuk payudara, puting, vulva, penis, skrotum, bokong, atau anus; gunakan vagina hanya jika konteks memang merujuk vagina, bukan sekadar bagian luar yang sebenarnya vulva. Jangan menyamarkan bagian tubuh dewasa dengan eufemisme. Jika subjek tampak di bawah 18 tahun atau usia dewasa tidak dapat dipastikan, jangan menambahkan deskripsi seksual atau bagian tubuh sensitif; gunakan deskripsi netral. " +
-                "Setelah jenis subjek benar, buat query pencarian visual yang SANGAT PENDEK dan natural: bahasa Indonesia, 3–7 kata, maksimal sekitar 60 karakter, tanpa kalimat penjelasan atau gaya prompt. Sebut subjek utama lalu paling banyak 2–3 ciri visual yang paling membedakan. Hindari filler seperti setting, with, arms, terlihat, sedang, atau detail latar yang tidak penting. Untuk subjek dewasa, pahami deskripsi tubuh dan pakaian secara natural, termasuk bokong, payudara besar, pinggul, rok mini, rok ketat, legging ketat, celana pendek ketat, baju ketat, rok satin ketat; pahami memek sebagai slang vulva dan itil sebagai slang klitoris. Gunakan hanya ciri yang benar-benar terlihat dan jangan mengarang tindakan seksual dari pose atau ekspresi. " +
+                "Jika manusia nyata terlihat, klasifikasikan sebagai person dan jangan mencoba menentukan identitas orang. Foto manusia nyata harus tetap person; gunakan human_figure hanya jika jelas berupa ilustrasi, patung, mainan, render, atau karakter nonfotografis. Untuk subjek yang jelas dewasa, gunakan sebutan ringkas wanita atau pria; jika tidak jelas, gunakan orang dewasa. Sebut hanya tubuh, pakaian, pose, dan objek yang BENAR-BENAR terlihat. Jangan menebak anatomi di balik pakaian: bila area tubuh tertutup pakaian, deskripsikan pakaian itu, bukan bagian tubuh yang tertutup. Gunakan istilah dewasa yang lugas hanya bila ciri tersebut memang tampak langsung. Jika subjek tampak di bawah 18 tahun atau usia dewasa tidak dapat dipastikan, gunakan deskripsi netral. " +
+                "Setiap foto wajib dianalisis DARI NOL dan independen dari hasil foto sebelumnya. Jangan menyalin, mengulang, atau mengambil kata dari instruksi ini sebagai isi query. Buat query pencarian visual yang sangat pendek dan faktual: bahasa Indonesia, 3–7 kata, maksimal sekitar 60 karakter. Query hanya boleh berisi subjek utama dan 2–3 ciri paling jelas yang benar-benar terlihat pada foto saat ini. Untuk pakaian ketat, sebut pakaian yang terlihat; jangan menganggap bagian tubuh terbuka hanya karena bentuknya terlihat melalui pakaian. Kata seperti terbuka atau telanjang hanya boleh dipakai bila kulit/bagian tersebut memang terlihat tanpa tertutup pakaian. Jangan mengarang ukuran tubuh, tindakan seksual, pose seksual, atau bagian tubuh yang tidak terlihat. Evidence wajib berisi 2–4 fakta visual konkret dari foto saat ini dan tidak boleh mengulang template. " +
                 "Jangan mengarang merek, nama karakter, identitas, atau tulisan yang tidak terlihat. " +
                 "Balas HANYA JSON minified tanpa markdown dengan format: " +
                 "{\"subject_type\":\"person|human_figure|animal|vehicle|product|food|plant|text|illustration|object|scene|unknown\",\"confidence\":0.0,\"query\":\"...\",\"evidence\":\"...\"}. " +
@@ -244,8 +244,17 @@ object AiClient {
         val subject = obj.optString("subject_type").trim().lowercase()
         val confidence = obj.optDouble("confidence", 0.0)
         var query = obj.optString("query").trim().replace(Regex("\\s+"), " ")
+        val evidence = obj.optString("evidence").trim().replace(Regex("\\s+"), " ")
         if (subject == "person") query = normalizePersonQueryLabel(query)
-        if (subject.isBlank() || subject == "unknown" || query.isBlank() || confidence < 0.30) return null
+        if (subject.isBlank() || subject == "unknown" || query.isBlank() || evidence.isBlank() || confidence < 0.45) return null
+
+        // Specific exposure/anatomy claims must be grounded in the model's visual evidence.
+        val queryLower = query.lowercase()
+        val evidenceLower = evidence.lowercase()
+        val claimsThatNeedEvidence = setOf(
+            "terbuka", "telanjang", "puting", "vulva", "vagina", "penis", "skrotum", "anus", "klitoris"
+        )
+        if (claimsThatNeedEvidence.any { queryLower.contains(it) && !evidenceLower.contains(it) }) return null
 
         val prefix = when (subject) {
             "person" -> preferredPersonPrefix(query)
@@ -279,11 +288,11 @@ object AiClient {
             query = "$prefix $query"
         }
         return query.split(Regex("\\s+"))
-    .filter { it.isNotBlank() }
-    .take(7)
-    .joinToString(" ")
-    .take(64)
-    .trim()
+            .filter { it.isNotBlank() }
+            .take(7)
+            .joinToString(" ")
+            .take(64)
+            .trim()
     }
 
     private fun requestOpenRouterVision(
