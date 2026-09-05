@@ -306,6 +306,24 @@ class MainActivity : AppCompatActivity() {
         root.addView(nineRouterModel, ViewGroup.LayoutParams(-1, -2))
         root.addView(description("OpenAI-compatible · dashboard :20128 otomatis dialihkan ke gateway API :20130. Nama Combo seperti My2 dipakai persis. Untuk kamera, aktifkan Vision Adapter/model vision di 9Router."))
 
+        root.addView(sectionTitle("xKiro"))
+        val xKiroKey = secretField("API key xKiro", prefs.getString("xkiro_api_key", ""))
+        val xKiroBaseUrl = textField("Base URL xKiro", prefs.getString("xkiro_base_url", "https://api.xkiro.com/v1"))
+        val xKiroModel = textField("Model xKiro", prefs.getString("xkiro_model", "openai/gpt-5.6-sol"))
+        root.addView(xKiroKey, ViewGroup.LayoutParams(-1, -2))
+        root.addView(xKiroBaseUrl, ViewGroup.LayoutParams(-1, -2))
+        root.addView(xKiroModel, ViewGroup.LayoutParams(-1, -2))
+        root.addView(description("OpenAI-compatible · endpoint /v1/chat/completions · Authorization Bearer."))
+
+        root.addView(sectionTitle("OrcaRouter"))
+        val orcaRouterKey = secretField("API key OrcaRouter", prefs.getString("orcarouter_api_key", ""))
+        val orcaRouterBaseUrl = textField("Base URL OrcaRouter", prefs.getString("orcarouter_base_url", "https://api.orcarouter.ai/v1"))
+        val orcaRouterModel = textField("Model OrcaRouter", prefs.getString("orcarouter_model", "orcarouter/free"))
+        root.addView(orcaRouterKey, ViewGroup.LayoutParams(-1, -2))
+        root.addView(orcaRouterBaseUrl, ViewGroup.LayoutParams(-1, -2))
+        root.addView(orcaRouterModel, ViewGroup.LayoutParams(-1, -2))
+        root.addView(description("OpenAI-compatible · model bebas diganti sesuai katalog OrcaRouter."))
+
         val fallback = CheckBox(this).apply {
             text = "Coba provider lain jika provider utama gagal"
             isChecked = prefs.getBoolean("fallback_enabled", false)
@@ -325,6 +343,12 @@ class MainActivity : AppCompatActivity() {
                     .putString("9router_api_key", nineRouterKey.text.toString().trim())
                     .putString("9router_base_url", nineRouterBaseUrl.text.toString().trim().ifBlank { "http://43.159.50.231:20130/v1" })
                     .putString("9router_model", nineRouterModel.text.toString().trim().ifBlank { "cc/claude-sonnet-4-20250514" })
+                    .putString("xkiro_api_key", xKiroKey.text.toString().trim())
+                    .putString("xkiro_base_url", xKiroBaseUrl.text.toString().trim().ifBlank { "https://api.xkiro.com/v1" })
+                    .putString("xkiro_model", xKiroModel.text.toString().trim().ifBlank { "openai/gpt-5.6-sol" })
+                    .putString("orcarouter_api_key", orcaRouterKey.text.toString().trim())
+                    .putString("orcarouter_base_url", orcaRouterBaseUrl.text.toString().trim().ifBlank { "https://api.orcarouter.ai/v1" })
+                    .putString("orcarouter_model", orcaRouterModel.text.toString().trim().ifBlank { "orcarouter/free" })
                     .putString("reference_urls", referenceUrls.text.toString().trim())
                     .putBoolean("fallback_enabled", fallback.isChecked)
                     .apply()

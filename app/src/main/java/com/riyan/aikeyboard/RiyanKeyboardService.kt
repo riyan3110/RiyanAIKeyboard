@@ -4403,6 +4403,12 @@ resultCard.bringToFront()
             bluesMindsApiKey = prefs.getString("bluesminds_api_key", "").orEmpty(),
             bluesMindsBaseUrl = prefs.getString("bluesminds_base_url", "https://api.bluesminds.com/v1").orEmpty(),
             bluesMindsModel = prefs.getString("bluesminds_model", "deepseek-ai/deepseek-v4-flash").orEmpty(),
+            xKiroApiKey = prefs.getString("xkiro_api_key", "").orEmpty(),
+            xKiroBaseUrl = prefs.getString("xkiro_base_url", "https://api.xkiro.com/v1").orEmpty(),
+            xKiroModel = prefs.getString("xkiro_model", "openai/gpt-5.6-sol").orEmpty(),
+            orcaRouterApiKey = prefs.getString("orcarouter_api_key", "").orEmpty(),
+            orcaRouterBaseUrl = prefs.getString("orcarouter_base_url", "https://api.orcarouter.ai/v1").orEmpty(),
+            orcaRouterModel = prefs.getString("orcarouter_model", "orcarouter/free").orEmpty(),
             fallbackEnabled = prefs.getBoolean("fallback_enabled", false),
             referenceUrls = prefs.getString("reference_urls", "").orEmpty()
                 .lineSequence()

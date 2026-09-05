@@ -13,7 +13,10 @@ import java.util.concurrent.TimeUnit
 enum class AiProvider(val id: String, val label: String) {
     OPENROUTER("openrouter", "OpenRouter"),
     TABIAI("tabiai", "TabiAI"),
-    NINEROUTER("9router", "9Router");
+    NINEROUTER("9router", "9Router"),
+    BLUESMINDS("bluesminds", "BluesMinds"),
+    XKIRO("xkiro", "xKiro"),
+    ORCAROUTER("orcarouter", "OrcaRouter");
 
     companion object {
         fun fromId(id: String?): AiProvider = entries.firstOrNull { it.id == id } ?: OPENROUTER
@@ -30,6 +33,15 @@ data class AiSettings(
     val nineRouterApiKey: String,
     val nineRouterBaseUrl: String,
     val nineRouterModel: String,
+    val bluesMindsApiKey: String,
+    val bluesMindsBaseUrl: String,
+    val bluesMindsModel: String,
+    val xKiroApiKey: String,
+    val xKiroBaseUrl: String,
+    val xKiroModel: String,
+    val orcaRouterApiKey: String,
+    val orcaRouterBaseUrl: String,
+    val orcaRouterModel: String,
     val fallbackEnabled: Boolean,
     val referenceUrls: List<String>,
     val writingStyleProfile: String
@@ -119,6 +131,9 @@ object AiClient {
                     AiProvider.OPENROUTER -> requestOpenRouterVision(settings, jpegBase64, "")
                     AiProvider.TABIAI -> requestTabiAiVision(settings, jpegBase64, "")
                     AiProvider.NINEROUTER -> request9RouterVision(settings, jpegBase64, "")
+                    AiProvider.BLUESMINDS -> requestCompatibleVision(settings.bluesMindsApiKey, settings.bluesMindsBaseUrl, settings.bluesMindsModel, "BluesMinds", jpegBase64, localTextHint)
+                    AiProvider.XKIRO -> requestCompatibleVision(settings.xKiroApiKey, settings.xKiroBaseUrl, settings.xKiroModel, "xKiro", jpegBase64, localTextHint)
+                    AiProvider.ORCAROUTER -> requestCompatibleVision(settings.orcaRouterApiKey, settings.orcaRouterBaseUrl, settings.orcaRouterModel, "OrcaRouter", jpegBase64, localTextHint)
                 }
                 val query = normalizeVisionResult(raw)
                     ?: throw IllegalStateException("Model ${provider.label} tidak membuktikan bahwa gambar benar-benar dibaca.")
@@ -163,6 +178,9 @@ object AiClient {
                     AiProvider.OPENROUTER -> requestOpenRouter(settings, personalizedInstruction, text, temperature, maxTokens)
                     AiProvider.TABIAI -> requestTabiAi(settings, personalizedInstruction, text, temperature, maxTokens)
                     AiProvider.NINEROUTER -> request9Router(settings, personalizedInstruction, text, temperature, maxTokens)
+                    AiProvider.BLUESMINDS -> requestCompatibleChat(settings.bluesMindsApiKey, settings.bluesMindsBaseUrl, settings.bluesMindsModel, "BluesMinds", personalizedInstruction, text, temperature, maxTokens)
+                    AiProvider.XKIRO -> requestCompatibleChat(settings.xKiroApiKey, settings.xKiroBaseUrl, settings.xKiroModel, "xKiro", personalizedInstruction, text, temperature, maxTokens)
+                    AiProvider.ORCAROUTER -> requestCompatibleChat(settings.orcaRouterApiKey, settings.orcaRouterBaseUrl, settings.orcaRouterModel, "OrcaRouter", personalizedInstruction, text, temperature, maxTokens)
                 }
                 AiResponse(output, provider)
             }
@@ -367,6 +385,104 @@ object AiClient {
             }
         }.trim()
         require(output.isNotBlank()) { "Model TabiAI tidak mengembalikan hasil vision." }
+        return output
+    }
+
+    private fun requestCompatibleChat(
+        apiKey: String,
+        baseUrl: String,
+        model: String,
+        providerLabel: String,
+        systemInstruction: String,
+        text: String,
+        temperature: Double,
+        maxTokens: Int
+    ): String {
+        require(apiKey.isNotBlank()) { "API key $providerLabel belum diisi." }
+        require(model.isNotBlank()) { "Model $providerLabel belum diisi." }
+        val endpoint = compatibleChatUrl(baseUrl)
+        require(URL(endpoint).protocol.equals("https", ignoreCase = true)) {
+            "Base URL $providerLabel harus memakai HTTPS."
+        }
+        val body = JSONObject()
+            .put("model", model.trim())
+            .put("temperature", temperature)
+            .put("max_tokens", maxTokens)
+            .put(
+                "messages", JSONArray()
+                    .put(JSONObject().put("role", "system").put("content", systemInstruction))
+                    .put(JSONObject().put("role", "user").put("content", text))
+            )
+        val response = postJson(
+            url = endpoint,
+            headers = mapOf("Authorization" to "Bearer ${apiKey.trim()}"),
+            body = body
+        )
+        return extractOpenAiMessageText(response, providerLabel)
+    }
+
+    private fun requestCompatibleVision(
+        apiKey: String,
+        baseUrl: String,
+        model: String,
+        providerLabel: String,
+        jpegBase64: String,
+        localTextHint: String
+    ): String {
+        require(apiKey.isNotBlank()) { "API key $providerLabel belum diisi." }
+        require(model.isNotBlank()) { "Model $providerLabel belum diisi." }
+        val endpoint = compatibleChatUrl(baseUrl)
+        require(URL(endpoint).protocol.equals("https", ignoreCase = true)) {
+            "Base URL $providerLabel harus memakai HTTPS."
+        }
+        val content = JSONArray()
+            .put(JSONObject().put("type", "text").put("text", visionInstruction(localTextHint)))
+            .put(
+                JSONObject()
+                    .put("type", "image_url")
+                    .put("image_url", JSONObject().put("url", "data:image/jpeg;base64,$jpegBase64"))
+            )
+        val body = JSONObject()
+            .put("model", model.trim())
+            .put("temperature", 0.05)
+            .put("max_tokens", 220)
+            .put(
+                "messages", JSONArray().put(
+                    JSONObject().put("role", "user").put("content", content)
+                )
+            )
+        val response = postJson(
+            url = endpoint,
+            headers = mapOf("Authorization" to "Bearer ${apiKey.trim()}"),
+            body = body
+        )
+        return extractOpenAiMessageText(response, providerLabel)
+    }
+
+    private fun compatibleChatUrl(baseUrl: String): String {
+        val clean = baseUrl.trim().trimEnd('/')
+        require(clean.isNotBlank()) { "Base URL provider belum diisi." }
+        return when {
+            clean.endsWith("/chat/completions", ignoreCase = true) -> clean
+            clean.endsWith("/v1", ignoreCase = true) -> "$clean/chat/completions"
+            else -> "$clean/v1/chat/completions"
+        }
+    }
+
+    private fun extractOpenAiMessageText(response: JSONObject, providerLabel: String): String {
+        val message = response.getJSONArray("choices").getJSONObject(0).getJSONObject("message")
+        val content = message.opt("content")
+        val output = when (content) {
+            is String -> content
+            is JSONArray -> buildString {
+                for (index in 0 until content.length()) {
+                    val block = content.optJSONObject(index) ?: continue
+                    if (block.optString("type") == "text") append(block.optString("text"))
+                }
+            }
+            else -> ""
+        }.trim()
+        require(output.isNotBlank()) { "$providerLabel mengembalikan respons tanpa teks." }
         return output
     }
 
