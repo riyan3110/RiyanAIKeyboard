@@ -325,7 +325,7 @@ object AiClient {
         }
         val models = JSONArray().apply { modelNames.forEach(::put) }
         val params = JSONObject()
-            .put("max_length", maxTokens.coerceIn(64, 1024))
+            .put("max_length", maxTokens.coerceIn(64, 480))
             .put("max_context_length", 8192)
             .put("temperature", temperature.coerceIn(0.1, 1.5))
             .put("top_p", 0.95)
