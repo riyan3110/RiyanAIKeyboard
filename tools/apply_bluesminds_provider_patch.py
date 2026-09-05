@@ -37,43 +37,9 @@ def patch_key_view(source: str) -> str:
             } else if (spec.alternate != null && spec.label.none { it.isLetterOrDigit() }) translationY = dpFloat(4f)'''
     block = replace_once(block, old_label, new_label, "descender centering")
 
-    # Separate the visible scaled keycap from its touch target. The outer wrapper
-    # stays at the full row-cell size, so every point up to/around the visible
-    # border activates the same key, including special keys and long-press.
-    frame_marker = "        val frame = FrameLayout(this).apply {\n"
-    touch_wrapper = '''        val touchFrame = FrameLayout(this).apply {
-            isClickable = true
-            isFocusable = false
-            clipChildren = false
-            clipToPadding = false
-            setBackgroundColor(Color.TRANSPARENT)
-            contentDescription = spec.label
-        }
-        val frame = FrameLayout(this).apply {
-'''
-    block = replace_once(block, frame_marker, touch_wrapper, "full-cell touch wrapper")
-
-    block = replace_once(
-        block,
-        "            isClickable = true\n            isFocusable = false\n            clipChildren = false\n",
-        "            isClickable = false\n            isFocusable = false\n            clipChildren = false\n",
-        "inner visual frame not clickable",
-    )
-
-    touch_attach_marker = '''
-
-
-        var downX = 0f
-'''
-    touch_attach = '''
-
-        touchFrame.addView(frame, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
-
-        var downX = 0f
-'''
-    block = replace_once(block, touch_attach_marker, touch_attach, "attach visual keycap to touch wrapper")
-    block = replace_once(block, "        frame.setOnTouchListener { view, event ->\n", "        touchFrame.setOnTouchListener { view, event ->\n", "listener on full touch wrapper")
-
+    # Keep the proven working touch path on the actual key frame. The border is
+    # part of this frame, so pressing anywhere on the visible face/border uses
+    # the same listener and action as the legend area.
     block = replace_once(
         block,
         '''                    actionTriggered = false
@@ -105,7 +71,6 @@ def patch_key_view(source: str) -> str:
                     true''',
         "cancel key border feedback",
     )
-    block = replace_once(block, "        return frame\n", "        return touchFrame\n", "return full touch wrapper")
 
     return source[:start] + block + source[end:]
 
@@ -124,7 +89,7 @@ def patch_neon_key_border(source: str) -> str:
                 if (pressed) Color.rgb(67, 65, 77) else Color.rgb(97, 94, 108)
             )'''
     new_stroke = '''            setStroke(
-                dp(if (pressed) 4 else 3),
+                dp(if (pressed) 3 else 2),
                 if (pressed) Color.rgb(205, 124, 255) else Color.rgb(181, 86, 249)
             )'''
     block = replace_once(block, old_stroke, new_stroke, "reference neon purple border")
@@ -132,7 +97,8 @@ def patch_neon_key_border(source: str) -> str:
 
 
 def patch_cursor_keys(source: str) -> str:
-    # Cursor-arrow buttons use the same full-frame touch rule and purple border.
+    # Cursor-arrow buttons keep their original proven touch listener directly on
+    # the visible frame, while using the same thinner neon purple border.
     start_marker = "    private fun cursorDirectionButton(label: String, keyCode: Int): View {"
     end_marker = "\n    private fun cursorPadTouchListener(): View.OnTouchListener {"
     start = source.find(start_marker)
@@ -143,55 +109,27 @@ def patch_cursor_keys(source: str) -> str:
     block = source[start:end]
     block = replace_once(
         block,
-        "        val frame = FrameLayout(this).apply {\n",
-        '''        val touchFrame = FrameLayout(this).apply {
-            isClickable = true
-            isFocusable = false
-            clipChildren = false
-            clipToPadding = false
-            setBackgroundColor(Color.TRANSPARENT)
-        }
-        val frame = FrameLayout(this).apply {
-''',
-        "cursor full-cell touch wrapper",
-    )
-    block = replace_once(block, "            isClickable = true\n", "            isClickable = false\n", "cursor inner visual not clickable")
-    block = replace_once(
-        block,
         "            background = roundedBackground(specialKeyBg, 11f)\n",
-        "            background = roundedStrokedBackground(specialKeyBg, 11f, Color.rgb(181, 86, 249), 3)\n",
+        "            background = roundedStrokedBackground(specialKeyBg, 11f, Color.rgb(181, 86, 249), 2)\n",
         "cursor normal purple border",
     )
     block = replace_once(
         block,
-        '''        }, FrameLayout.LayoutParams(-1, -1))
-
-        var repeatRunnable: Runnable? = null''',
-        '''        }, FrameLayout.LayoutParams(-1, -1))
-        touchFrame.addView(frame, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
-
-        var repeatRunnable: Runnable? = null''',
-        "attach cursor visual to touch wrapper",
-    )
-    block = replace_once(block, "        frame.setOnTouchListener { view, event ->\n", "        touchFrame.setOnTouchListener { view, event ->\n", "cursor listener on wrapper")
-    block = replace_once(
-        block,
         "                    view.background = roundedBackground(pressedKeyBg, 11f)\n",
-        "                    frame.background = roundedStrokedBackground(pressedKeyBg, 11f, Color.rgb(205, 124, 255), 4)\n",
+        "                    view.background = roundedStrokedBackground(pressedKeyBg, 11f, Color.rgb(205, 124, 255), 3)\n",
         "cursor pressed border",
     )
     block = replace_once(
         block,
         "                    view.background = roundedBackground(specialKeyBg, 11f)\n",
-        "                    frame.background = roundedStrokedBackground(specialKeyBg, 11f, Color.rgb(181, 86, 249), 3)\n",
+        "                    view.background = roundedStrokedBackground(specialKeyBg, 11f, Color.rgb(181, 86, 249), 2)\n",
         "cursor released border",
     )
-    block = replace_once(block, "        return frame\n", "        return touchFrame\n", "return cursor touch wrapper")
     source = source[:start] + block + source[end:]
 
-    # Touchpad/d-pad container borders use the same sampled reference purple.
+    # Touchpad/d-pad container borders use the same thinner reference purple.
     old_cursor_stroke = "        setStroke(dp(2), if (pressed) Color.rgb(214, 133, 255) else Color.rgb(127, 86, 180))"
-    new_cursor_stroke = "        setStroke(dp(if (pressed) 4 else 3), if (pressed) Color.rgb(205, 124, 255) else Color.rgb(181, 86, 249))"
+    new_cursor_stroke = "        setStroke(dp(if (pressed) 3 else 2), if (pressed) Color.rgb(205, 124, 255) else Color.rgb(181, 86, 249))"
     source = replace_once(source, old_cursor_stroke, new_cursor_stroke, "cursor pad neon border")
     return source
 
@@ -201,4 +139,4 @@ text = patch_neon_key_border(text)
 text = patch_cursor_keys(text)
 KEYBOARD_SERVICE.write_text(text)
 
-print("Keyboard neon border + full-frame touch patch applied")
+print("Keyboard thinner neon border + restored direct touch patch applied")
