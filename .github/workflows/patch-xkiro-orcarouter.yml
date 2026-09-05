@@ -1,0 +1,227 @@
+name: Patch xKiro and OrcaRouter providers
+
+on:
+  push:
+    branches:
+      - fix/adult-vision-person-labels
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Patch provider integrations
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text, old, new, label):
+              if old not in text:
+                  raise SystemExit(f'marker not found: {label}')
+              return text.replace(old, new, 1)
+
+          # --- AiClient.kt ---
+          p = Path('app/src/main/java/com/riyan/aikeyboard/AiClient.kt')
+          t = p.read_text(encoding='utf-8')
+
+          t = replace_once(t,
+              '    OPENROUTER("openrouter", "OpenRouter"),\n    TABIAI("tabiai", "TabiAI"),\n    NINEROUTER("9router", "9Router");',
+              '    OPENROUTER("openrouter", "OpenRouter"),\n    TABIAI("tabiai", "TabiAI"),\n    NINEROUTER("9router", "9Router"),\n    BLUESMINDS("bluesminds", "BluesMinds"),\n    XKIRO("xkiro", "xKiro"),\n    ORCAROUTER("orcarouter", "OrcaRouter");',
+              'provider enum')
+
+          t = replace_once(t,
+              '    val nineRouterApiKey: String,\n    val nineRouterBaseUrl: String,\n    val nineRouterModel: String,\n    val fallbackEnabled: Boolean,',
+              '    val nineRouterApiKey: String,\n    val nineRouterBaseUrl: String,\n    val nineRouterModel: String,\n    val bluesMindsApiKey: String,\n    val bluesMindsBaseUrl: String,\n    val bluesMindsModel: String,\n    val xKiroApiKey: String,\n    val xKiroBaseUrl: String,\n    val xKiroModel: String,\n    val orcaRouterApiKey: String,\n    val orcaRouterBaseUrl: String,\n    val orcaRouterModel: String,\n    val fallbackEnabled: Boolean,',
+              'AiSettings fields')
+
+          t = replace_once(t,
+              '                    AiProvider.OPENROUTER -> requestOpenRouterVision(settings, jpegBase64, "")\n                    AiProvider.TABIAI -> requestTabiAiVision(settings, jpegBase64, "")\n                    AiProvider.NINEROUTER -> request9RouterVision(settings, jpegBase64, "")',
+              '                    AiProvider.OPENROUTER -> requestOpenRouterVision(settings, jpegBase64, "")\n                    AiProvider.TABIAI -> requestTabiAiVision(settings, jpegBase64, "")\n                    AiProvider.NINEROUTER -> request9RouterVision(settings, jpegBase64, "")\n                    AiProvider.BLUESMINDS -> requestCompatibleVision(settings.bluesMindsApiKey, settings.bluesMindsBaseUrl, settings.bluesMindsModel, "BluesMinds", jpegBase64, localTextHint)\n                    AiProvider.XKIRO -> requestCompatibleVision(settings.xKiroApiKey, settings.xKiroBaseUrl, settings.xKiroModel, "xKiro", jpegBase64, localTextHint)\n                    AiProvider.ORCAROUTER -> requestCompatibleVision(settings.orcaRouterApiKey, settings.orcaRouterBaseUrl, settings.orcaRouterModel, "OrcaRouter", jpegBase64, localTextHint)',
+              'vision provider dispatch')
+
+          t = replace_once(t,
+              '                    AiProvider.OPENROUTER -> requestOpenRouter(settings, personalizedInstruction, text, temperature, maxTokens)\n                    AiProvider.TABIAI -> requestTabiAi(settings, personalizedInstruction, text, temperature, maxTokens)\n                    AiProvider.NINEROUTER -> request9Router(settings, personalizedInstruction, text, temperature, maxTokens)',
+              '                    AiProvider.OPENROUTER -> requestOpenRouter(settings, personalizedInstruction, text, temperature, maxTokens)\n                    AiProvider.TABIAI -> requestTabiAi(settings, personalizedInstruction, text, temperature, maxTokens)\n                    AiProvider.NINEROUTER -> request9Router(settings, personalizedInstruction, text, temperature, maxTokens)\n                    AiProvider.BLUESMINDS -> requestCompatibleChat(settings.bluesMindsApiKey, settings.bluesMindsBaseUrl, settings.bluesMindsModel, "BluesMinds", personalizedInstruction, text, temperature, maxTokens)\n                    AiProvider.XKIRO -> requestCompatibleChat(settings.xKiroApiKey, settings.xKiroBaseUrl, settings.xKiroModel, "xKiro", personalizedInstruction, text, temperature, maxTokens)\n                    AiProvider.ORCAROUTER -> requestCompatibleChat(settings.orcaRouterApiKey, settings.orcaRouterBaseUrl, settings.orcaRouterModel, "OrcaRouter", personalizedInstruction, text, temperature, maxTokens)',
+              'text provider dispatch')
+
+          helper_marker = '    private fun request9Router(\n'
+          helpers = r'''    private fun requestCompatibleChat(
+        apiKey: String,
+        baseUrl: String,
+        model: String,
+        providerLabel: String,
+        systemInstruction: String,
+        text: String,
+        temperature: Double,
+        maxTokens: Int
+    ): String {
+        require(apiKey.isNotBlank()) { "API key $providerLabel belum diisi." }
+        require(model.isNotBlank()) { "Model $providerLabel belum diisi." }
+        val endpoint = compatibleChatUrl(baseUrl)
+        require(URL(endpoint).protocol.equals("https", ignoreCase = true)) {
+            "Base URL $providerLabel harus memakai HTTPS."
+        }
+        val body = JSONObject()
+            .put("model", model.trim())
+            .put("temperature", temperature)
+            .put("max_tokens", maxTokens)
+            .put(
+                "messages", JSONArray()
+                    .put(JSONObject().put("role", "system").put("content", systemInstruction))
+                    .put(JSONObject().put("role", "user").put("content", text))
+            )
+        val response = postJson(
+            url = endpoint,
+            headers = mapOf("Authorization" to "Bearer ${apiKey.trim()}"),
+            body = body
+        )
+        return extractOpenAiMessageText(response, providerLabel)
+    }
+
+    private fun requestCompatibleVision(
+        apiKey: String,
+        baseUrl: String,
+        model: String,
+        providerLabel: String,
+        jpegBase64: String,
+        localTextHint: String
+    ): String {
+        require(apiKey.isNotBlank()) { "API key $providerLabel belum diisi." }
+        require(model.isNotBlank()) { "Model $providerLabel belum diisi." }
+        val endpoint = compatibleChatUrl(baseUrl)
+        require(URL(endpoint).protocol.equals("https", ignoreCase = true)) {
+            "Base URL $providerLabel harus memakai HTTPS."
+        }
+        val content = JSONArray()
+            .put(JSONObject().put("type", "text").put("text", visionInstruction(localTextHint)))
+            .put(
+                JSONObject()
+                    .put("type", "image_url")
+                    .put("image_url", JSONObject().put("url", "data:image/jpeg;base64,$jpegBase64"))
+            )
+        val body = JSONObject()
+            .put("model", model.trim())
+            .put("temperature", 0.05)
+            .put("max_tokens", 220)
+            .put(
+                "messages", JSONArray().put(
+                    JSONObject().put("role", "user").put("content", content)
+                )
+            )
+        val response = postJson(
+            url = endpoint,
+            headers = mapOf("Authorization" to "Bearer ${apiKey.trim()}"),
+            body = body
+        )
+        return extractOpenAiMessageText(response, providerLabel)
+    }
+
+    private fun compatibleChatUrl(baseUrl: String): String {
+        val clean = baseUrl.trim().trimEnd('/')
+        require(clean.isNotBlank()) { "Base URL provider belum diisi." }
+        return when {
+            clean.endsWith("/chat/completions", ignoreCase = true) -> clean
+            clean.endsWith("/v1", ignoreCase = true) -> "$clean/chat/completions"
+            else -> "$clean/v1/chat/completions"
+        }
+    }
+
+    private fun extractOpenAiMessageText(response: JSONObject, providerLabel: String): String {
+        val message = response.getJSONArray("choices").getJSONObject(0).getJSONObject("message")
+        val content = message.opt("content")
+        val output = when (content) {
+            is String -> content
+            is JSONArray -> buildString {
+                for (index in 0 until content.length()) {
+                    val block = content.optJSONObject(index) ?: continue
+                    if (block.optString("type") == "text") append(block.optString("text"))
+                }
+            }
+            else -> ""
+        }.trim()
+        require(output.isNotBlank()) { "$providerLabel mengembalikan respons tanpa teks." }
+        return output
+    }
+
+'''
+          if helper_marker not in t:
+              raise SystemExit('marker not found: helper insertion')
+          t = t.replace(helper_marker, helpers + helper_marker, 1)
+          p.write_text(t, encoding='utf-8')
+
+          # --- RiyanKeyboardService.kt ---
+          p = Path('app/src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt')
+          t = p.read_text(encoding='utf-8')
+          t = replace_once(t,
+              '            bluesMindsApiKey = prefs.getString("bluesminds_api_key", "").orEmpty(),\n            bluesMindsBaseUrl = prefs.getString("bluesminds_base_url", "https://api.bluesminds.com/v1").orEmpty(),\n            bluesMindsModel = prefs.getString("bluesminds_model", "deepseek-ai/deepseek-v4-flash").orEmpty(),\n            fallbackEnabled = prefs.getBoolean("fallback_enabled", false),',
+              '            bluesMindsApiKey = prefs.getString("bluesminds_api_key", "").orEmpty(),\n            bluesMindsBaseUrl = prefs.getString("bluesminds_base_url", "https://api.bluesminds.com/v1").orEmpty(),\n            bluesMindsModel = prefs.getString("bluesminds_model", "deepseek-ai/deepseek-v4-flash").orEmpty(),\n            xKiroApiKey = prefs.getString("xkiro_api_key", "").orEmpty(),\n            xKiroBaseUrl = prefs.getString("xkiro_base_url", "https://api.xkiro.com/v1").orEmpty(),\n            xKiroModel = prefs.getString("xkiro_model", "openai/gpt-5.6-sol").orEmpty(),\n            orcaRouterApiKey = prefs.getString("orcarouter_api_key", "").orEmpty(),\n            orcaRouterBaseUrl = prefs.getString("orcarouter_base_url", "https://api.orcarouter.ai/v1").orEmpty(),\n            orcaRouterModel = prefs.getString("orcarouter_model", "orcarouter/free").orEmpty(),\n            fallbackEnabled = prefs.getBoolean("fallback_enabled", false),',
+              'keyboard AiSettings prefs')
+          p.write_text(t, encoding='utf-8')
+
+          # --- KeyboardSettingsOverlay.kt ---
+          p = Path('app/src/main/java/com/riyan/aikeyboard/KeyboardSettingsOverlay.kt')
+          t = p.read_text(encoding='utf-8')
+          t = replace_once(t,
+              '        var bluesMindsKey: String,\n        var bluesMindsBaseUrl: String,\n        var bluesMindsModel: String,\n        var fallbackEnabled: Boolean,',
+              '        var bluesMindsKey: String,\n        var bluesMindsBaseUrl: String,\n        var bluesMindsModel: String,\n        var xKiroKey: String,\n        var xKiroBaseUrl: String,\n        var xKiroModel: String,\n        var orcaRouterKey: String,\n        var orcaRouterBaseUrl: String,\n        var orcaRouterModel: String,\n        var fallbackEnabled: Boolean,',
+              'overlay draft fields')
+          t = replace_once(t,
+              '        val providers = listOf(AiProvider.OPENROUTER, AiProvider.TABIAI, AiProvider.NINEROUTER, AiProvider.BLUESMINDS)',
+              '        val providers = listOf(AiProvider.OPENROUTER, AiProvider.TABIAI, AiProvider.NINEROUTER, AiProvider.BLUESMINDS, AiProvider.XKIRO, AiProvider.ORCAROUTER)',
+              'overlay provider list')
+          t = replace_once(t,
+              '            AiProvider.BLUESMINDS -> {\n                config.addView(textInput("API Key BluesMinds", draft.bluesMindsKey, secret = true) { draft.bluesMindsKey = it })\n                config.addView(textInput("Base URL BluesMinds", draft.bluesMindsBaseUrl) { draft.bluesMindsBaseUrl = it })\n                config.addView(textInput("Nama Model", draft.bluesMindsModel) { draft.bluesMindsModel = it })\n            }',
+              '            AiProvider.BLUESMINDS -> {\n                config.addView(textInput("API Key BluesMinds", draft.bluesMindsKey, secret = true) { draft.bluesMindsKey = it })\n                config.addView(textInput("Base URL BluesMinds", draft.bluesMindsBaseUrl) { draft.bluesMindsBaseUrl = it })\n                config.addView(textInput("Nama Model", draft.bluesMindsModel) { draft.bluesMindsModel = it })\n            }\n            AiProvider.XKIRO -> {\n                config.addView(textInput("API Key xKiro", draft.xKiroKey, secret = true) { draft.xKiroKey = it })\n                config.addView(textInput("Base URL xKiro", draft.xKiroBaseUrl) { draft.xKiroBaseUrl = it })\n                config.addView(textInput("Nama Model", draft.xKiroModel) { draft.xKiroModel = it })\n            }\n            AiProvider.ORCAROUTER -> {\n                config.addView(textInput("API Key OrcaRouter", draft.orcaRouterKey, secret = true) { draft.orcaRouterKey = it })\n                config.addView(textInput("Base URL OrcaRouter", draft.orcaRouterBaseUrl) { draft.orcaRouterBaseUrl = it })\n                config.addView(textInput("Nama Model", draft.orcaRouterModel) { draft.orcaRouterModel = it })\n            }',
+              'overlay provider config')
+          t = replace_once(t,
+              '            .putString("bluesminds_api_key", draft.bluesMindsKey.trim())\n            .putString("bluesminds_base_url", draft.bluesMindsBaseUrl.trim().ifBlank { "https://api.bluesminds.com/v1" })\n            .putString("bluesminds_model", draft.bluesMindsModel.trim().ifBlank { "deepseek-ai/deepseek-v4-flash" })\n            .putBoolean("fallback_enabled", draft.fallbackEnabled)',
+              '            .putString("bluesminds_api_key", draft.bluesMindsKey.trim())\n            .putString("bluesminds_base_url", draft.bluesMindsBaseUrl.trim().ifBlank { "https://api.bluesminds.com/v1" })\n            .putString("bluesminds_model", draft.bluesMindsModel.trim().ifBlank { "deepseek-ai/deepseek-v4-flash" })\n            .putString("xkiro_api_key", draft.xKiroKey.trim())\n            .putString("xkiro_base_url", draft.xKiroBaseUrl.trim().ifBlank { "https://api.xkiro.com/v1" })\n            .putString("xkiro_model", draft.xKiroModel.trim().ifBlank { "openai/gpt-5.6-sol" })\n            .putString("orcarouter_api_key", draft.orcaRouterKey.trim())\n            .putString("orcarouter_base_url", draft.orcaRouterBaseUrl.trim().ifBlank { "https://api.orcarouter.ai/v1" })\n            .putString("orcarouter_model", draft.orcaRouterModel.trim().ifBlank { "orcarouter/free" })\n            .putBoolean("fallback_enabled", draft.fallbackEnabled)',
+              'overlay save prefs')
+          t = replace_once(t,
+              '        bluesMindsKey = prefs.getString("bluesminds_api_key", "").orEmpty(),\n        bluesMindsBaseUrl = prefs.getString("bluesminds_base_url", "https://api.bluesminds.com/v1").orEmpty(),\n        bluesMindsModel = prefs.getString("bluesminds_model", "deepseek-ai/deepseek-v4-flash").orEmpty(),\n        fallbackEnabled = prefs.getBoolean("fallback_enabled", false),',
+              '        bluesMindsKey = prefs.getString("bluesminds_api_key", "").orEmpty(),\n        bluesMindsBaseUrl = prefs.getString("bluesminds_base_url", "https://api.bluesminds.com/v1").orEmpty(),\n        bluesMindsModel = prefs.getString("bluesminds_model", "deepseek-ai/deepseek-v4-flash").orEmpty(),\n        xKiroKey = prefs.getString("xkiro_api_key", "").orEmpty(),\n        xKiroBaseUrl = prefs.getString("xkiro_base_url", "https://api.xkiro.com/v1").orEmpty(),\n        xKiroModel = prefs.getString("xkiro_model", "openai/gpt-5.6-sol").orEmpty(),\n        orcaRouterKey = prefs.getString("orcarouter_api_key", "").orEmpty(),\n        orcaRouterBaseUrl = prefs.getString("orcarouter_base_url", "https://api.orcarouter.ai/v1").orEmpty(),\n        orcaRouterModel = prefs.getString("orcarouter_model", "orcarouter/free").orEmpty(),\n        fallbackEnabled = prefs.getBoolean("fallback_enabled", false),',
+              'overlay load prefs')
+          t = replace_once(t,
+              '        bluesMindsKey = draft.bluesMindsKey,\n        bluesMindsBaseUrl = "https://api.bluesminds.com/v1",\n        bluesMindsModel = "deepseek-ai/deepseek-v4-flash",\n        fallbackEnabled = false,',
+              '        bluesMindsKey = draft.bluesMindsKey,\n        bluesMindsBaseUrl = "https://api.bluesminds.com/v1",\n        bluesMindsModel = "deepseek-ai/deepseek-v4-flash",\n        xKiroKey = draft.xKiroKey,\n        xKiroBaseUrl = "https://api.xkiro.com/v1",\n        xKiroModel = "openai/gpt-5.6-sol",\n        orcaRouterKey = draft.orcaRouterKey,\n        orcaRouterBaseUrl = "https://api.orcarouter.ai/v1",\n        orcaRouterModel = "orcarouter/free",\n        fallbackEnabled = false,',
+              'overlay reset defaults')
+          t = replace_once(t,
+              '        AiProvider.NINEROUTER -> "9Router"\n        AiProvider.BLUESMINDS -> "BluesMinds"',
+              '        AiProvider.NINEROUTER -> "9Router"\n        AiProvider.BLUESMINDS -> "BluesMinds"\n        AiProvider.XKIRO -> "xKiro"\n        AiProvider.ORCAROUTER -> "OrcaRouter"',
+              'overlay provider labels')
+          p.write_text(t, encoding='utf-8')
+
+          # --- MainActivity.kt legacy settings ---
+          p = Path('app/src/main/java/com/riyan/aikeyboard/MainActivity.kt')
+          t = p.read_text(encoding='utf-8')
+          t = replace_once(t,
+              '        root.addView(description("OpenAI-compatible · dashboard :20128 otomatis dialihkan ke gateway API :20130. Nama Combo seperti My2 dipakai persis. Untuk kamera, aktifkan Vision Adapter/model vision di 9Router."))\n\n        val fallback = CheckBox(this).apply {',
+              '        root.addView(description("OpenAI-compatible · dashboard :20128 otomatis dialihkan ke gateway API :20130. Nama Combo seperti My2 dipakai persis. Untuk kamera, aktifkan Vision Adapter/model vision di 9Router."))\n\n        root.addView(sectionTitle("xKiro"))\n        val xKiroKey = secretField("API key xKiro", prefs.getString("xkiro_api_key", ""))\n        val xKiroBaseUrl = textField("Base URL xKiro", prefs.getString("xkiro_base_url", "https://api.xkiro.com/v1"))\n        val xKiroModel = textField("Model xKiro", prefs.getString("xkiro_model", "openai/gpt-5.6-sol"))\n        root.addView(xKiroKey, ViewGroup.LayoutParams(-1, -2))\n        root.addView(xKiroBaseUrl, ViewGroup.LayoutParams(-1, -2))\n        root.addView(xKiroModel, ViewGroup.LayoutParams(-1, -2))\n        root.addView(description("OpenAI-compatible · endpoint /v1/chat/completions · Authorization Bearer."))\n\n        root.addView(sectionTitle("OrcaRouter"))\n        val orcaRouterKey = secretField("API key OrcaRouter", prefs.getString("orcarouter_api_key", ""))\n        val orcaRouterBaseUrl = textField("Base URL OrcaRouter", prefs.getString("orcarouter_base_url", "https://api.orcarouter.ai/v1"))\n        val orcaRouterModel = textField("Model OrcaRouter", prefs.getString("orcarouter_model", "orcarouter/free"))\n        root.addView(orcaRouterKey, ViewGroup.LayoutParams(-1, -2))\n        root.addView(orcaRouterBaseUrl, ViewGroup.LayoutParams(-1, -2))\n        root.addView(orcaRouterModel, ViewGroup.LayoutParams(-1, -2))\n        root.addView(description("OpenAI-compatible · model bebas diganti sesuai katalog OrcaRouter."))\n\n        val fallback = CheckBox(this).apply {',
+              'legacy provider fields')
+          t = replace_once(t,
+              '                    .putString("9router_api_key", nineRouterKey.text.toString().trim())\n                    .putString("9router_base_url", nineRouterBaseUrl.text.toString().trim().ifBlank { "http://43.159.50.231:20130/v1" })\n                    .putString("9router_model", nineRouterModel.text.toString().trim().ifBlank { "cc/claude-sonnet-4-20250514" })\n                    .putString("reference_urls", referenceUrls.text.toString().trim())',
+              '                    .putString("9router_api_key", nineRouterKey.text.toString().trim())\n                    .putString("9router_base_url", nineRouterBaseUrl.text.toString().trim().ifBlank { "http://43.159.50.231:20130/v1" })\n                    .putString("9router_model", nineRouterModel.text.toString().trim().ifBlank { "cc/claude-sonnet-4-20250514" })\n                    .putString("xkiro_api_key", xKiroKey.text.toString().trim())\n                    .putString("xkiro_base_url", xKiroBaseUrl.text.toString().trim().ifBlank { "https://api.xkiro.com/v1" })\n                    .putString("xkiro_model", xKiroModel.text.toString().trim().ifBlank { "openai/gpt-5.6-sol" })\n                    .putString("orcarouter_api_key", orcaRouterKey.text.toString().trim())\n                    .putString("orcarouter_base_url", orcaRouterBaseUrl.text.toString().trim().ifBlank { "https://api.orcarouter.ai/v1" })\n                    .putString("orcarouter_model", orcaRouterModel.text.toString().trim().ifBlank { "orcarouter/free" })\n                    .putString("reference_urls", referenceUrls.text.toString().trim())',
+              'legacy save prefs')
+          p.write_text(t, encoding='utf-8')
+          PY
+
+      - name: Remove temporary workflow and commit
+        shell: bash
+        run: |
+          rm -f .github/workflows/patch-xkiro-orcarouter.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/com/riyan/aikeyboard/AiClient.kt \
+                  app/src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt \
+                  app/src/main/java/com/riyan/aikeyboard/KeyboardSettingsOverlay.kt \
+                  app/src/main/java/com/riyan/aikeyboard/MainActivity.kt \
+                  .github/workflows/patch-xkiro-orcarouter.yml
+          git commit -m "Add xKiro and OrcaRouter providers"
+          git push origin HEAD:${GITHUB_REF_NAME}
