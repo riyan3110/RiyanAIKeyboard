@@ -3216,13 +3216,31 @@ resultCard.bringToFront()
                 searchInput = field
                 val active = field != null
                 searchComposeActive = active
-                searchWebComposeActive = active
+                // Native Brave controls are not webpage inputs. Web focus is probed separately.
+                searchWebComposeActive = false
                 aiComposeActive = false
             }
         )
         braveBrowserPanel = browser
         searchWebView = browser.webView
         searchInput = browser.addressField
+        browser.webView.setOnTouchListener { _, event ->
+            if (event.actionMasked == MotionEvent.ACTION_DOWN || event.actionMasked == MotionEvent.ACTION_UP) {
+                handler.postDelayed({
+                    if (searchWebView === browser.webView) probeFocusedWebInput()
+                }, 24L)
+            }
+            false
+        }
+        browser.webView.setOnFocusChangeListener { _, hasFocus ->
+            if (hasFocus) {
+                handler.postDelayed({
+                    if (searchWebView === browser.webView) probeFocusedWebInput()
+                }, 24L)
+            } else {
+                searchWebComposeActive = false
+            }
+        }
         searchSurfaceContent.addView(browser, FrameLayout.LayoutParams(-1, -1))
         showSearchSurface()
     }

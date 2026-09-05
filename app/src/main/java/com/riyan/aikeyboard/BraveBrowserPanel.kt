@@ -9,6 +9,8 @@ import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.Environment
 import android.provider.Settings
@@ -73,6 +75,13 @@ class BraveBrowserPanel(
 
     private val mainColumn = LinearLayout(context)
     private val overlayHost = FrameLayout(context)
+    private val customViewHost = FrameLayout(context)
+    private lateinit var topBar: View
+    private lateinit var bottomBar: View
+    private lateinit var browserFullscreenExit: TextView
+    private var customViewCallback: WebChromeClient.CustomViewCallback? = null
+    private var fullscreenBeforeVideo = false
+    private var browserFullscreen = false
     private val tabs = mutableListOf<BrowserTab>()
     private var currentTabIndex = 0
     private var trackerCount = 0
@@ -102,16 +111,21 @@ class BraveBrowserPanel(
         clipChildren = false
         clipToPadding = false
         buildBrowser()
-        tabs += BrowserTab(title = "Brave", url = initialUrl.trim(), privateMode = false)
+        restoreTabs()
+        if (tabs.isEmpty()) tabs += BrowserTab(title = "Brave", privateMode = false)
+        currentTabIndex = currentTabIndex.coerceIn(0, tabs.lastIndex)
         updateTabCounter()
         when {
             initialUrl.isNotBlank() -> navigate(initialUrl, addHistory = false)
             initialQuery.isNotBlank() -> navigate(initialQuery, addHistory = false)
+            currentTab().url.isNotBlank() -> webView.loadUrl(currentTab().url)
             else -> openHome()
         }
     }
 
     fun release() {
+        persistTabs()
+        hideCustomVideo()
         onActiveInputChanged(null)
         runCatching {
             webView.stopLoading()
@@ -129,7 +143,8 @@ class BraveBrowserPanel(
         mainColumn.setBackgroundColor(darkBg)
         addView(mainColumn, LayoutParams(-1, -1))
 
-        mainColumn.addView(buildTopBar(), LinearLayout.LayoutParams(-1, dp(54)))
+        topBar = buildTopBar()
+        mainColumn.addView(topBar, LinearLayout.LayoutParams(-1, dp(54)))
 
         webView = WebView(context).apply {
             setBackgroundColor(Color.rgb(248, 248, 248))
@@ -140,7 +155,10 @@ class BraveBrowserPanel(
                 override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                     val uri = request?.url ?: return false
                     val scheme = uri.scheme?.lowercase().orEmpty()
-                    if (scheme == "http" || scheme == "https") return false
+                    if (scheme == "http" || scheme == "https") {
+                        if (openNativeAppIfSupported(uri)) return true
+                        return false
+                    }
                     return runCatching {
                         context.startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                         true
@@ -166,13 +184,26 @@ class BraveBrowserPanel(
                         if (!currentTab().privateMode && prefs.getBoolean(KEY_SAVE_HISTORY, true)) {
                             saveHistory(view?.title.orEmpty(), clean)
                         }
+                        persistTabs()
                     }
                 }
             }
             webChromeClient = object : WebChromeClient() {
                 override fun onReceivedTitle(view: WebView?, title: String?) {
                     val value = title?.trim().orEmpty()
-                    if (value.isNotBlank()) currentTab().title = value.take(80)
+                    if (value.isNotBlank()) {
+                        currentTab().title = value.take(80)
+                        persistTabs()
+                    }
+                }
+
+                override fun onShowCustomView(view: View?, callback: CustomViewCallback?) {
+                    if (view == null || callback == null) return
+                    showCustomVideo(view, callback)
+                }
+
+                override fun onHideCustomView() {
+                    hideCustomVideo()
                 }
 
                 override fun onPermissionRequest(request: PermissionRequest?) {
@@ -211,11 +242,33 @@ class BraveBrowserPanel(
         }
         configureWebSettings()
         mainColumn.addView(webView, LinearLayout.LayoutParams(-1, 0, 1f))
-        mainColumn.addView(buildBottomBar(), LinearLayout.LayoutParams(-1, dp(46)))
+        bottomBar = buildBottomBar()
+        mainColumn.addView(bottomBar, LinearLayout.LayoutParams(-1, dp(46)))
 
         overlayHost.visibility = View.GONE
         overlayHost.setBackgroundColor(Color.argb(88, 0, 0, 0))
         addView(overlayHost, LayoutParams(-1, -1))
+
+        customViewHost.visibility = View.GONE
+        customViewHost.setBackgroundColor(Color.BLACK)
+        addView(customViewHost, LayoutParams(-1, -1))
+
+        browserFullscreenExit = TextView(context).apply {
+            text = "↙"
+            textSize = 18f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            background = rounded(Color.argb(205, 35, 35, 38), 16f)
+            visibility = View.GONE
+            contentDescription = "Keluar dari layar penuh"
+            setOnClickListener {
+                if (customViewHost.visibility == View.VISIBLE) hideCustomVideo() else setBrowserFullscreen(false)
+            }
+        }
+        addView(browserFullscreenExit, LayoutParams(dp(38), dp(38), Gravity.TOP or Gravity.END).apply {
+            topMargin = dp(7)
+            rightMargin = dp(7)
+        })
     }
 
     private fun buildTopBar(): View {
@@ -255,12 +308,7 @@ class BraveBrowserPanel(
             leftMargin = dp(3)
             rightMargin = dp(5)
         })
-        row.addView(iconButton("🛡") {
-            val enabled = !prefs.getBoolean(KEY_SHIELDS_ENABLED, true)
-            prefs.edit().putBoolean(KEY_SHIELDS_ENABLED, enabled).apply()
-            applyPrivacySettings()
-            Toast.makeText(context, if (enabled) "Perisai Brave aktif" else "Perisai Brave nonaktif", Toast.LENGTH_SHORT).show()
-        }, LinearLayout.LayoutParams(dp(42), -1))
+        row.addView(iconButton("🛡") { showQuickSettings() }, LinearLayout.LayoutParams(dp(42), -1))
         row.addView(iconButton("⋮") { showMainMenu() }, LinearLayout.LayoutParams(dp(42), -1))
         return row
     }
@@ -324,11 +372,12 @@ class BraveBrowserPanel(
         if (clean.startsWith("http://", true) || clean.startsWith("https://", true)) return clean
         if (looksLikeDomain(clean)) return "https://$clean"
         val encoded = Uri.encode(clean)
+        val safe = prefs.getString(KEY_SAFE_SEARCH, SAFE_MODERATE) ?: SAFE_MODERATE
         return when (prefs.getString(KEY_SEARCH_ENGINE, ENGINE_BRAVE) ?: ENGINE_BRAVE) {
-            ENGINE_GOOGLE -> "https://www.google.com/search?q=$encoded"
-            ENGINE_BING -> "https://www.bing.com/search?q=$encoded"
-            ENGINE_DDG -> "https://duckduckgo.com/?q=$encoded"
-            else -> "https://search.brave.com/search?q=$encoded&source=web"
+            ENGINE_GOOGLE -> "https://www.google.com/search?q=$encoded&safe=${if (safe == SAFE_OFF) "off" else "active"}"
+            ENGINE_BING -> "https://www.bing.com/search?q=$encoded&adlt=${when (safe) { SAFE_STRICT -> "strict"; SAFE_OFF -> "off"; else -> "moderate" }}"
+            ENGINE_DDG -> "https://duckduckgo.com/?q=$encoded&kp=${if (safe == SAFE_OFF) "-2" else "1"}"
+            else -> "https://search.brave.com/search?q=$encoded&source=web&safesearch=$safe"
         }
     }
 
@@ -343,6 +392,7 @@ class BraveBrowserPanel(
     private fun newTab(privateMode: Boolean) {
         tabs += BrowserTab(title = if (privateMode) "Tab Privat" else "Tab baru", privateMode = privateMode)
         currentTabIndex = tabs.lastIndex
+        persistTabs()
         trackerCount = 0
         updateTabCounter()
         openHome()
@@ -352,6 +402,7 @@ class BraveBrowserPanel(
     private fun switchTab(index: Int) {
         if (index !in tabs.indices) return
         currentTabIndex = index
+        persistTabs()
         trackerCount = 0
         updateTabCounter()
         val url = currentTab().url
@@ -364,6 +415,7 @@ class BraveBrowserPanel(
         tabs.removeAt(index)
         if (tabs.isEmpty()) tabs += BrowserTab()
         currentTabIndex = currentTabIndex.coerceAtMost(tabs.lastIndex)
+        persistTabs()
         updateTabCounter()
         val url = currentTab().url
         if (url.isBlank()) openHome() else webView.loadUrl(url)
@@ -410,12 +462,13 @@ class BraveBrowserPanel(
         card.addView(menuItem("🔖", "Bookmark") { showBookmarks() })
         card.addView(menuItem("✧", "AI Leo") { hideOverlay(); onOpenKeyboardAi() })
         card.addView(menuItem("▣", "Tab terbaru") { showTabs() })
+        card.addView(menuItem("⛶", "Mode layar penuh") { hideOverlay(); setBrowserFullscreen(true) })
         card.addView(separator())
         card.addView(menuItem("⚙", "Setelan") { showSettings() })
         card.addView(menuItem("★", "Tetapkan Brave sebagai Peramban") { openDefaultAppsSettings() })
         card.addView(menuItem("△", "Brave Rewards") { navigate("https://brave.com/rewards/") })
         card.addView(menuItem("▤", "Brave News") { navigate("https://search.brave.com/news?q=berita") })
-        card.addView(menuItem("◉", "VPN Brave") { navigate("https://brave.com/firewall-vpn/") })
+        card.addView(menuItem("◉", if (isSystemVpnActive()) "VPN · Aktif" else "VPN · Nonaktif") { openVpnControls() })
         card.addView(menuItem("🛠", "Sesuaikan menu") { showSettings(scrollToAppearance = true) })
 
         val bottom = LinearLayout(context).apply {
@@ -429,6 +482,218 @@ class BraveBrowserPanel(
         bottom.addView(circleAction("↻") { webView.reload(); hideOverlay() })
         card.addView(bottom, LinearLayout.LayoutParams(-1, dp(62)))
         showOverlay(scroll, widthRatio = 0.66f, gravity = Gravity.END)
+    }
+
+    private fun showQuickSettings() {
+        val wrap = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(10), dp(12), dp(14))
+            background = rounded(darkCard, 16f)
+        }
+        val host = runCatching { Uri.parse(webView.url.orEmpty()).host.orEmpty() }.getOrDefault("")
+        wrap.addView(TextView(context).apply {
+            text = if (host.isBlank()) "Pengaturan cepat" else "Pengaturan cepat · $host"
+            textSize = 17f
+            setTextColor(lightText)
+            setPadding(dp(8), dp(4), dp(8), dp(8))
+        })
+        wrap.addView(settingsGroup(
+            settingRow("🛡", "Perisai & privasi", boolState(KEY_SHIELDS_ENABLED, true)) {
+                togglePref(KEY_SHIELDS_ENABLED, true)
+                applyPrivacySettings()
+                webView.reload()
+                showQuickSettings()
+            },
+            settingRow("⌕", "Penelusuran yang aman", safeSearchLabel()) { showSafeSearchChoices() },
+            settingRow("🍪", "Blokir cookie pihak ketiga", boolState(KEY_BLOCK_THIRD_PARTY_COOKIES, true)) {
+                togglePref(KEY_BLOCK_THIRD_PARTY_COOKIES, true)
+                applyPrivacySettings()
+                webView.reload()
+                showQuickSettings()
+            },
+            settingRow("JS", "JavaScript", boolState(KEY_JAVASCRIPT, true)) {
+                togglePref(KEY_JAVASCRIPT, true)
+                configureWebSettings()
+                webView.reload()
+                showQuickSettings()
+            },
+            settingRow("▱", "Situs desktop", boolState(KEY_DESKTOP_MODE, false)) {
+                togglePref(KEY_DESKTOP_MODE, false)
+                configureWebSettings()
+                webView.reload()
+                showQuickSettings()
+            },
+            settingRow("📷", "Kamera situs", boolState(KEY_CAMERA_ALLOWED, true)) {
+                togglePref(KEY_CAMERA_ALLOWED, true)
+                showQuickSettings()
+            },
+            settingRow("Aa", "Ukuran teks", "${prefs.getInt(KEY_TEXT_ZOOM, 100)}%") {
+                val current = prefs.getInt(KEY_TEXT_ZOOM, 100)
+                val next = when {
+                    current < 100 -> 100
+                    current < 120 -> 120
+                    else -> 90
+                }
+                prefs.edit().putInt(KEY_TEXT_ZOOM, next).apply()
+                webView.settings.textZoom = next
+                showQuickSettings()
+            }
+        ))
+        wrap.addView(actionButton("Semua pengaturan  →") { showSettings() }, LinearLayout.LayoutParams(-1, dp(46)).apply {
+            topMargin = dp(12)
+        })
+        showOverlay(wrap, widthRatio = 0.92f, gravity = Gravity.CENTER)
+    }
+
+    private fun safeSearchLabel(): String = when (prefs.getString(KEY_SAFE_SEARCH, SAFE_MODERATE)) {
+        SAFE_STRICT -> "Ketat"
+        SAFE_OFF -> "Nonaktif"
+        else -> "Sedang"
+    }
+
+    private fun showSafeSearchChoices() {
+        showChoice(
+            "Penelusuran yang aman",
+            listOf(SAFE_OFF to "Nonaktif", SAFE_MODERATE to "Sedang", SAFE_STRICT to "Ketat"),
+            prefs.getString(KEY_SAFE_SEARCH, SAFE_MODERATE) ?: SAFE_MODERATE
+        ) { value ->
+            prefs.edit().putString(KEY_SAFE_SEARCH, value).apply()
+            reloadCurrentSearchWithSafeSearch()
+            showQuickSettings()
+        }
+    }
+
+    private fun reloadCurrentSearchWithSafeSearch() {
+        val uri = runCatching { Uri.parse(webView.url.orEmpty()) }.getOrNull()
+        val query = uri?.getQueryParameter("q").orEmpty()
+        if (query.isNotBlank()) navigate(query, addHistory = false) else webView.reload()
+    }
+
+    private fun setBrowserFullscreen(enabled: Boolean) {
+        browserFullscreen = enabled
+        hideOverlay()
+        if (::topBar.isInitialized) topBar.visibility = if (enabled) View.GONE else View.VISIBLE
+        if (::bottomBar.isInitialized) bottomBar.visibility = if (enabled) View.GONE else View.VISIBLE
+        if (::browserFullscreenExit.isInitialized) {
+            browserFullscreenExit.visibility = if (enabled) View.VISIBLE else View.GONE
+            if (enabled) browserFullscreenExit.bringToFront()
+        }
+        mainColumn.requestLayout()
+    }
+
+    private fun showCustomVideo(view: View, callback: WebChromeClient.CustomViewCallback) {
+        if (customViewHost.visibility == View.VISIBLE) {
+            callback.onCustomViewHidden()
+            return
+        }
+        fullscreenBeforeVideo = browserFullscreen
+        customViewCallback = callback
+        hideOverlay()
+        customViewHost.removeAllViews()
+        customViewHost.addView(view, FrameLayout.LayoutParams(-1, -1))
+        customViewHost.visibility = View.VISIBLE
+        mainColumn.visibility = View.GONE
+        browserFullscreenExit.visibility = View.VISIBLE
+        customViewHost.bringToFront()
+        browserFullscreenExit.bringToFront()
+    }
+
+    private fun hideCustomVideo() {
+        if (customViewHost.visibility != View.VISIBLE) return
+        customViewHost.removeAllViews()
+        customViewHost.visibility = View.GONE
+        mainColumn.visibility = View.VISIBLE
+        val callback = customViewCallback
+        customViewCallback = null
+        runCatching { callback?.onCustomViewHidden() }
+        setBrowserFullscreen(fullscreenBeforeVideo)
+    }
+
+    private fun restoreTabs() {
+        tabs.clear()
+        val raw = prefs.getString(KEY_TABS, "[]").orEmpty()
+        runCatching {
+            val array = JSONArray(raw)
+            for (i in 0 until array.length()) {
+                val item = array.optJSONObject(i) ?: continue
+                val url = item.optString("url").trim()
+                val title = item.optString("title").trim().ifBlank { "Tab" }
+                if (url.isNotBlank()) tabs += BrowserTab(
+                    id = item.optString("id").ifBlank { UUID.randomUUID().toString() },
+                    title = title,
+                    url = url,
+                    privateMode = false
+                )
+            }
+        }
+        currentTabIndex = prefs.getInt(KEY_CURRENT_TAB, 0).coerceAtLeast(0)
+    }
+
+    private fun persistTabs() {
+        if (tabs.isEmpty()) return
+        val normalTabs = tabs.filterNot { it.privateMode }
+        val array = JSONArray()
+        normalTabs.take(MAX_PERSISTED_TABS).forEach { tab ->
+            array.put(JSONObject().put("id", tab.id).put("title", tab.title).put("url", tab.url))
+        }
+        val currentId = tabs.getOrNull(currentTabIndex)?.id
+        val persistedIndex = normalTabs.indexOfFirst { it.id == currentId }.let { if (it >= 0) it else 0 }
+        prefs.edit()
+            .putString(KEY_TABS, array.toString())
+            .putInt(KEY_CURRENT_TAB, persistedIndex)
+            .apply()
+    }
+
+    private fun openNativeAppIfSupported(uri: Uri): Boolean {
+        val host = uri.host.orEmpty().lowercase()
+        val packages = when {
+            host == "shopee.co.id" || host.endsWith(".shopee.co.id") || host == "shopee.com" || host.endsWith(".shopee.com") ->
+                listOf("com.shopee.id")
+            host == "tiktok.com" || host.endsWith(".tiktok.com") ->
+                listOf("com.zhiliaoapp.musically", "com.ss.android.ugc.trill")
+            else -> emptyList()
+        }
+        for (pkg in packages) {
+            val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+                setPackage(pkg)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            if (intent.resolveActivity(context.packageManager) != null) {
+                return runCatching {
+                    context.startActivity(intent)
+                    true
+                }.getOrDefault(false)
+            }
+        }
+        return false
+    }
+
+    private fun isSystemVpnActive(): Boolean {
+        val manager = context.getSystemService(ConnectivityManager::class.java) ?: return false
+        return runCatching {
+            manager.allNetworks.any { network ->
+                manager.getNetworkCapabilities(network)?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true
+            }
+        }.getOrDefault(false)
+    }
+
+    private fun openVpnControls() {
+        val active = isSystemVpnActive()
+        Toast.makeText(
+            context,
+            if (active) "VPN sistem sedang aktif." else "Pilih provider VPN nyata di pengaturan Android.",
+            Toast.LENGTH_SHORT
+        ).show()
+        runCatching {
+            context.startActivity(Intent(Settings.ACTION_VPN_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }.onFailure {
+            runCatching {
+                context.startActivity(
+                    Intent(Settings.ACTION_WIRELESS_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            }
+        }
+        hideOverlay()
     }
 
     private fun showSettings(scrollToAppearance: Boolean = false) {
@@ -455,7 +720,8 @@ class BraveBrowserPanel(
             settingRow("🛡", "Perisai & privasi Brave", boolState(KEY_SHIELDS_ENABLED, true)) { togglePref(KEY_SHIELDS_ENABLED, true); applyPrivacySettings(); showSettings() },
             settingRow("▤", "Brave News", "Buka") { navigate("https://search.brave.com/news?q=berita") },
             settingRow("▣", "Dompet Brave", "Buka") { navigate("https://brave.com/wallet/") },
-            settingRow("◉", "Brave Firewall + VPN", "Info") { navigate("https://brave.com/firewall-vpn/") },
+            settingRow("◉", "VPN", if (isSystemVpnActive()) "Aktif" else "Nonaktif") { openVpnControls() },
+            settingRow("🌐", "Server VPN negara", "Otomatis oleh provider") { openVpnControls() },
             settingRow("✧", "AI Leo", "AI keyboard") { hideOverlay(); onOpenKeyboardAi() }
         ))
 
@@ -480,7 +746,8 @@ class BraveBrowserPanel(
         body.addView(settingsGroup(
             settingRow("◫", "Mode tampilan", prefs.getString(KEY_THEME, "Gelap") ?: "Gelap") { showThemeChoices() },
             settingRow("Aa", "Ukuran teks halaman", "${prefs.getInt(KEY_TEXT_ZOOM, 100)}%") { showTextZoomSetting() },
-            settingRow("▱", "Situs desktop", boolState(KEY_DESKTOP_MODE, false)) { togglePref(KEY_DESKTOP_MODE, false); configureWebSettings(); webView.reload(); showSettings() }
+            settingRow("▱", "Situs desktop", boolState(KEY_DESKTOP_MODE, false)) { togglePref(KEY_DESKTOP_MODE, false); configureWebSettings(); webView.reload(); showSettings() },
+            settingRow("⛶", "Mode layar penuh", if (browserFullscreen) "Aktif" else "Nonaktif") { hideOverlay(); setBrowserFullscreen(!browserFullscreen) }
         ))
 
         body.addView(sectionTitle("Privasi"))
@@ -790,12 +1057,19 @@ class BraveBrowserPanel(
         private const val KEY_NOTIFICATIONS = "browser_notifications"
         private const val KEY_TEXT_ZOOM = "browser_text_zoom"
         private const val KEY_THEME = "browser_theme"
+        private const val KEY_SAFE_SEARCH = "browser_safe_search"
+        private const val KEY_TABS = "browser_tabs_json"
+        private const val KEY_CURRENT_TAB = "browser_current_tab"
         private const val KEY_HISTORY = "browser_history_json"
         private const val KEY_BOOKMARKS = "browser_bookmarks_json"
         private const val ENGINE_BRAVE = "brave"
         private const val ENGINE_GOOGLE = "google"
         private const val ENGINE_BING = "bing"
         private const val ENGINE_DDG = "ddg"
+        private const val SAFE_OFF = "off"
+        private const val SAFE_MODERATE = "moderate"
+        private const val SAFE_STRICT = "strict"
+        private const val MAX_PERSISTED_TABS = 24
         private const val DEFAULT_HOME = "https://search.brave.com/"
     }
 }
