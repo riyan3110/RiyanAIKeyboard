@@ -10,10 +10,9 @@ runpy.run_path(str(CORE_PATCH), run_name="__main__")
 
 text = KEYBOARD_SERVICE.read_text()
 old = '            if (spec.alternate != null) translationY = dpFloat(4f)'
-new = '''            when {
-                spec.label in setOf("q", "y", "p", "g", "j") -> translationY = dpFloat(-2f)
-                spec.alternate != null && spec.label.none { it.isLetterOrDigit() } -> translationY = dpFloat(4f)
-            }'''
+new = '''            if (spec.label in setOf("q", "y", "p", "g", "j")) {
+                translationY = dpFloat(-2f)
+            } else if (spec.alternate != null && spec.label.none { it.isLetterOrDigit() }) translationY = dpFloat(4f)'''
 
 if new not in text:
     if old not in text:
