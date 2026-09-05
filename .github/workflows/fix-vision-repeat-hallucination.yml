@@ -1,0 +1,83 @@
+name: Fix vision repeat hallucination
+
+on:
+  push:
+    branches:
+      - fix/short-vision-query-search-engine-natural-adult
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/short-vision-query-search-engine-natural-adult
+          fetch-depth: 0
+      - name: Patch AI Vision grounding
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/src/main/java/com/riyan/aikeyboard/AiClient.kt')
+          s = p.read_text()
+
+          lines = s.splitlines()
+          out = []
+          replaced_subject = False
+          replaced_query = False
+          for line in lines:
+              if 'Jika manusia nyata terlihat, klasifikasikan sebagai person' in line:
+                  indent = line[:len(line)-len(line.lstrip())]
+                  out.append(indent + '"Jika manusia nyata terlihat, klasifikasikan sebagai person dan jangan mencoba menentukan identitas orang. Foto manusia nyata harus tetap person; gunakan human_figure hanya jika jelas berupa ilustrasi, patung, mainan, render, atau karakter nonfotografis. Untuk subjek yang jelas dewasa, gunakan sebutan ringkas wanita atau pria; jika tidak jelas, gunakan orang dewasa. Sebut hanya tubuh, pakaian, pose, dan objek yang BENAR-BENAR terlihat. Jangan menebak anatomi di balik pakaian: bila area tubuh tertutup pakaian, deskripsikan pakaian itu, bukan bagian tubuh yang tertutup. Gunakan istilah dewasa yang lugas hanya bila ciri tersebut memang tampak langsung. Jika subjek tampak di bawah 18 tahun atau usia dewasa tidak dapat dipastikan, gunakan deskripsi netral. " +')
+                  replaced_subject = True
+              elif 'Setelah jenis subjek benar, buat query pencarian visual yang SANGAT PENDEK' in line:
+                  indent = line[:len(line)-len(line.lstrip())]
+                  out.append(indent + '"Setiap foto wajib dianalisis DARI NOL dan independen dari hasil foto sebelumnya. Jangan menyalin, mengulang, atau mengambil kata dari instruksi ini sebagai isi query. Buat query pencarian visual yang sangat pendek dan faktual: bahasa Indonesia, 3–7 kata, maksimal sekitar 60 karakter. Query hanya boleh berisi subjek utama dan 2–3 ciri paling jelas yang benar-benar terlihat pada foto saat ini. Untuk pakaian ketat, sebut pakaian yang terlihat; jangan menganggap bagian tubuh terbuka hanya karena bentuknya terlihat melalui pakaian. Kata seperti terbuka atau telanjang hanya boleh dipakai bila kulit/bagian tersebut memang terlihat tanpa tertutup pakaian. Jangan mengarang ukuran tubuh, tindakan seksual, pose seksual, atau bagian tubuh yang tidak terlihat. Evidence wajib berisi 2–4 fakta visual konkret dari foto saat ini dan tidak boleh mengulang template. " +')
+                  replaced_query = True
+              else:
+                  out.append(line)
+          if not replaced_subject or not replaced_query:
+              raise SystemExit(f'vision instruction target not found: subject={replaced_subject}, query={replaced_query}')
+          s = '\n'.join(out) + '\n'
+
+          old = '''        val subject = obj.optString("subject_type").trim().lowercase()
+        val confidence = obj.optDouble("confidence", 0.0)
+        var query = obj.optString("query").trim().replace(Regex("\\\\s+"), " ")
+        if (subject == "person") query = normalizePersonQueryLabel(query)
+        if (subject.isBlank() || subject == "unknown" || query.isBlank() || confidence < 0.30) return null
+'''
+          new = '''        val subject = obj.optString("subject_type").trim().lowercase()
+        val confidence = obj.optDouble("confidence", 0.0)
+        var query = obj.optString("query").trim().replace(Regex("\\\\s+"), " ")
+        val evidence = obj.optString("evidence").trim().replace(Regex("\\\\s+"), " ")
+        if (subject == "person") query = normalizePersonQueryLabel(query)
+        if (subject.isBlank() || subject == "unknown" || query.isBlank() || evidence.isBlank() || confidence < 0.45) return null
+
+        // Ground specific/exposure claims in the model's own visual evidence. This prevents a
+        // text-only or weak vision model from copying a tempting phrase from the instruction.
+        val queryLower = query.lowercase()
+        val evidenceLower = evidence.lowercase()
+        val claimsThatNeedEvidence = setOf(
+            "terbuka", "telanjang", "puting", "vulva", "vagina", "penis", "skrotum", "anus", "klitoris"
+        )
+        if (claimsThatNeedEvidence.any { queryLower.contains(it) && !evidenceLower.contains(it) }) return null
+'''
+          if old not in s:
+              raise SystemExit('normalizeVisionResult target not found')
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+          PY
+
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add app/src/main/java/com/riyan/aikeyboard/AiClient.kt
+          if git diff --cached --quiet; then
+            echo 'No patch needed'
+            exit 0
+          fi
+          git commit -m 'Ground vision query to each image and stop repeated hallucinations'
+          git push origin HEAD:fix/short-vision-query-search-engine-natural-adult
