@@ -1,0 +1,319 @@
+name: Apply Bing web camera/gallery root fix
+
+on:
+  push:
+    branches: [ fix/scanner-zoom-visual-gallery-v1 ]
+    paths:
+      - '.github/workflows/apply-bing-web-root-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/scanner-zoom-visual-gallery-v1
+
+      - name: Restore original web size and repair Bing camera/gallery
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          service_path = Path('app/src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt')
+          manifest_path = Path('app/src/main/AndroidManifest.xml')
+          helper_path = Path('app/src/main/java/com/riyan/aikeyboard/WebImagePickerActivity.kt')
+
+          text = service_path.read_text()
+
+          # 1) Restore the exact old surface sizing model. Web and camera share the same panel height.
+          text, n = re.subn(
+              r'    private fun searchSurfaceHeightDp\(\): Int =\n        if \(searchWebBigMode\) webBigSurfaceHeightDp\(\) else scannerSurfaceHeightDp\(\)\n',
+              '    private fun searchSurfaceHeightDp(): Int = scannerSurfaceHeightDp()\n',
+              text,
+              count=1,
+          )
+          if n != 1 and 'private fun searchSurfaceHeightDp(): Int = scannerSurfaceHeightDp()' not in text:
+              raise SystemExit('searchSurfaceHeightDp patch target not found')
+
+          text, _ = re.subn(
+              r'\n    private fun webBigSurfaceHeightDp\(\): Int \{.*?\n    \}\n\n    private fun aiHeaderHeightDp',
+              '\n    private fun aiHeaderHeightDp',
+              text,
+              count=1,
+              flags=re.S,
+          )
+          text = text.replace(
+              '    private fun showSearchWebPanel() {\n        searchWebBigMode = true\n',
+              '    private fun showSearchWebPanel() {\n',
+              1,
+          )
+
+          # 2) Bing is the canonical embedded search surface. Do not replace it with Google Lens.
+          old_visual = 'val visualUrl = uploadBitmapForVisualSearch(prepared, "")'
+          if old_visual in text:
+              text = text.replace(
+                  old_visual,
+                  'val visualUrl: String? = null // Keep Microsoft Bing as the embedded visual-search surface.',
+              )
+
+          # Generic searches typed in the embedded bar also stay inside Bing.
+          text = text.replace(
+              '.authority("www.google.com")\n        .path("search")',
+              '.authority("www.bing.com")\n        .path("search")',
+              1,
+          )
+
+          # 3) Repair the WebView itself: hardware composition, Bing high-quality camera, and file chooser.
+          web_start = text.index('        val webView = WebView(this).apply {', text.index('    private fun showSearchWebPanel()'))
+          web_end = text.index('        searchWebView = webView', web_start)
+          web = text[web_start:web_end]
+
+          if 'setLayerType(View.LAYER_TYPE_HARDWARE, null)' not in web:
+              web = web.replace(
+                  '            setBackgroundColor(Color.WHITE)\n',
+                  '            setBackgroundColor(Color.WHITE)\n            setLayerType(View.LAYER_TYPE_HARDWARE, null)\n',
+                  1,
+              )
+          if 'settings.offscreenPreRaster = true' not in web:
+              web = web.replace(
+                  '            settings.domStorageEnabled = true\n',
+                  '            settings.domStorageEnabled = true\n            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) settings.offscreenPreRaster = true\n',
+                  1,
+              )
+
+          chrome_start = web.index('            webChromeClient = object : android.webkit.WebChromeClient() {')
+          chrome_end = web.index('            setOnTouchListener', chrome_start)
+          chrome = web[chrome_start:chrome_end]
+          if 'onShowFileChooser' not in chrome:
+              close = chrome.rfind('\n            }')
+              if close < 0:
+                  raise SystemExit('WebChromeClient closing brace not found')
+              chooser = r'''
+
+                override fun onShowFileChooser(
+                    webView: WebView?,
+                    filePathCallback: android.webkit.ValueCallback<Array<Uri>>?,
+                    fileChooserParams: android.webkit.WebChromeClient.FileChooserParams?
+                ): Boolean {
+                    filePathCallback ?: return false
+                    return WebImagePickerActivity.launch(
+                        context = this@RiyanKeyboardService,
+                        callback = filePathCallback,
+                        acceptTypes = fileChooserParams?.acceptTypes
+                    )
+                }
+'''
+              chrome = chrome[:close] + chooser + chrome[close:]
+              web = web[:chrome_start] + chrome + web[chrome_end:]
+
+          if 'installBingCameraQualityShim(view, url)' not in web:
+              web = web.replace(
+                  '                    view ?: return\n                    applyPortraitWebCompatibility(view)',
+                  '                    view ?: return\n                    installBingCameraQualityShim(view, url)\n                    applyPortraitWebCompatibility(view)',
+                  1,
+              )
+
+          text = text[:web_start] + web + text[web_end:]
+
+          # 4) Bing's own getUserMedia camera should request a useful resolution instead of a tiny blurry stream.
+          marker = '    private fun applyPortraitWebCompatibility(webView: WebView) {'
+          if 'private fun installBingCameraQualityShim' not in text:
+              shim = r'''    private fun installBingCameraQualityShim(webView: WebView, rawUrl: String?) {
+        val host = runCatching { Uri.parse(rawUrl.orEmpty()).host.orEmpty().lowercase() }.getOrDefault("")
+        if (host != "bing.com" && !host.endsWith(".bing.com")) return
+        val script = """
+            (function() {
+              if (window.__aiAdsBingCameraQualityPatched) return true;
+              var media = navigator.mediaDevices;
+              if (!media || typeof media.getUserMedia !== 'function') return false;
+              var original = media.getUserMedia.bind(media);
+              media.getUserMedia = function(constraints) {
+                var next = Object.assign({}, constraints || {});
+                if (next.video !== false) {
+                  var video = (next.video && typeof next.video === 'object') ? Object.assign({}, next.video) : {};
+                  video.width = { min: 640, ideal: 1920 };
+                  video.height = { min: 480, ideal: 1080 };
+                  video.frameRate = { min: 15, ideal: 30 };
+                  if (!video.facingMode) video.facingMode = { ideal: 'environment' };
+                  next.video = video;
+                }
+                return original(next).then(function(stream) {
+                  try {
+                    var track = stream.getVideoTracks && stream.getVideoTracks()[0];
+                    if (track && typeof track.applyConstraints === 'function') {
+                      track.applyConstraints({
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 },
+                        frameRate: { ideal: 30 },
+                        advanced: [{ focusMode: 'continuous' }]
+                      }).catch(function(){});
+                    }
+                  } catch (_) {}
+                  return stream;
+                });
+              };
+              window.__aiAdsBingCameraQualityPatched = true;
+              return true;
+            })();
+        """.trimIndent()
+        webView.evaluateJavascript(script, null)
+    }
+
+'''
+              if marker not in text:
+                  raise SystemExit('applyPortraitWebCompatibility marker missing')
+              text = text.replace(marker, shim + marker, 1)
+
+          # Rename stale user-facing text: this is the Bing web, not a taller "Web Big" mode.
+          text = text.replace(
+              'Izinkan akses kamera AI Ads Keyboard agar kamera Web Big dapat digunakan.',
+              'Izinkan akses kamera AI Ads Keyboard agar kamera Microsoft Bing dapat digunakan.',
+          )
+
+          service_path.write_text(text)
+
+          # 5) A WebView <input type=file> needs an ActivityResult owner. IME service alone cannot own it.
+          helper_path.write_text(r'''package com.riyan.aikeyboard
+
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Bundle
+import android.webkit.ValueCallback
+import androidx.appcompat.app.AppCompatActivity
+
+/**
+ * Owns the system image picker for WebView file inputs (for example Bing Visual Search).
+ * The IME remains the visible host; this tiny activity only bridges Activity Result back to WebView.
+ */
+class WebImagePickerActivity : AppCompatActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        if (savedInstanceState == null) openPicker()
+    }
+
+    private fun openPicker() {
+        val requested = pendingAcceptTypes
+            .orEmpty()
+            .map(String::trim)
+            .firstOrNull { it.startsWith("image/", ignoreCase = true) }
+            ?: "image/*"
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = requested
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }
+        runCatching { startActivityForResult(intent, REQUEST_PICK_IMAGE) }
+            .onFailure {
+                finishWithResult(null)
+            }
+    }
+
+    @Deprecated("Deprecated in Android SDK; kept for broad WebView compatibility")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQUEST_PICK_IMAGE) return
+        val uris = if (resultCode == RESULT_OK) {
+            buildList {
+                data?.clipData?.let { clip ->
+                    for (index in 0 until clip.itemCount) add(clip.getItemAt(index).uri)
+                }
+                data?.data?.let { if (it !in this) add(it) }
+            }.takeIf { it.isNotEmpty() }?.toTypedArray()
+        } else null
+        uris?.forEach { uri ->
+            runCatching {
+                contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+        }
+        finishWithResult(uris)
+    }
+
+    override fun onDestroy() {
+        if (isFinishing && !resultDelivered) finishWithResult(null)
+        super.onDestroy()
+    }
+
+    private fun finishWithResult(uris: Array<Uri>?) {
+        if (resultDelivered) return
+        resultDelivered = true
+        val callback = pendingCallback
+        pendingCallback = null
+        pendingAcceptTypes = null
+        callback?.onReceiveValue(uris)
+        finish()
+        @Suppress("DEPRECATION")
+        overridePendingTransition(0, 0)
+    }
+
+    private var resultDelivered = false
+
+    companion object {
+        private const val REQUEST_PICK_IMAGE = 9231
+        @Volatile private var pendingCallback: ValueCallback<Array<Uri>>? = null
+        @Volatile private var pendingAcceptTypes: Array<String>? = null
+
+        @Synchronized
+        fun launch(
+            context: Context,
+            callback: ValueCallback<Array<Uri>>,
+            acceptTypes: Array<String>?
+        ): Boolean {
+            pendingCallback?.onReceiveValue(null)
+            pendingCallback = callback
+            pendingAcceptTypes = acceptTypes
+            return runCatching {
+                context.startActivity(
+                    Intent(context, WebImagePickerActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+                )
+                true
+            }.getOrElse {
+                pendingCallback = null
+                pendingAcceptTypes = null
+                callback.onReceiveValue(null)
+                false
+            }
+        }
+    }
+}
+''')
+
+          manifest = manifest_path.read_text()
+          if '.WebImagePickerActivity' not in manifest:
+              activity = '''        <activity
+            android:name=".WebImagePickerActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+'''
+              anchor = '        <activity\n            android:name=".ThemePhotoPickerActivity"'
+              if anchor not in manifest:
+                  raise SystemExit('Manifest insertion point missing')
+              manifest = manifest.replace(anchor, activity + anchor, 1)
+              manifest_path.write_text(manifest)
+
+          print('Bing web camera/gallery root fix applied')
+          PY
+
+      - name: Commit patch
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt \
+                  app/src/main/java/com/riyan/aikeyboard/WebImagePickerActivity.kt \
+                  app/src/main/AndroidManifest.xml
+          if git diff --cached --quiet; then
+            echo "No changes needed"
+            exit 0
+          fi
+          git commit -m "fix: restore Bing web size and native camera gallery bridge"
+          git push origin HEAD:fix/scanner-zoom-visual-gallery-v1
