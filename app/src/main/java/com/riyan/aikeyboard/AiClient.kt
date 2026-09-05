@@ -137,7 +137,7 @@ object AiClient {
                     AiProvider.BLUESMINDS -> requestCompatibleVision(settings.bluesMindsApiKey, settings.bluesMindsBaseUrl, settings.bluesMindsModel, "BluesMinds", jpegBase64, localTextHint)
                     AiProvider.XKIRO -> requestCompatibleVision(settings.xKiroApiKey, settings.xKiroBaseUrl, settings.xKiroModel, "xKiro", jpegBase64, localTextHint)
                     AiProvider.ORCAROUTER -> requestCompatibleVision(settings.orcaRouterApiKey, settings.orcaRouterBaseUrl, settings.orcaRouterModel, "OrcaRouter", jpegBase64, localTextHint)
-                    AiProvider.AIHORDE -> throw IllegalStateException("AI Horde saat ini dipakai untuk chat; Vision otomatis mencoba provider vision berikutnya.")
+                    AiProvider.AIHORDE -> AiHordeAlchemyVision.request(settings, jpegBase64)
                 }
                 val query = normalizeVisionResult(raw)
                     ?: throw IllegalStateException("Model ${provider.label} tidak membuktikan bahwa gambar benar-benar dibaca.")
