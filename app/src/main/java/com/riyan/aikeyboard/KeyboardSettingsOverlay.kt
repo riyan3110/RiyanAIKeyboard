@@ -48,6 +48,12 @@ class KeyboardSettingsOverlay(
         var bluesMindsKey: String,
         var bluesMindsBaseUrl: String,
         var bluesMindsModel: String,
+        var xKiroKey: String,
+        var xKiroBaseUrl: String,
+        var xKiroModel: String,
+        var orcaRouterKey: String,
+        var orcaRouterBaseUrl: String,
+        var orcaRouterModel: String,
         var fallbackEnabled: Boolean,
         var referenceUrls: String,
         var styleMemoryEnabled: Boolean,
@@ -227,7 +233,7 @@ class KeyboardSettingsOverlay(
 
     private fun renderModelTab() {
         body.addView(section("Penyedia AI Utama"))
-        val providers = listOf(AiProvider.OPENROUTER, AiProvider.TABIAI, AiProvider.NINEROUTER, AiProvider.BLUESMINDS)
+        val providers = listOf(AiProvider.OPENROUTER, AiProvider.TABIAI, AiProvider.NINEROUTER, AiProvider.BLUESMINDS, AiProvider.XKIRO, AiProvider.ORCAROUTER)
         val grid = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
         providers.chunked(2).forEach { rowItems ->
             val row = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
@@ -274,6 +280,16 @@ class KeyboardSettingsOverlay(
                 config.addView(textInput("API Key BluesMinds", draft.bluesMindsKey, secret = true) { draft.bluesMindsKey = it })
                 config.addView(textInput("Base URL BluesMinds", draft.bluesMindsBaseUrl) { draft.bluesMindsBaseUrl = it })
                 config.addView(textInput("Nama Model", draft.bluesMindsModel) { draft.bluesMindsModel = it })
+            }
+            AiProvider.XKIRO -> {
+                config.addView(textInput("API Key xKiro", draft.xKiroKey, secret = true) { draft.xKiroKey = it })
+                config.addView(textInput("Base URL xKiro", draft.xKiroBaseUrl) { draft.xKiroBaseUrl = it })
+                config.addView(textInput("Nama Model", draft.xKiroModel) { draft.xKiroModel = it })
+            }
+            AiProvider.ORCAROUTER -> {
+                config.addView(textInput("API Key OrcaRouter", draft.orcaRouterKey, secret = true) { draft.orcaRouterKey = it })
+                config.addView(textInput("Base URL OrcaRouter", draft.orcaRouterBaseUrl) { draft.orcaRouterBaseUrl = it })
+                config.addView(textInput("Nama Model", draft.orcaRouterModel) { draft.orcaRouterModel = it })
             }
         }
         body.addView(config, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
@@ -450,6 +466,12 @@ class KeyboardSettingsOverlay(
             .putString("bluesminds_api_key", draft.bluesMindsKey.trim())
             .putString("bluesminds_base_url", draft.bluesMindsBaseUrl.trim().ifBlank { "https://api.bluesminds.com/v1" })
             .putString("bluesminds_model", draft.bluesMindsModel.trim().ifBlank { "deepseek-ai/deepseek-v4-flash" })
+            .putString("xkiro_api_key", draft.xKiroKey.trim())
+            .putString("xkiro_base_url", draft.xKiroBaseUrl.trim().ifBlank { "https://api.xkiro.com/v1" })
+            .putString("xkiro_model", draft.xKiroModel.trim().ifBlank { "openai/gpt-5.6-sol" })
+            .putString("orcarouter_api_key", draft.orcaRouterKey.trim())
+            .putString("orcarouter_base_url", draft.orcaRouterBaseUrl.trim().ifBlank { "https://api.orcarouter.ai/v1" })
+            .putString("orcarouter_model", draft.orcaRouterModel.trim().ifBlank { "orcarouter/free" })
             .putBoolean("fallback_enabled", draft.fallbackEnabled)
             .putString("reference_urls", draft.referenceUrls.trim())
             .putBoolean("style_memory_enabled", draft.styleMemoryEnabled)
@@ -501,6 +523,12 @@ class KeyboardSettingsOverlay(
         bluesMindsKey = prefs.getString("bluesminds_api_key", "").orEmpty(),
         bluesMindsBaseUrl = prefs.getString("bluesminds_base_url", "https://api.bluesminds.com/v1").orEmpty(),
         bluesMindsModel = prefs.getString("bluesminds_model", "deepseek-ai/deepseek-v4-flash").orEmpty(),
+        xKiroKey = prefs.getString("xkiro_api_key", "").orEmpty(),
+        xKiroBaseUrl = prefs.getString("xkiro_base_url", "https://api.xkiro.com/v1").orEmpty(),
+        xKiroModel = prefs.getString("xkiro_model", "openai/gpt-5.6-sol").orEmpty(),
+        orcaRouterKey = prefs.getString("orcarouter_api_key", "").orEmpty(),
+        orcaRouterBaseUrl = prefs.getString("orcarouter_base_url", "https://api.orcarouter.ai/v1").orEmpty(),
+        orcaRouterModel = prefs.getString("orcarouter_model", "orcarouter/free").orEmpty(),
         fallbackEnabled = prefs.getBoolean("fallback_enabled", false),
         referenceUrls = prefs.getString("reference_urls", "").orEmpty(),
         styleMemoryEnabled = prefs.getBoolean("style_memory_enabled", true),
@@ -539,6 +567,12 @@ class KeyboardSettingsOverlay(
         bluesMindsKey = draft.bluesMindsKey,
         bluesMindsBaseUrl = "https://api.bluesminds.com/v1",
         bluesMindsModel = "deepseek-ai/deepseek-v4-flash",
+        xKiroKey = draft.xKiroKey,
+        xKiroBaseUrl = "https://api.xkiro.com/v1",
+        xKiroModel = "openai/gpt-5.6-sol",
+        orcaRouterKey = draft.orcaRouterKey,
+        orcaRouterBaseUrl = "https://api.orcarouter.ai/v1",
+        orcaRouterModel = "orcarouter/free",
         fallbackEnabled = false,
         referenceUrls = "",
         styleMemoryEnabled = true,
@@ -569,6 +603,8 @@ class KeyboardSettingsOverlay(
         AiProvider.TABIAI -> "TabiAI"
         AiProvider.NINEROUTER -> "9Router"
         AiProvider.BLUESMINDS -> "BluesMinds"
+        AiProvider.XKIRO -> "xKiro"
+        AiProvider.ORCAROUTER -> "OrcaRouter"
     }
 
     private fun textInput(
