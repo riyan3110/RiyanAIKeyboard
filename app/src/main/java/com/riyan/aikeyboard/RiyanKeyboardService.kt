@@ -2043,8 +2043,7 @@ class RiyanKeyboardService : InputMethodService() {
 
     private fun searchHeaderHeightDp(): Int = if (isLandscape()) 27 else 34
 
-    private fun searchSurfaceHeightDp(): Int =
-        if (searchWebBigMode) webBigSurfaceHeightDp() else scannerSurfaceHeightDp()
+    private fun searchSurfaceHeightDp(): Int = scannerSurfaceHeightDp()
 
     private fun scannerSurfaceHeightDp(): Int {
         val density = resources.displayMetrics.density
@@ -2056,17 +2055,6 @@ class RiyanKeyboardService : InputMethodService() {
             val proportionalHeight = (screenHeightDp * 0.50f).toInt().coerceIn(270, 480)
             val portraitViewportHeight = screenWidthDp + searchHeaderHeightDp() + 14
             maxOf(proportionalHeight, portraitViewportHeight).coerceAtMost(480)
-        }
-    }
-
-    private fun webBigSurfaceHeightDp(): Int {
-        val density = resources.displayMetrics.density
-        val screenHeightDp = (resources.displayMetrics.heightPixels / density).toInt()
-        return if (isLandscape()) {
-            (screenHeightDp * 0.60f).toInt().coerceIn(170, 300)
-        } else {
-            // Web Big is deliberately a different mode, not the camera panel with a WebView in it.
-            (screenHeightDp * 0.70f).toInt().coerceIn(340, 560)
         }
     }
 
@@ -3187,7 +3175,6 @@ resultCard.bringToFront()
     }
 
     private fun showSearchWebPanel() {
-        searchWebBigMode = true
         internalGalleryPanel?.release()
         internalGalleryPanel = null
         destroySearchWebView()
@@ -3247,8 +3234,10 @@ resultCard.bringToFront()
         var userTouchedPage = false
         val webView = WebView(this).apply {
             setBackgroundColor(Color.WHITE)
+            setLayerType(View.LAYER_TYPE_HARDWARE, null)
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) settings.offscreenPreRaster = true
             settings.cacheMode = WebSettings.LOAD_DEFAULT
             settings.loadsImagesAutomatically = true
             settings.useWideViewPort = true
@@ -3282,13 +3271,27 @@ resultCard.bringToFront()
                             if (videoRequested && !cameraGranted) {
                                 Toast.makeText(
                                     this@RiyanKeyboardService,
-                                    "Izinkan akses kamera AI Ads Keyboard agar kamera Web Big dapat digunakan.",
+                                    "Izinkan akses kamera AI Ads Keyboard agar kamera Microsoft Bing dapat digunakan.",
                                     Toast.LENGTH_SHORT
                                 ).show()
                             }
                         }
                     }
                 }
+
+                override fun onShowFileChooser(
+                    webView: WebView?,
+                    filePathCallback: android.webkit.ValueCallback<Array<Uri>>?,
+                    fileChooserParams: android.webkit.WebChromeClient.FileChooserParams?
+                ): Boolean {
+                    filePathCallback ?: return false
+                    return WebImagePickerActivity.launch(
+                        context = this@RiyanKeyboardService,
+                        callback = filePathCallback,
+                        acceptTypes = fileChooserParams?.acceptTypes
+                    )
+                }
+
             }
             setOnTouchListener { view, event ->
                 when (event.actionMasked) {
@@ -3309,6 +3312,7 @@ resultCard.bringToFront()
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
                     view ?: return
+                    installBingCameraQualityShim(view, url)
                     applyPortraitWebCompatibility(view)
                     view.postDelayed({
                         applyPortraitWebCompatibility(view)
@@ -3357,6 +3361,47 @@ resultCard.bringToFront()
      * wider than it was tall after the keyboard consumed the lower half of the screen, causing
      * responsive sites to cover their content with a misleading rotate-device message.
      */
+    private fun installBingCameraQualityShim(webView: WebView, rawUrl: String?) {
+        val host = runCatching { Uri.parse(rawUrl.orEmpty()).host.orEmpty().lowercase() }.getOrDefault("")
+        if (host != "bing.com" && !host.endsWith(".bing.com")) return
+        val script = """
+            (function() {
+              if (window.__aiAdsBingCameraQualityPatched) return true;
+              var media = navigator.mediaDevices;
+              if (!media || typeof media.getUserMedia !== 'function') return false;
+              var original = media.getUserMedia.bind(media);
+              media.getUserMedia = function(constraints) {
+                var next = Object.assign({}, constraints || {});
+                if (next.video !== false) {
+                  var video = (next.video && typeof next.video === 'object') ? Object.assign({}, next.video) : {};
+                  video.width = { min: 640, ideal: 1920 };
+                  video.height = { min: 480, ideal: 1080 };
+                  video.frameRate = { min: 15, ideal: 30 };
+                  if (!video.facingMode) video.facingMode = { ideal: 'environment' };
+                  next.video = video;
+                }
+                return original(next).then(function(stream) {
+                  try {
+                    var track = stream.getVideoTracks && stream.getVideoTracks()[0];
+                    if (track && typeof track.applyConstraints === 'function') {
+                      track.applyConstraints({
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 },
+                        frameRate: { ideal: 30 },
+                        advanced: [{ focusMode: 'continuous' }]
+                      }).catch(function(){});
+                    }
+                  } catch (_) {}
+                  return stream;
+                });
+              };
+              window.__aiAdsBingCameraQualityPatched = true;
+              return true;
+            })();
+        """.trimIndent()
+        webView.evaluateJavascript(script, null)
+    }
+
     private fun applyPortraitWebCompatibility(webView: WebView) {
         if (isLandscape() || searchWebView !== webView) return
         val script = """
@@ -3706,7 +3751,7 @@ resultCard.bringToFront()
                     android.util.Base64.encodeToString(output.toByteArray(), android.util.Base64.NO_WRAP)
                 }.getOrNull()
 
-                val visualUrl = uploadBitmapForVisualSearch(prepared, "")
+                val visualUrl: String? = null // Microsoft Bing remains the embedded visual-search surface.
                 val result = if (encoded.isNullOrBlank()) {
                     Result.failure<AiResponse>(IllegalStateException("Foto kamera gagal disiapkan."))
                 } else {
@@ -3780,7 +3825,7 @@ resultCard.bringToFront()
                 check(prepared.compress(Bitmap.CompressFormat.JPEG, 92, output))
                 android.util.Base64.encodeToString(output.toByteArray(), android.util.Base64.NO_WRAP)
             }.getOrNull()
-            val visualUrl = uploadBitmapForVisualSearch(prepared, "")
+            val visualUrl: String? = null // Microsoft Bing remains the embedded visual-search surface.
             val result = if (encoded.isNullOrBlank()) {
                 Result.failure<AiResponse>(IllegalStateException("Gambar galeri gagal disiapkan."))
             } else {
@@ -4079,7 +4124,7 @@ resultCard.bringToFront()
 
     private fun googleSearchUrl(query: String): String = Uri.Builder()
         .scheme("https")
-        .authority("www.google.com")
+        .authority("www.bing.com")
         .path("search")
         .appendQueryParameter("q", query)
         .build()
