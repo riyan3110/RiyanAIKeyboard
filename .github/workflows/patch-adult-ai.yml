@@ -1,0 +1,100 @@
+name: Patch adult AI wording
+
+on:
+  push:
+    branches:
+      - fix/adult-vision-person-labels
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, '[adult-ai-patch]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Patch AiClient prompts and person labels
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('app/src/main/java/com/riyan/aikeyboard/AiClient.kt')
+          text = path.read_text(encoding='utf-8')
+
+          old_chat = 'Jangan mengaku telah melakukan tindakan yang tidak dilakukan dan jangan menjelaskan proses deteksi bahasa.'
+          new_chat = old_chat + ' Untuk konteks orang dewasa (18+), gunakan istilah anatomi dan seksual yang lugas bila memang relevan—misalnya payudara, puting, vulva, vagina, penis, skrotum, bokong, dan anus—tanpa eufemisme yang tidak perlu. Bila membicarakan seseorang yang jelas wanita dewasa, sebut “wanita” secara natural, bukan “orang/manusia wanita”; untuk pria gunakan “pria”. Jangan mencoba mengidentifikasi orang nyata, dan jangan membuat deskripsi seksual tentang anak atau orang yang usianya tidak jelas.'
+          if old_chat not in text:
+              raise SystemExit('chat instruction marker not found')
+          text = text.replace(old_chat, new_chat, 1)
+
+          old_vision = 'Jika manusia nyata terlihat, cukup klasifikasikan sebagai person dan jelaskan ciri visual non-sensitif yang relevan; jangan mencoba menentukan identitas orang. '
+          new_vision = (
+              'Jika manusia nyata terlihat, klasifikasikan sebagai person dan jangan mencoba menentukan identitas orang. '
+              'Untuk subjek yang jelas dewasa, gunakan sebutan ringkas yang terlihat paling tepat: “wanita” atau “pria”; jangan menulis “orang/manusia wanita” atau “orang/manusia pria”. '
+              'Jika wanita dewasa terlihat, query cukup diawali “wanita”; jika pria dewasa, cukup “pria”; jika jenis kelamin/presentasi tidak jelas, gunakan “orang dewasa”. '
+              'Untuk orang dewasa, kenali bagian tubuh sensitif yang benar-benar terlihat dan sebut dengan istilah anatomi yang tepat dan lugas dalam query/evidence, termasuk payudara, puting, vulva, penis, skrotum, bokong, atau anus; gunakan “vagina” hanya jika konteks memang merujuk vagina, bukan sekadar bagian luar yang sebenarnya vulva. '
+              'Jangan menyamarkan bagian tubuh dewasa dengan eufemisme. Jika subjek tampak di bawah 18 tahun atau usia dewasa tidak dapat dipastikan, jangan menambahkan deskripsi seksual atau bagian tubuh sensitif; gunakan deskripsi netral. '
+          )
+          if old_vision not in text:
+              raise SystemExit('vision instruction marker not found')
+          text = text.replace(old_vision, new_vision, 1)
+
+          marker = '    private fun normalizeVisionResult(raw: String): String? {'
+          helpers = r'''    private fun normalizePersonQueryLabel(rawQuery: String): String {
+        var query = rawQuery.trim()
+        query = query
+            .replace(Regex("(?i)^\\s*(orang\\s*/\\s*manusia|orang|manusia)\\s+(wanita|perempuan)\\b"), "wanita")
+            .replace(Regex("(?i)^\\s*(orang\\s*/\\s*manusia|orang|manusia)\\s+(pria|laki-laki|lelaki)\\b"), "pria")
+            .replace(Regex("(?i)^\\s*perempuan\\b"), "wanita")
+            .replace(Regex("(?i)^\\s*(laki-laki|lelaki)\\b"), "pria")
+            .replace(Regex("(?i)^\\s*orang\\s*/\\s*manusia\\b"), "orang")
+            .replace(Regex("(?i)^\\s*manusia\\b"), "orang")
+        return query.replace(Regex("\\s+"), " ").trim()
+    }
+
+    private fun preferredPersonPrefix(rawQuery: String): String {
+        val clean = rawQuery.lowercase()
+        return when {
+            Regex("\\b(wanita|perempuan|woman|female)\\b").containsMatchIn(clean) -> "wanita"
+            Regex("\\b(pria|laki-laki|lelaki|man|male)\\b").containsMatchIn(clean) -> "pria"
+            else -> "orang"
+        }
+    }
+
+'''
+          if marker not in text:
+              raise SystemExit('normalizeVisionResult marker not found')
+          text = text.replace(marker, helpers + marker, 1)
+
+          old_query = '        var query = obj.optString("query").trim().replace(Regex("\\\\s+"), " ")\n        if (subject.isBlank() || subject == "unknown" || query.isBlank() || confidence < 0.30) return null'
+          new_query = '        var query = obj.optString("query").trim().replace(Regex("\\\\s+"), " ")\n        if (subject == "person") query = normalizePersonQueryLabel(query)\n        if (subject.isBlank() || subject == "unknown" || query.isBlank() || confidence < 0.30) return null'
+          if old_query not in text:
+              raise SystemExit('query normalization marker not found')
+          text = text.replace(old_query, new_query, 1)
+
+          old_prefix = '            "person" -> "orang/manusia"'
+          new_prefix = '            "person" -> preferredPersonPrefix(query)'
+          if old_prefix not in text:
+              raise SystemExit('person prefix marker not found')
+          text = text.replace(old_prefix, new_prefix, 1)
+
+          path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Commit patch
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No patch needed"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/com/riyan/aikeyboard/AiClient.kt
+          git commit -m "[adult-ai-patch] Refine adult vision labels and terminology"
+          git push origin HEAD:${GITHUB_REF_NAME}
