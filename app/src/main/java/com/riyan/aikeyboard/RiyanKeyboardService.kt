@@ -3778,11 +3778,11 @@ resultCard.bringToFront()
         .firstOrNull { it.isNotBlank() }
         .orEmpty()
     val cleaned = line
-        .replace(Regex("(?i)^(?:query|search query|pencarian|hasil)\s*:\s*"), "")
-        .replace(Regex("\s+"), " ")
+        .replace(Regex("(?i)^(?:query|search query|pencarian|hasil)\\s*:\\s*"), "")
+        .replace(Regex("\\s+"), " ")
         .trim()
     val filler = setOf("the", "a", "an", "and", "in", "with", "setting", "of", "at", "on", "yang", "sedang", "terlihat")
-    return cleaned.split(Regex("\s+"))
+    return cleaned.split(Regex("\\s+"))
         .filter { it.isNotBlank() && it.lowercase() !in filler }
         .take(7)
         .joinToString(" ")
