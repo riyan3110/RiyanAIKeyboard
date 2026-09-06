@@ -213,9 +213,12 @@ object AiHordeAlchemyVision {
 
         val clothing = bestClothingDescription(translatedCaption, translatedTagTexts)
         val color = bestColorDescription(translatedCaption, translatedTagTexts)
+        val view = bestViewDescription(rawCaption, rawTags)
+        val bodyShape = bestBodyShapeDescription(rawCaption, rawTags, clothing, view, ageUnclear)
 
         val tokens = mutableListOf<String>()
         tokens += subject
+        if (view.isNotBlank()) tokens += view.split(Regex("\\s+"))
         if (clothing.isNotBlank()) {
             tokens += clothing.split(Regex("\\s+"))
         } else {
@@ -225,7 +228,8 @@ object AiHordeAlchemyVision {
                 rawCombined.contains("briefs") || rawCombined.contains("lingerie")
             if (genericLowerWear) tokens += listOf("pakaian", "bawah")
         }
-        if (color.isNotBlank() && color !in tokens) tokens += color
+        if (bodyShape.isNotBlank()) tokens += bodyShape.split(Regex("\\s+"))
+        if (color.isNotBlank() && color !in tokens && tokens.size <= 7) tokens += color
 
         // Direct exposure terms may only come from the caption, never from a tag by itself, and
         // never when clothing covering that area is present.
@@ -246,9 +250,9 @@ object AiHordeAlchemyVision {
             .map { it.lowercase().trim() }
             .filter { it.isNotBlank() && it !in QUERY_NOISE }
             .distinct()
-            .take(7)
+            .take(9)
             .joinToString(" ")
-            .take(64)
+            .take(80)
             .trim()
     }
 
@@ -290,6 +294,54 @@ object AiHordeAlchemyVision {
         }
     }
 
+    private fun bestViewDescription(rawCaption: String, rawTags: List<Pair<String, Double>>): String {
+        val strongTags = rawTags
+            .filter { it.second >= 0.42 }
+            .joinToString(" ") { it.first.lowercase() }
+        val source = (rawCaption.lowercase() + " " + strongTags).replace(Regex("\\s+"), " ")
+        return when {
+            Regex("\\b(from behind|seen from behind|back view|rear view|backside view|facing away)\\b", RegexOption.IGNORE_CASE)
+                .containsMatchIn(source) -> "dari belakang"
+            Regex("\\b(from the side|side view|profile view)\\b", RegexOption.IGNORE_CASE)
+                .containsMatchIn(source) -> "dari samping"
+            Regex("\\b(from the front|front view|facing camera)\\b", RegexOption.IGNORE_CASE)
+                .containsMatchIn(source) -> "dari depan"
+            else -> ""
+        }
+    }
+
+    private fun bestBodyShapeDescription(
+        rawCaption: String,
+        rawTags: List<Pair<String, Double>>,
+        clothing: String,
+        view: String,
+        ageUnclear: Boolean
+    ): String {
+        if (ageUnclear) return ""
+        val adultEvidence = Regex("\\b(adult woman|woman|women|female)\\b", RegexOption.IGNORE_CASE)
+            .containsMatchIn(rawCaption) || rawTags.any { (text, confidence) ->
+                confidence >= 0.55 && Regex("\\b(woman|women|female)\\b", RegexOption.IGNORE_CASE).containsMatchIn(text)
+            }
+        if (!adultEvidence) return ""
+
+        val strongTags = rawTags
+            .filter { it.second >= 0.52 }
+            .joinToString(" ") { it.first.lowercase() }
+        val source = (rawCaption.lowercase() + " " + strongTags).replace(Regex("\\s+"), " ")
+        val lowerBodyCovered = clothing.contains("celana") || clothing.contains("legging") ||
+            clothing.contains("rok") || clothing.contains("gaun") || clothing.contains("baju renang") ||
+            clothing.contains("bikini") || clothing.contains("pakaian bawah")
+
+        val clearlyLargeButt = Regex(
+            "\\b(big|large|prominent|full|curvy)\\s+(ass|butt|buttocks|booty)\\b|" +
+                "\\b(ass|butt|buttocks|booty)\\s+(looks|appears|is)?\\s*(big|large|prominent|full)\\b",
+            RegexOption.IGNORE_CASE
+        ).containsMatchIn(source)
+        return if (view == "dari belakang" && lowerBodyCovered && clearlyLargeButt) {
+            "bokong terlihat besar"
+        } else ""
+    }
+
     private fun bestColorDescription(caption: String, tags: List<String>): String {
         val captionLower = caption.lowercase()
         val tagLower = tags.joinToString(" ").lowercase()
@@ -306,6 +358,18 @@ object AiHordeAlchemyVision {
         if (text.isBlank()) return ""
 
         val phrases = listOf(
+            "from behind" to "dari belakang",
+            "seen from behind" to "dari belakang",
+            "back view" to "dari belakang",
+            "rear view" to "dari belakang",
+            "big buttocks" to "bokong besar",
+            "large buttocks" to "bokong besar",
+            "big butt" to "bokong besar",
+            "large butt" to "bokong besar",
+            "big ass" to "bokong besar",
+            "large ass" to "bokong besar",
+            "form-fitting shorts" to "celana pendek ketat",
+            "fitted shorts" to "celana pendek ketat",
             "athletic shorts" to "celana pendek",
             "gym shorts" to "celana pendek",
             "tight shorts" to "celana pendek ketat",
