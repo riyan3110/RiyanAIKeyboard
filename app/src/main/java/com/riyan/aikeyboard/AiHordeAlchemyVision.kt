@@ -337,26 +337,25 @@ object AiHordeAlchemyVision {
         ageUnclear: Boolean
     ): String {
         if (ageUnclear) return ""
-        val adultEvidence = Regex("\b(adult woman|woman|women|female)\b", RegexOption.IGNORE_CASE)
+        val adultEvidence = Regex("""\b(adult woman|woman|women|female)\b""", RegexOption.IGNORE_CASE)
             .containsMatchIn(rawCaption) || rawTags.any { (text, confidence) ->
-                confidence >= 0.35 && Regex("\b(woman|women|female)\b", RegexOption.IGNORE_CASE).containsMatchIn(text)
+                confidence >= 0.35 && Regex("""\b(woman|women|female)\b""", RegexOption.IGNORE_CASE).containsMatchIn(text)
             }
         if (!adultEvidence) return ""
 
         val usableTags = rawTags.filter { it.second >= 0.18 }
         val source = (rawCaption.lowercase() + " " + usableTags.joinToString(" ") { it.first.lowercase() })
-            .replace(Regex("\s+"), " ")
+            .replace(Regex("""\s+"""), " ")
         val lowerBodyCovered = clothing.contains("celana") || clothing.contains("legging") ||
             clothing.contains("rok") || clothing.contains("gaun") || clothing.contains("baju renang") ||
             clothing.contains("bikini") || clothing.contains("pakaian bawah")
 
-        val buttPattern = Regex("\b(ass|butt|buttocks|booty|backside)\b", RegexOption.IGNORE_CASE)
-        val sizePattern = Regex("\b(big|large|prominent|full|curvy|thick|thicc|round|voluptuous|shapely)\b", RegexOption.IGNORE_CASE)
+        val buttPattern = Regex("""\b(ass|butt|buttocks|booty|backside)\b""", RegexOption.IGNORE_CASE)
+        val sizePattern = Regex("""\b(big|large|prominent|full|curvy|thick|thicc|round|voluptuous|shapely)\b""", RegexOption.IGNORE_CASE)
         val buttVisible = buttPattern.containsMatchIn(rawCaption) || usableTags.any { buttPattern.containsMatchIn(it.first) }
         val sizeEvidence = sizePattern.containsMatchIn(rawCaption) || usableTags.any { sizePattern.containsMatchIn(it.first) }
         val explicitlyLargeButt = Regex(
-            "\b(big|large|prominent|full|curvy|thick|thicc|round|voluptuous|shapely)\s+(ass|butt|buttocks|booty|backside)\b|" +
-                "\b(ass|butt|buttocks|booty|backside)\s+(looks|appears|is)?\s*(big|large|prominent|full|round|curvy|thick)\b",
+            """\b(big|large|prominent|full|curvy|thick|thicc|round|voluptuous|shapely)\s+(ass|butt|buttocks|booty|backside)\b|\b(ass|butt|buttocks|booty|backside)\s+(looks|appears|is)?\s*(big|large|prominent|full|round|curvy|thick)\b""",
             RegexOption.IGNORE_CASE
         ).containsMatchIn(source)
 
