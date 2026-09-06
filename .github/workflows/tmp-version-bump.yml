@@ -1,0 +1,89 @@
+name: Temporary version bump
+
+on:
+  push:
+    branches: [ fix/vision-query-pan-zoom ]
+    paths: [ '.github/workflows/tmp-version-bump.yml' ]
+
+permissions:
+  contents: write
+
+jobs:
+  bump-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/vision-query-pan-zoom
+
+      - name: Bump app test version
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          gradle = Path('app/build.gradle.kts')
+          text = gradle.read_text()
+          text = text.replace('versionCode = 27', 'versionCode = 28')
+          text = text.replace('versionName = "0.21.6-test-settings-input-gallery"', 'versionName = "0.21.7-test-vision-pan-zoom-performance"')
+          text = text.replace('val previous = """text = "AI Ads Keyboard · v0.21.5 test""""', 'val previous = """text = "AI Ads Keyboard · v0.21.6 test""""')
+          text = text.replace('val visible = """text = "AI Ads Keyboard · v0.21.6 test""""', 'val visible = """text = "AI Ads Keyboard · v0.21.7 test""""')
+          gradle.write_text(text)
+
+          strings = Path('app/src/main/res/values/strings.xml')
+          s = strings.read_text()
+          s = s.replace('<string name="app_name">AI Ads Keyboard</string>', '<string name="app_name">AI Ads Keyboard v0.21.7 test</string>')
+          strings.write_text(s)
+          PY
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Restore stable debug signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.riyan-ai-keyboard/debug.keystore
+          key: ${{ runner.os }}-riyan-ai-debug-keystore-v2
+
+      - name: Create signing key when missing
+        shell: bash
+        run: |
+          mkdir -p "$HOME/.riyan-ai-keyboard"
+          if [ ! -f "$HOME/.riyan-ai-keyboard/debug.keystore" ]; then
+            keytool -genkeypair \
+              -keystore "$HOME/.riyan-ai-keyboard/debug.keystore" \
+              -storepass android \
+              -alias androiddebugkey \
+              -keypass android \
+              -dname "CN=Riyan AI Keyboard Debug,O=Riyan,C=ID" \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000
+          fi
+
+      - name: Build debug APK
+        run: RIYAN_KEYSTORE_PATH="$HOME/.riyan-ai-keyboard/debug.keystore" gradle :app:assembleDebug
+
+      - name: Commit version bump and remove temporary workflow
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/tmp-version-bump.yml
+          git add app/build.gradle.kts app/src/main/res/values/strings.xml
+          git commit -m "chore: bump AI Ads Keyboard to v0.21.7 test"
+          git push origin HEAD:fix/vision-query-pan-zoom
+
+      - name: Upload versioned APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: AI-Ads-Keyboard-v0.21.7-test
+          path: app/build/outputs/apk/debug/app-debug.apk
