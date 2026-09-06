@@ -44,6 +44,19 @@ jobs:
               -validity 10000
           fi
 
+      - name: Apply persistent test-build version metadata
+        shell: bash
+        run: |
+          if [ -f app/build-version.txt ]; then
+            VERSION_NAME=$(tr -d '\r\n' < app/build-version.txt)
+            sed -i -E "s/versionName = \"[^\"]+\"/versionName = \"$VERSION_NAME\"/" app/build.gradle.kts
+          fi
+          if [ -f app/build-code.txt ]; then
+            VERSION_CODE=$(tr -d '\r\n' < app/build-code.txt)
+            sed -i -E "s/versionCode = [0-9]+/versionCode = $VERSION_CODE/" app/build.gradle.kts
+          fi
+          grep -E 'version(Code|Name)' app/build.gradle.kts
+
       - name: Build test APK
         run: RIYAN_KEYSTORE_PATH="$HOME/.riyan-ai-keyboard/debug.keystore" gradle :app:assembleDebug
 
