@@ -1,0 +1,159 @@
+name: Tune natural vision and chat
+
+on:
+  push:
+    branches:
+      - fix/short-vision-query-search-engine-natural-adult
+    paths:
+      - .github/workflows/tune-natural-vision-chat.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/short-vision-query-search-engine-natural-adult
+          fetch-depth: 0
+
+      - name: Make AI Horde vision and chat more natural
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          # --- AI Horde Alchemy vision query ---
+          p = Path('app/src/main/java/com/riyan/aikeyboard/AiHordeAlchemyVision.kt')
+          s = p.read_text()
+
+          old = '''        val clothing = bestClothingDescription(translatedCaption, translatedTagTexts)\n        val color = bestColorDescription(translatedCaption, translatedTagTexts)\n\n        val tokens = mutableListOf<String>()\n        tokens += subject\n'''
+          new = '''        val clothing = bestClothingDescription(translatedCaption, translatedTagTexts)\n        val color = bestColorDescription(translatedCaption, translatedTagTexts)\n        val view = bestViewDescription(rawCaption, rawTags)\n        val bodyShape = bestBodyShapeDescription(rawCaption, rawTags, clothing, view, ageUnclear)\n\n        val tokens = mutableListOf<String>()\n        tokens += subject\n        if (view.isNotBlank()) tokens += view.split(Regex("\\\\s+"))\n'''
+          if old not in s:
+              raise SystemExit('Alchemy anchor 1 not found')
+          s = s.replace(old, new, 1)
+
+          old = '''            if (genericLowerWear) tokens += listOf("pakaian", "bawah")\n        }\n        if (color.isNotBlank() && color !in tokens) tokens += color\n'''
+          new = '''            if (genericLowerWear) tokens += listOf("pakaian", "bawah")\n        }\n        if (bodyShape.isNotBlank()) tokens += bodyShape.split(Regex("\\\\s+"))\n        if (color.isNotBlank() && color !in tokens && tokens.size <= 7) tokens += color\n'''
+          if old not in s:
+              raise SystemExit('Alchemy anchor 2 not found')
+          s = s.replace(old, new, 1)
+
+          old = '''            .distinct()\n            .take(7)\n            .joinToString(" ")\n            .take(64)\n            .trim()\n    }\n\n    private fun bestClothingDescription'''
+          new = '''            .distinct()\n            .take(9)\n            .joinToString(" ")\n            .take(80)\n            .trim()\n    }\n\n    private fun bestClothingDescription'''
+          if old not in s:
+              raise SystemExit('Alchemy anchor 3 not found')
+          s = s.replace(old, new, 1)
+
+          marker = '''    private fun bestColorDescription(caption: String, tags: List<String>): String {'''
+          helper = r'''    private fun bestViewDescription(rawCaption: String, rawTags: List<Pair<String, Double>>): String {
+        val strongTags = rawTags
+            .filter { it.second >= 0.42 }
+            .joinToString(" ") { it.first.lowercase() }
+        val source = (rawCaption.lowercase() + " " + strongTags).replace(Regex("\\s+"), " ")
+        return when {
+            Regex("\\b(from behind|seen from behind|back view|rear view|backside view|facing away)\\b", RegexOption.IGNORE_CASE)
+                .containsMatchIn(source) -> "dari belakang"
+            Regex("\\b(from the side|side view|profile view)\\b", RegexOption.IGNORE_CASE)
+                .containsMatchIn(source) -> "dari samping"
+            Regex("\\b(from the front|front view|facing camera)\\b", RegexOption.IGNORE_CASE)
+                .containsMatchIn(source) -> "dari depan"
+            else -> ""
+        }
+    }
+
+    private fun bestBodyShapeDescription(
+        rawCaption: String,
+        rawTags: List<Pair<String, Double>>,
+        clothing: String,
+        view: String,
+        ageUnclear: Boolean
+    ): String {
+        if (ageUnclear) return ""
+
+        val adultEvidence = Regex("\\b(adult woman|woman|women|female)\\b", RegexOption.IGNORE_CASE)
+            .containsMatchIn(rawCaption) || rawTags.any { (text, confidence) ->
+                confidence >= 0.55 && Regex("\\b(woman|women|female)\\b", RegexOption.IGNORE_CASE).containsMatchIn(text)
+            }
+        if (!adultEvidence) return ""
+
+        val strongTags = rawTags
+            .filter { it.second >= 0.52 }
+            .joinToString(" ") { it.first.lowercase() }
+        val source = (rawCaption.lowercase() + " " + strongTags).replace(Regex("\\s+"), " ")
+        val lowerBodyCovered = clothing.contains("celana") || clothing.contains("legging") ||
+            clothing.contains("rok") || clothing.contains("gaun") || clothing.contains("baju renang") ||
+            clothing.contains("bikini") || clothing.contains("pakaian bawah")
+
+        // Shape is allowed when it is directly supported by caption/high-confidence tags.
+        // Covered anatomy stays covered: this never turns fitted clothing into "bokong terbuka".
+        val clearlyLargeButt = Regex(
+            "\\b(big|large|prominent|full|curvy)\\s+(ass|butt|buttocks|booty)\\b|" +
+                "\\b(ass|butt|buttocks|booty)\\s+(looks|appears|is)?\\s*(big|large|prominent|full)\\b",
+            RegexOption.IGNORE_CASE
+        ).containsMatchIn(source)
+        return if (view == "dari belakang" && lowerBodyCovered && clearlyLargeButt) {
+            "bokong terlihat besar"
+        } else ""
+    }
+
+'''
+          if marker not in s:
+              raise SystemExit('Alchemy helper marker not found')
+          s = s.replace(marker, helper + marker, 1)
+
+          phrase_anchor = '''            "athletic shorts" to "celana pendek",\n            "gym shorts" to "celana pendek",\n            "tight shorts" to "celana pendek ketat",'''
+          phrase_repl = '''            "from behind" to "dari belakang",\n            "seen from behind" to "dari belakang",\n            "back view" to "dari belakang",\n            "rear view" to "dari belakang",\n            "big buttocks" to "bokong besar",\n            "large buttocks" to "bokong besar",\n            "big butt" to "bokong besar",\n            "large butt" to "bokong besar",\n            "big ass" to "bokong besar",\n            "large ass" to "bokong besar",\n            "form-fitting shorts" to "celana pendek ketat",\n            "fitted shorts" to "celana pendek ketat",\n            "athletic shorts" to "celana pendek",\n            "gym shorts" to "celana pendek",\n            "tight shorts" to "celana pendek ketat",'''
+          if phrase_anchor not in s:
+              raise SystemExit('Alchemy phrase marker not found')
+          s = s.replace(phrase_anchor, phrase_repl, 1)
+          p.write_text(s)
+
+          # --- General Vision + chat style ---
+          p = Path('app/src/main/java/com/riyan/aikeyboard/AiClient.kt')
+          s = p.read_text()
+
+          old = 'Untuk konteks dewasa (18+), gunakan bahasa yang natural dan tidak terasa seperti teks klinis atau template.'
+          new = ('Untuk konteks dewasa (18+), gunakan bahasa Indonesia sehari-hari yang lugas, santai, dan apa adanya; '
+                 'jangan terdengar seperti buku pelajaran, dokter, atau template. Jangan membuka jawaban dengan sapaan seperti Halo, Mari kita jelaskan, atau pembuka basa-basi kecuali pengguna memang menyapa. '
+                 'Gunakan kalimat pendek yang enak dibaca dan hindari markdown seperti **teks tebal** kecuali pengguna memintanya. '
+                 'Jaga arti istilah tetap benar: bokong berarti pantat/buttocks, payudara berarti breasts, vulva adalah bagian genital luar, vagina adalah kanal bagian dalam, dan klitoris adalah organ sensitif; jangan pernah menukar bokong dengan vulva atau istilah lain.')
+          if old not in s:
+              raise SystemExit('AiClient chat style anchor not found')
+          s = s.replace(old, new, 1)
+
+          old = 'Buat query pencarian visual yang sangat pendek dan faktual: bahasa Indonesia, 3–7 kata, maksimal sekitar 60 karakter.'
+          new = 'Buat query pencarian visual yang pendek, natural, dan faktual: bahasa Indonesia, 3–9 kata, maksimal sekitar 80 karakter.'
+          if old not in s:
+              raise SystemExit('AiClient vision length anchor not found')
+          s = s.replace(old, new, 1)
+
+          old = 'Jangan mengarang ukuran tubuh, tindakan seksual, pose seksual, atau bagian tubuh yang tidak terlihat.'
+          new = ('Ukuran atau bentuk tubuh boleh disebut dengan bahasa lugas bila benar-benar tampak jelas dan didukung evidence visual; '
+                 'jangan mengarang ukuran tubuh, tindakan seksual, pose seksual, atau bagian tubuh yang tidak terlihat.')
+          if old not in s:
+              raise SystemExit('AiClient body-shape anchor not found')
+          s = s.replace(old, new, 1)
+
+          old = '''        return query.split(Regex("\\\\s+"))\n            .filter { it.isNotBlank() }\n            .take(7)\n            .joinToString(" ")\n            .take(64)\n            .trim()'''
+          new = '''        val maxWords = if (subject == "person") 9 else 7\n        val maxChars = if (subject == "person") 80 else 64\n        return query.split(Regex("\\\\s+"))\n            .filter { it.isNotBlank() }\n            .take(maxWords)\n            .joinToString(" ")\n            .take(maxChars)\n            .trim()'''
+          if old not in s:
+              raise SystemExit('AiClient normalize length anchor not found')
+          s = s.replace(old, new, 1)
+
+          s = s.replace('temperature = 0.68,\n            maxTokens = 4096', 'temperature = 0.72,\n            maxTokens = 4096', 1)
+          p.write_text(s)
+          PY
+
+      - name: Commit source changes
+        run: |
+          if git diff --quiet; then
+            echo "No source changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/com/riyan/aikeyboard/AiClient.kt app/src/main/java/com/riyan/aikeyboard/AiHordeAlchemyVision.kt
+          git commit -m "Make vision descriptions and AI Horde chat more natural"
+          git push origin HEAD:fix/short-vision-query-search-engine-natural-adult
