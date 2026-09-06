@@ -21,21 +21,15 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
           p = Path('app/src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt')
           s = p.read_text()
-          old = '''        val scaleDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
-            override fun onScale(detector: ScaleGestureDetector): Boolean = true
-
-            override fun onScale(detector: ScaleGestureDetector): Boolean {'''
-          new = '''        val scaleDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
-            override fun onScaleBegin(detector: ScaleGestureDetector): Boolean = true
-
-            override fun onScale(detector: ScaleGestureDetector): Boolean {'''
-          if old in s:
-              s = s.replace(old, new, 1)
-          elif new not in s:
+          pattern = r'override fun onScale\(detector: ScaleGestureDetector\): Boolean = true\s*\n\s*override fun onScale\(detector: ScaleGestureDetector\): Boolean \{'
+          replacement = 'override fun onScaleBegin(detector: ScaleGestureDetector): Boolean = true\n\n            override fun onScale(detector: ScaleGestureDetector): Boolean {'
+          s2, count = re.subn(pattern, replacement, s, count=1)
+          if count == 0 and 'override fun onScaleBegin(detector: ScaleGestureDetector): Boolean = true' not in s:
               raise SystemExit('gallery gesture repair target missing')
-          p.write_text(s)
+          p.write_text(s2 if count else s)
           PY
 
       - name: Commit compile repair
