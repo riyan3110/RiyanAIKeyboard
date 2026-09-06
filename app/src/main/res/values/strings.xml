@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">AI Ads Keyboard</string>
+    <string name="app_name">AI Ads Keyboard v0.21.7 test</string>
     <string name="subtype_label">AI Ads Keyboard · Indonesia</string>
     <string name="import_text_label">Kirim ke AI Ads Keyboard</string>
     <string name="screen_access_name">Akses Teks Layar AI Ads Keyboard</string>
