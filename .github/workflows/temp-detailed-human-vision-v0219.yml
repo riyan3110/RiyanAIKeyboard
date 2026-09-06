@@ -9,7 +9,6 @@ permissions:
 
 jobs:
   patch:
-    if: ${{ !contains(github.event.head_commit.message, '[human-vision-v0219]') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,7 +24,6 @@ jobs:
           ai_path = Path('app/src/main/java/com/riyan/aikeyboard/AiClient.kt')
           ai = ai_path.read_text()
 
-          # All native Vision providers receive the same OCR hint.
           ai = ai.replace('requestOpenRouterVision(settings, jpegBase64, "")', 'requestOpenRouterVision(settings, jpegBase64, localTextHint)')
           ai = ai.replace('requestTabiAiVision(settings, jpegBase64, "")', 'requestTabiAiVision(settings, jpegBase64, localTextHint)')
           ai = ai.replace('request9RouterVision(settings, jpegBase64, "")', 'request9RouterVision(settings, jpegBase64, localTextHint)')
@@ -117,8 +115,8 @@ jobs:
             has("\\bred\\b") -> "red"
             has("\\bblue\\b") -> "blue"
             has("\\bgreen\\b") -> "green"
-            has("\\bgray|grey\\b") -> "gray"
-            has("\\bbeige|cream\\b") -> "beige"
+            has("\\b(gray|grey)\\b") -> "gray"
+            has("\\b(beige|cream)\\b") -> "beige"
             has("\\bpink\\b") -> "pink"
             has("\\bpurple\\b") -> "purple"
             else -> ""
@@ -129,13 +127,13 @@ jobs:
             has("\\bleather\\b") -> "leather"
             has("\\bdenim\\b") -> "denim"
             has("\\blace\\b") -> "lace"
-            has("\\bknit|knitted\\b") -> "knit"
+            has("\\b(knit|knitted)\\b") -> "knit"
             has("\\bcotton\\b") -> "cotton"
             else -> ""
         }
         val fit = when {
             has("\\b(bodycon|skin-tight|body-hugging|form-fitting|tight|fitted|close-fitting)\\b") -> "fitted"
-            has("\\bloose|oversized\\b") -> "loose"
+            has("\\b(loose|oversized)\\b") -> "loose"
             else -> ""
         }
         val garment = when {
@@ -176,13 +174,13 @@ jobs:
         val hairLength = when {
             has("\\blong hair\\b") -> "long"
             has("\\bshort hair\\b") -> "short"
-            has("\\bmedium hair|shoulder-length hair\\b") -> "shoulder-length"
+            has("\\b(medium hair|shoulder-length hair)\\b") -> "shoulder-length"
             else -> ""
         }
         val hairColor = when {
             has("\\bblack hair\\b") -> "black"
-            has("\\bdark brown hair|brown hair\\b") -> "dark brown"
-            has("\\bblonde hair|blond hair\\b") -> "blonde"
+            has("\\b(dark brown hair|brown hair)\\b") -> "dark brown"
+            has("\\b(blonde hair|blond hair)\\b") -> "blonde"
             has("\\bred hair\\b") -> "red"
             else -> ""
         }
@@ -205,15 +203,15 @@ jobs:
             else -> ""
         }
         val pose = when {
-            has("\\bwalking|walks\\b") -> "walking"
-            has("\\bsitting|seated\\b") -> "sitting"
-            has("\\bstanding|stands\\b") -> "standing"
+            has("\\b(walking|walks)\\b") -> "walking"
+            has("\\b(sitting|seated)\\b") -> "sitting"
+            has("\\b(standing|stands)\\b") -> "standing"
             else -> ""
         }
         val scene = when {
             has("\\b(art gallery|gallery|museum|art exhibition)\\b") -> "in an art gallery"
-            has("\\bstreet|city street\\b") -> "on a street"
-            has("\\boutdoors|outdoor|park|garden\\b") -> "outdoors"
+            has("\\b(street|city street)\\b") -> "on a street"
+            has("\\b(outdoors|outdoor|park|garden)\\b") -> "outdoors"
             has("\\bbedroom\\b") -> "in a bedroom"
             has("\\bliving room\\b") -> "in a living room"
             else -> ""
