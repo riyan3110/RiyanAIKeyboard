@@ -2607,7 +2607,7 @@ resultCard.bringToFront()
         var lastY = 0f
         var dragged = false
         val scaleDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
-            override fun onScale(detector: ScaleGestureDetector): Boolean = true
+            override fun onScaleBegin(detector: ScaleGestureDetector): Boolean = true
 
             override fun onScale(detector: ScaleGestureDetector): Boolean {
                 val oldZoom = scannerGalleryZoom.coerceAtLeast(0.01f)
