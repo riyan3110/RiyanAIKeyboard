@@ -1,0 +1,174 @@
+name: Apply Smart Product Vision Fix
+
+on:
+  push:
+    branches: [fix/vision-query-pan-zoom]
+
+permissions:
+  contents: write
+
+jobs:
+  patch-build:
+    if: github.event.head_commit.message == 'chore: trigger smart product vision fix'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/vision-query-pan-zoom
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Apply smart product vision patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          helper = r'''package com.riyan.aikeyboard
+
+import android.graphics.Bitmap
+import com.google.android.gms.tasks.Tasks
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognizer
+import java.util.concurrent.TimeUnit
+
+/** Uses local OCR as grounded evidence so product searches prefer the actual label/model. */
+object VisionSearchEvidence {
+    private val tokenRegex = Regex("[A-Za-z0-9][A-Za-z0-9+./-]*")
+    private val specRegex = Regex("(?i)^(?:\\d{1,2}w[- ]?\\d{2}|\\d+(?:\\.\\d+)?(?:ml|l|kg|g)|[24]t|vr\\d+|[a-z]*\\d+[a-z0-9-]*)$")
+    private val productWords = setOf(
+        "oil", "oli", "lubricant", "pelumas", "shampoo", "conditioner", "serum", "lotion",
+        "cream", "sabun", "soap", "detergent", "coffee", "kopi", "tea", "teh", "milk", "susu",
+        "drink", "minuman", "snack", "makanan", "racing", "motorcycle", "motor"
+    )
+    private val noise = setOf(
+        "anti", "slip", "on", "clutch", "fully", "synthetic", "for", "stroke", "motorcycle",
+        "api", "sn", "jaso", "ma2", "team", "the", "and", "with", "of", "product", "objek",
+        "object", "bottle", "botol", "couch", "sofa", "chair", "kursi", "gray", "grey", "abu-abu",
+        "pengguna", "sedang", "memperbesar", "area", "target", "sekitar", "prioritaskan", "subjek",
+        "utama", "pada", "ini", "dan", "detail", "kecil", "pembeda", "yang", "benar-benar", "terlihat",
+        "abaikan", "latar", "tidak", "relevan", "teks", "lokal", "mungkin"
+    )
+
+    fun recognizeText(recognizer: TextRecognizer, bitmap: Bitmap): String {
+        if (bitmap.width < 24 || bitmap.height < 24) return ""
+        val result = Tasks.await(
+            recognizer.process(InputImage.fromBitmap(bitmap, 0)),
+            4,
+            TimeUnit.SECONDS
+        )
+        return result.textBlocks
+            .flatMap { it.lines }
+            .map { it.text.trim() }
+            .filter { it.length >= 2 }
+            .distinct()
+            .joinToString(" | ")
+            .take(700)
+    }
+
+    fun refineQuery(visionQuery: String, localTextHint: String): String {
+        val product = extractProductIdentity(localTextHint)
+        return if (product.isNotBlank()) product else visionQuery
+    }
+
+    private fun extractProductIdentity(localTextHint: String): String {
+        if (localTextHint.isBlank()) return ""
+        var source = localTextHint
+        source.substringAfter("Teks lokal yang mungkin relevan:", source).let { source = it }
+        source.substringAfter("Teks OCR lokal:", source).let { source = it }
+
+        val originalTokens = tokenRegex.findAll(source).map { it.value.trim() }.toList()
+        if (originalTokens.isEmpty()) return ""
+        val lowerTokens = originalTokens.map { it.lowercase() }
+        val hasCategory = lowerTokens.any { it in productWords }
+        val hasSpec = originalTokens.any { specRegex.matches(it) }
+        val meaningfulAlpha = originalTokens.count { token ->
+            token.length >= 3 && token.any(Char::isLetter) && token.lowercase() !in noise
+        }
+        if (meaningfulAlpha < 2 || (!hasCategory && !hasSpec)) return ""
+
+        val chosen = mutableListOf<String>()
+        val seen = linkedSetOf<String>()
+        for (token in originalTokens) {
+            val clean = token.trim('-', '.', '/', ' ')
+            val lower = clean.lowercase()
+            if (clean.length < 2 || lower in noise) continue
+            if (lower in setOf("www", "com", "http", "https")) continue
+            if (lower.all { it.isDigit() } && clean.length > 6) continue
+            if (!seen.add(lower)) continue
+            chosen += normalizeSpec(clean)
+            if (chosen.size >= 8) break
+        }
+        if (chosen.size < 2) return ""
+        return chosen.joinToString(" ").replace(Regex("\\s+"), " ").take(104).trim()
+    }
+
+    private fun normalizeSpec(token: String): String {
+        return token
+            .replace(Regex("(?i)^(\\d{1,2})w[ -]?(\\d{2})$"), "$1W-$2")
+            .replace(Regex("(?i)^(\\d+(?:\\.\\d+)?)(ml|kg|g|l)$")) { m ->
+                m.groupValues[1] + m.groupValues[2].uppercase()
+            }
+            .replace(Regex("(?i)^([24])t$")) { it.groupValues[1] + "T" }
+    }
+}
+'''
+          Path('app/src/main/java/com/riyan/aikeyboard/VisionSearchEvidence.kt').write_text(helper)
+
+          ai = Path('app/src/main/java/com/riyan/aikeyboard/AiClient.kt')
+          s = ai.read_text()
+          s = s.replace('requestOpenRouterVision(settings, jpegBase64, "")', 'requestOpenRouterVision(settings, jpegBase64, localTextHint)')
+          s = s.replace('requestTabiAiVision(settings, jpegBase64, "")', 'requestTabiAiVision(settings, jpegBase64, localTextHint)')
+          s = s.replace('request9RouterVision(settings, jpegBase64, "")', 'request9RouterVision(settings, jpegBase64, localTextHint)')
+          old = '''                val query = normalizeVisionResult(raw)\n                    ?: throw IllegalStateException("Model ${provider.label} tidak membuktikan bahwa gambar benar-benar dibaca.")\n                AiResponse(query, provider)'''
+          new = '''                val normalizedQuery = normalizeVisionResult(raw)\n                    ?: throw IllegalStateException("Model ${provider.label} tidak membuktikan bahwa gambar benar-benar dibaca.")\n                val query = VisionSearchEvidence.refineQuery(normalizedQuery, localTextHint)\n                AiResponse(query, provider)'''
+          if old not in s:
+              raise SystemExit('AiClient normalize block not found')
+          s = s.replace(old, new, 1)
+          marker = '''                "Gunakan unknown jika gambar memang tidak dapat dilihat atau subjek tidak dapat ditentukan."\n        )\n    }'''
+          replacement = '''                "Gunakan unknown jika gambar memang tidak dapat dilihat atau subjek tidak dapat ditentukan."\n        )\n        if (localTextHint.isNotBlank()) {\n            append(" Teks OCR lokal berikut hanya evidence tambahan dari gambar yang sama: ")\n            append(localTextHint.take(700))\n            append(". Untuk produk berlabel, prioritaskan merek, nama/model, kode varian, ukuran, dan spesifikasi yang terbaca jelas pada label; jangan biarkan latar seperti kursi/sofa mengalahkan identitas produk. Jangan mengarang teks yang tidak ada.")\n        }\n    }'''
+          if marker not in s:
+              raise SystemExit('visionInstruction marker not found')
+          s = s.replace(marker, replacement, 1)
+          ai.write_text(s)
+
+          svc = Path('app/src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt')
+          s = svc.read_text()
+          old = '''            val visualUrl: String? = null // Brave Search remains the embedded search surface.\n            val result = if (encoded.isNullOrBlank()) {\n                Result.failure<AiResponse>(IllegalStateException("Gambar galeri gagal disiapkan."))\n            } else {\n                AiClient.visionProduct(aiSettings(), encoded, "")\n            }'''
+          new = '''            val galleryLocalHint = runCatching {\n                VisionSearchEvidence.recognizeText(scannerTextRecognizer, prepared)\n            }.getOrDefault("")\n            val visualUrl: String? = null // Brave Search remains the embedded search surface.\n            val result = if (encoded.isNullOrBlank()) {\n                Result.failure<AiResponse>(IllegalStateException("Gambar galeri gagal disiapkan."))\n            } else {\n                AiClient.visionProduct(aiSettings(), encoded, galleryLocalHint)\n            }'''
+          if old not in s:
+              raise SystemExit('gallery vision block not found')
+          s = s.replace(old, new, 1)
+          s = s.replace('AI Ads Keyboard · v0.21.7 test', 'AI Ads Keyboard · v0.21.8 test')
+          svc.write_text(s)
+
+          gradle = Path('app/build.gradle.kts')
+          s = gradle.read_text()
+          s = s.replace('versionCode = 28', 'versionCode = 29')
+          s = s.replace('versionName = "0.21.7-test-vision-pan-zoom-performance"', 'versionName = "0.21.8-test-smart-product-vision"')
+          s = s.replace('val visible = """text = "AI Ads Keyboard · v0.21.7 test""""', 'val visible = """text = "AI Ads Keyboard · v0.21.8 test""""')
+          s = s.replace('val previous = """text = "AI Ads Keyboard · v0.21.6 test""""', 'val previous = """text = "AI Ads Keyboard · v0.21.7 test""""')
+          gradle.write_text(s)
+
+          wf = Path('.github/workflows/apply-smart-product-vision.yml')
+          if wf.exists(): wf.unlink()
+          PY
+      - name: Build APK
+        run: ./gradlew :app:assembleDebug --stacktrace
+      - name: Prepare versioned APK
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/app-debug.apk dist/AI-Ads-Keyboard-0.21.8-test-smart-product-vision.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AI-Ads-Keyboard-0.21.8-test-smart-product-vision
+          path: dist/AI-Ads-Keyboard-0.21.8-test-smart-product-vision.apk
+      - name: Commit fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: prioritize product label OCR in AI vision search"
+          git push origin HEAD:fix/vision-query-pan-zoom
