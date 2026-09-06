@@ -16,8 +16,8 @@ android {
         applicationId = "com.riyan.aikeyboard"
         minSdk = 23
         targetSdk = 35
-        versionCode = 27
-        versionName = "0.21.6-test-settings-input-gallery"
+        versionCode = 29
+        versionName = "0.21.8-test-smart-product-vision"
     }
 
     signingConfigs {
@@ -219,8 +219,8 @@ val patchVisibleVersionLabel by tasks.registering {
         val sourceFile = file("src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt")
         var source = sourceFile.readText()
         val hardcoded = """text = "AI Ads Keyboard · v0.20""""
-        val previous = """text = "AI Ads Keyboard · v0.21.5 test""""
-        val visible = """text = "AI Ads Keyboard · v0.21.6 test""""
+        val previous = """text = "AI Ads Keyboard · v0.21.6 test""""
+        val visible = """text = "AI Ads Keyboard · v0.21.7 test""""
 
         when {
             source.contains(hardcoded) -> source = source.replace(hardcoded, visible)
@@ -256,3 +256,5 @@ tasks.named("preBuild").configure {
     dependsOn(patchReferenceBrandingAndKeyCentering)
     dependsOn(patchVisibleVersionLabel)
 }
+
+apply(from = "smart-vision.gradle.kts")
