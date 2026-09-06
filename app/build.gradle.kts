@@ -16,8 +16,8 @@ android {
         applicationId = "com.riyan.aikeyboard"
         minSdk = 23
         targetSdk = 35
-        versionCode = 28
-        versionName = "0.21.7-test-vision-pan-zoom-performance"
+        versionCode = 29
+        versionName = "0.21.8-test-smart-product-vision"
     }
 
     signingConfigs {
@@ -256,3 +256,5 @@ tasks.named("preBuild").configure {
     dependsOn(patchReferenceBrandingAndKeyCentering)
     dependsOn(patchVisibleVersionLabel)
 }
+
+apply(from = "smart-vision.gradle.kts")
