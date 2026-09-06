@@ -220,6 +220,7 @@ object AiHordeAlchemyVision {
         tokens += subject
         if (view.isNotBlank()) tokens += view.split(Regex("\\s+"))
         if (clothing.isNotBlank()) {
+            tokens += "pakai"
             tokens += clothing.split(Regex("\\s+"))
         } else {
             // If Alchemy only returns noisy underwear/body tags, stay generic instead of turning
@@ -250,9 +251,9 @@ object AiHordeAlchemyVision {
             .map { it.lowercase().trim() }
             .filter { it.isNotBlank() && it !in QUERY_NOISE }
             .distinct()
-            .take(9)
+            .take(10)
             .joinToString(" ")
-            .take(80)
+            .take(96)
             .trim()
     }
 
@@ -284,6 +285,10 @@ object AiHordeAlchemyVision {
         priorities.firstOrNull { captionLower.contains(it) }?.let { return it }
         priorities.firstOrNull { tagLower.contains(it) }?.let { return it }
 
+        val tightShorts = Regex("\\b(tight|fitted|form-fitting|skin-tight|body-hugging|booty)\\s+shorts\\b", RegexOption.IGNORE_CASE)
+            .containsMatchIn(combined)
+        if (tightShorts) return "celana pendek ketat"
+
         // If an English tag slipped through translation, normalize common visible outerwear here.
         return when {
             Regex("\\b(shorts|athletic shorts|gym shorts)\\b", RegexOption.IGNORE_CASE).containsMatchIn(combined) -> "celana pendek"
@@ -296,12 +301,19 @@ object AiHordeAlchemyVision {
 
     private fun bestViewDescription(rawCaption: String, rawTags: List<Pair<String, Double>>): String {
         val strongTags = rawTags
-            .filter { it.second >= 0.42 }
+            .filter { it.second >= 0.30 }
             .joinToString(" ") { it.first.lowercase() }
         val source = (rawCaption.lowercase() + " " + strongTags).replace(Regex("\\s+"), " ")
+        val rearBodyEvidence = rawTags.any { (text, confidence) ->
+            confidence >= 0.34 && Regex("\\b(ass|butt|buttocks|booty|backside)\\b", RegexOption.IGNORE_CASE)
+                .containsMatchIn(text)
+        }
+        val frontEvidence = Regex("\\b(front view|from the front|facing camera|face visible|looking at camera)\\b", RegexOption.IGNORE_CASE)
+            .containsMatchIn(source)
         return when {
-            Regex("\\b(from behind|seen from behind|back view|rear view|backside view|facing away)\\b", RegexOption.IGNORE_CASE)
+            Regex("\\b(from behind|seen from behind|back view|rear view|backside view|facing away|back to camera|turned away)\\b", RegexOption.IGNORE_CASE)
                 .containsMatchIn(source) -> "dari belakang"
+            rearBodyEvidence && !frontEvidence -> "dari belakang"
             Regex("\\b(from the side|side view|profile view)\\b", RegexOption.IGNORE_CASE)
                 .containsMatchIn(source) -> "dari samping"
             Regex("\\b(from the front|front view|facing camera)\\b", RegexOption.IGNORE_CASE)
@@ -325,21 +337,25 @@ object AiHordeAlchemyVision {
         if (!adultEvidence) return ""
 
         val strongTags = rawTags
-            .filter { it.second >= 0.52 }
+            .filter { it.second >= 0.34 }
             .joinToString(" ") { it.first.lowercase() }
         val source = (rawCaption.lowercase() + " " + strongTags).replace(Regex("\\s+"), " ")
         val lowerBodyCovered = clothing.contains("celana") || clothing.contains("legging") ||
             clothing.contains("rok") || clothing.contains("gaun") || clothing.contains("baju renang") ||
             clothing.contains("bikini") || clothing.contains("pakaian bawah")
 
+        val buttVisible = Regex("\\b(ass|butt|buttocks|booty|backside)\\b", RegexOption.IGNORE_CASE)
+            .containsMatchIn(source)
         val clearlyLargeButt = Regex(
-            "\\b(big|large|prominent|full|curvy)\\s+(ass|butt|buttocks|booty)\\b|" +
-                "\\b(ass|butt|buttocks|booty)\\s+(looks|appears|is)?\\s*(big|large|prominent|full)\\b",
+            "\\b(big|large|prominent|full|curvy|thick|thicc|round)\\s+(ass|butt|buttocks|booty|backside)\\b|" +
+                "\\b(ass|butt|buttocks|booty|backside)\\s+(looks|appears|is)?\\s*(big|large|prominent|full|round)\\b",
             RegexOption.IGNORE_CASE
         ).containsMatchIn(source)
-        return if (view == "dari belakang" && lowerBodyCovered && clearlyLargeButt) {
-            "bokong terlihat besar"
-        } else ""
+        return when {
+            view == "dari belakang" && lowerBodyCovered && clearlyLargeButt -> "bokong terlihat besar"
+            view == "dari belakang" && lowerBodyCovered && buttVisible -> "bokong terlihat"
+            else -> ""
+        }
     }
 
     private fun bestColorDescription(caption: String, tags: List<String>): String {
@@ -543,7 +559,7 @@ object AiHordeAlchemyVision {
         "a", "an", "the", "is", "are", "was", "were", "with", "and", "or", "of", "to", "from",
         "in", "on", "at", "near", "by", "for", "wearing", "wears", "standing", "sitting", "posing",
         "this", "that", "there", "image", "photo", "picture", "shows", "showing", "her", "his", "their",
-        "hers", "him", "she", "he", "girl", "boy", "ass", "panties", "living", "room",
+        "hers", "him", "she", "he", "girl", "boy", "living", "room",
         "di", "dan", "yang", "dengan", "dari", "untuk", "sedang", "memakai", "mengenakan",
         "berdiri", "duduk", "berpose", "sebuah", "foto", "gambar", "terlihat", "ruang", "tamu"
     )
