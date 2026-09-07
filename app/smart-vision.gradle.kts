@@ -35,6 +35,7 @@ val patchSmartProductVision = tasks.register("patchSmartProductVision") {
         val oldHumanRule = "Buat query pencarian visual yang pendek, natural, dan faktual: bahasa Indonesia, 3–12 kata, maksimal sekitar 112 karakter. Query hanya boleh berisi subjek utama dan 2–3 ciri paling jelas yang benar-benar terlihat pada foto saat ini. "
         val newHumanRule = "Untuk subject_type person atau human_figure, field query WAJIB berupa detailed English visual-search prompt yang natural, spesifik, dan deskriptif: 8–28 kata, maksimal sekitar 240 karakter. Untuk manusia yang jelas dewasa, gunakan adult woman atau adult man dan jelaskan sebanyak mungkin ciri visual yang benar-benar terlihat: front/rear/side view, pose, hair length/color/texture, outfit color/type/material/fabric/fit, neckline, straps/sleeves, accessories, serta scene/background utama. Bila benar-benar terlihat pada orang dewasa, sertakan visible body silhouette details seperti bare shoulders, visible cleavage, defined waist, curvy hips, exposed thigh through a slit, atau long legs; istilah sexy atau glamorous hanya boleh dipakai bila styling jelas mendukungnya. Gunakan kata detail pakaian seperti satin, silk, leather, denim, lace, bodycon, fitted, tight, slip dress, mini skirt, leggings, shorts, atau thigh-high slit hanya bila tampak pada gambar. Jangan menebak anatomi di balik pakaian dan jangan mengarang bagian tubuh, ukuran, tindakan seksual, identitas, etnisitas, atau detail yang tidak terlihat. Jika usia tidak jelas atau mungkin di bawah 18 tahun, gunakan deskripsi netral tanpa sexy/sexualized wording. Untuk subject non-manusia, tetap gunakan query pendek dan faktual serta pertahankan merek/model/spesifikasi OCR bila benar-benar terbaca. Evidence harus berupa fakta visual konkret; untuk person/human_figure tulis evidence dalam bahasa Inggris. "
         when {
+            ai.contains("DETAILED ENGLISH image-search prompt") -> Unit
             ai.contains("detailed English visual-search prompt") -> Unit
             ai.contains(oldHumanRule) -> ai = ai.replace(oldHumanRule, newHumanRule, ignoreCase = false)
             else -> error("Detailed human Vision instruction patch did not match AiClient.kt")
@@ -56,6 +57,7 @@ val patchSmartProductVision = tasks.register("patchSmartProductVision") {
         if (subject !in setOf("text", "scene", "person", "human_figure") && semanticTokens.size < 2) return null"""
         when {
             ai.contains("semanticTokens.size < 6") -> Unit
+            ai.contains("detailedEnough = semanticTokens.size >= 6") -> Unit
             ai.contains(oldSemanticThreshold) -> ai = ai.replace(oldSemanticThreshold, newSemanticThreshold, ignoreCase = false)
             else -> error("Human semantic threshold patch did not match AiClient.kt")
         }
@@ -63,10 +65,11 @@ val patchSmartProductVision = tasks.register("patchSmartProductVision") {
         val oldLimits = """        val maxWords = if (subject == "person") 12 else 7
         val maxChars = if (subject == "person") 112 else 64"""
         val newLimits = """        val personLike = subject == "person" || subject == "human_figure"
-        val maxWords = if (personLike) 28 else 9
-        val maxChars = if (personLike) 240 else 96"""
+        val maxWords = if (personLike) 32 else 9
+        val maxChars = if (personLike) 320 else 96"""
         when {
-            ai.contains("val maxWords = if (personLike) 28 else 9") -> Unit
+            ai.contains("val maxWords = if (personLike) 32 else 9") -> Unit
+            ai.contains("val maxWords = if (subject == \"person\") 32 else 7") -> Unit
             ai.contains(oldLimits) -> ai = ai.replace(oldLimits, newLimits, ignoreCase = false)
             else -> error("Human query length patch did not match AiClient.kt")
         }
@@ -83,6 +86,7 @@ val patchSmartProductVision = tasks.register("patchSmartProductVision") {
         }
     }"""
         when {
+            ai.contains("OCR hint from this same image crop") -> Unit
             ai.contains("Teks OCR lokal berikut hanya evidence tambahan") -> Unit
             ai.contains(instructionMarker) -> ai = ai.replace(instructionMarker, instructionReplacement, ignoreCase = false)
             else -> error("Smart vision instruction patch did not match AiClient.kt")
@@ -122,8 +126,9 @@ val patchSmartProductVision = tasks.register("patchSmartProductVision") {
             else -> error("Gallery OCR patch did not match RiyanKeyboardService.kt")
         }
 
-        service = service.replace("AI Ads Keyboard · v0.21.7 test", "AI Ads Keyboard · v0.21.9 test")
-        service = service.replace("AI Ads Keyboard · v0.21.8 test", "AI Ads Keyboard · v0.21.9 test")
+        service = service.replace("AI Ads Keyboard · v0.21.7 test", "AI Ads Keyboard · v0.21.10 test")
+        service = service.replace("AI Ads Keyboard · v0.21.8 test", "AI Ads Keyboard · v0.21.10 test")
+        service = service.replace("AI Ads Keyboard · v0.21.9 test", "AI Ads Keyboard · v0.21.10 test")
         serviceFile.writeText(service)
     }
 }
