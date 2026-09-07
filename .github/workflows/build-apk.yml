@@ -2,7 +2,7 @@ name: Build APK
 
 on:
   push:
-    branches: [ main, fix/v0.21.23-haptic-gap ]
+    branches: [ main, fix/v0.21.23-haptic-gap, private/v0.21.24-pr27-filters ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
@@ -65,7 +65,7 @@ jobs:
             sudo apt-get install -y --no-install-recommends webp
           fi
 
-      - name: Apply provider, browser, vision/search, photo color, safe key scale, auto-caps, brand, haptic, and gap patches
+      - name: Apply latest features, then private PR27 filters
         shell: bash
         run: |
           python3 tools/apply_bluesminds_provider_patch.py
@@ -77,11 +77,12 @@ jobs:
           python3 tools/apply_vision_search_google_patch.py
           python3 tools/apply_vision_search_compat_patch.py
           python3 tools/apply_haptic_uniform_gap_patch.py
+          python3 tools/apply_private_pr27_filters.py
 
-      - name: Build test APK
+      - name: Build private APK
         run: RIYAN_KEYSTORE_PATH="$HOME/.riyan-ai-keyboard/debug.keystore" gradle :app:assembleDebug -x :app:patchBluesMindsProvider
 
-      - name: Give APK a permanent versioned filename
+      - name: Give private APK a permanent versioned filename
         id: package
         shell: bash
         run: |
@@ -90,11 +91,11 @@ jobs:
             VERSION_NAME="unknown-version"
           fi
           SAFE_VERSION=$(printf '%s' "$VERSION_NAME" | tr -cs 'A-Za-z0-9._-' '-')
-          APK_NAME="AI-Ads-Keyboard-${SAFE_VERSION}.apk"
+          APK_NAME="AI-Ads-Keyboard-${SAFE_VERSION}-private.apk"
           cp app/build/outputs/apk/debug/app-debug.apk "app/build/outputs/apk/debug/$APK_NAME"
           echo "apk_name=$APK_NAME" >> "$GITHUB_OUTPUT"
           echo "apk_path=app/build/outputs/apk/debug/$APK_NAME" >> "$GITHUB_OUTPUT"
-          echo "artifact_name=AI-Ads-Keyboard-${SAFE_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=AI-Ads-Keyboard-${SAFE_VERSION}-private" >> "$GITHUB_OUTPUT"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
