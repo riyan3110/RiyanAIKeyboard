@@ -43,7 +43,6 @@ val patchSmartProductVision = tasks.register("patchSmartProductVision") {
             ai.contains("ONE shared adult-human contract") -> Unit
             ai.contains(oldHumanRule) -> {
                 ai = ai.replace(oldHumanRule, newHumanRule, ignoreCase = false)
-                // Marker so a patched source is recognizable without weakening the generated instruction.
                 ai = ai.replace(
                     "Analisis isi gambar yang benar-benar diterima, bukan tebakan dari warna atau teks pendamping. ",
                     "Analisis isi gambar yang benar-benar diterima, bukan tebakan dari warna atau teks pendamping. ONE shared adult-human contract. "
@@ -134,27 +133,15 @@ val patchSmartProductVision = tasks.register("patchSmartProductVision") {
             else -> error("Gallery OCR patch did not match RiyanKeyboardService.kt")
         }
 
-        // ROOT FIX: the UI cleaner used to throw away every word after the seventh token and remove
-        // useful English connectors such as "with" and "in". That is exactly why a 20–30 word
-        // Vision result became "Rear view adult woman long dark wavy" before it reached Bing/Brave.
-        val oldCleaner = """    private fun cleanAiVisionSearchQuery(raw: String): String {
-    val line = raw.lineSequence()
-        .map { it.trim().trim('"', '\\'', '`') }
-        .firstOrNull { it.isNotBlank() }
-        .orEmpty()
-    val cleaned = line
-        .replace(Regex("(?i)^(?:query|search query|pencarian|hasil)\\s*:\\s*"), "")
-        .replace(Regex("\\s+"), " ")
-        .trim()
-    val filler = setOf("the", "a", "an", "and", "in", "with", "setting", "of", "at", "on", "yang", "sedang", "terlihat")
-    return cleaned.split(Regex("\\s+"))
-        .filter { it.isNotBlank() && it.lowercase() !in filler }
-        .take(7)
-        .joinToString(" ")
-        .take(64)
-        .trim()
-}"""
-        val newCleaner = """    private fun cleanAiVisionSearchQuery(raw: String): String {
+        // ROOT FIX: cleanAiVisionSearchQuery used to truncate every Vision prompt to 7 words/64 chars.
+        val cleanerMarker = "    private fun cleanAiVisionSearchQuery(raw: String): String {"
+        val cleanerStart = service.indexOf(cleanerMarker)
+        if (cleanerStart < 0) error("AI Vision cleaner start marker not found")
+        val cleanerEnd = service.indexOf("\n    private fun ", cleanerStart + cleanerMarker.length)
+        if (cleanerEnd < 0) error("AI Vision cleaner end marker not found")
+        val currentCleaner = service.substring(cleanerStart, cleanerEnd)
+        if (!currentCleaner.contains(".take(40)")) {
+            val newCleaner = """    private fun cleanAiVisionSearchQuery(raw: String): String {
         val line = raw.lineSequence()
             .map { it.trim().trim('"', '\\'', '`') }
             .firstOrNull { it.isNotBlank() }
@@ -163,11 +150,11 @@ val patchSmartProductVision = tasks.register("patchSmartProductVision") {
             .replace(Regex("(?i)^(?:query|search query|pencarian|hasil)\\s*:\\s*"), "")
             .replace(Regex("\\s+"), " ")
             .trim()
-        val human = Regex("\\b(adult woman|adult man|woman|women|female|man|men|male|person|human figure)\\b", RegexOption.IGNORE_CASE)
-            .containsMatchIn(cleaned)
+        val human = Regex(
+            "\\b(adult woman|adult man|woman|women|female|man|men|male|person|human figure)\\b",
+            RegexOption.IGNORE_CASE
+        ).containsMatchIn(cleaned)
         if (human) {
-            // Keep the natural English prompt intact. Do not strip connectors because phrases such
-            // as "woman with long wavy hair in a bedroom" depend on them for search relevance.
             return cleaned.split(Regex("\\s+"))
                 .filter { it.isNotBlank() }
                 .take(40)
@@ -182,45 +169,29 @@ val patchSmartProductVision = tasks.register("patchSmartProductVision") {
             .joinToString(" ")
             .take(128)
             .trim()
-    }"""
-        when {
-            service.contains("take(40)\n                .joinToString(\" \")\n                .take(400)") -> Unit
-            service.contains(oldCleaner) -> service = service.replace(oldCleaner, newCleaner, ignoreCase = false)
-            else -> error("AI Vision query cleaner patch did not match RiyanKeyboardService.kt")
+    }
+"""
+            service = service.substring(0, cleanerStart) + newCleaner + service.substring(cleanerEnd)
         }
 
-        // Search engines should be biased toward real photographs for human queries. The clean
-        // prompt shown to the user remains untouched; negative terms are only added to the URL sent
-        // to the selected image-search engine.
-        val oldImageUrl = """private fun selectedImageSearchUrl(query: String): String {
-    val encoded = Uri.encode(query.trim())
-    return when (selectedSearchEngineId()) {
-        "google" -> "https://www.google.com/search?tbm=isch&q=${'$'}encoded"
-        "bing" -> "https://www.bing.com/images/search?q=${'$'}encoded"
-        "ddg" -> "https://duckduckgo.com/?q=${'$'}encoded&iax=images&ia=images"
-        else -> "https://search.brave.com/images?q=${'$'}encoded&source=web"
-    }
-}"""
-        val newImageUrl = """private fun selectedImageSearchUrl(query: String): String {
+        // Bias human-image search toward actual photography without polluting the prompt shown in UI.
+        val oldImagePrefix = """private fun selectedImageSearchUrl(query: String): String {
+    val encoded = Uri.encode(query.trim())"""
+        val newImagePrefix = """private fun selectedImageSearchUrl(query: String): String {
     val clean = query.trim()
-    val human = Regex("\\b(adult woman|adult man|woman|women|female|man|men|male|person|human figure)\\b", RegexOption.IGNORE_CASE)
-        .containsMatchIn(clean)
+    val human = Regex(
+        "\\b(adult woman|adult man|woman|women|female|man|men|male|person|human figure)\\b",
+        RegexOption.IGNORE_CASE
+    ).containsMatchIn(clean)
     val searchText = if (human) {
         "${'$'}clean real photo -AI -AI-generated -illustration -render -CGI -Midjourney -Stable-Diffusion"
     } else {
         clean
     }
-    val encoded = Uri.encode(searchText)
-    return when (selectedSearchEngineId()) {
-        "google" -> "https://www.google.com/search?tbm=isch&q=${'$'}encoded"
-        "bing" -> "https://www.bing.com/images/search?q=${'$'}encoded"
-        "ddg" -> "https://duckduckgo.com/?q=${'$'}encoded&iax=images&ia=images"
-        else -> "https://search.brave.com/images?q=${'$'}encoded&source=web"
-    }
-}"""
+    val encoded = Uri.encode(searchText)"""
         when {
             service.contains("-AI-generated -illustration -render -CGI") -> Unit
-            service.contains(oldImageUrl) -> service = service.replace(oldImageUrl, newImageUrl, ignoreCase = false)
+            service.contains(oldImagePrefix) -> service = service.replace(oldImagePrefix, newImagePrefix, ignoreCase = false)
             else -> error("Real-photo image search patch did not match RiyanKeyboardService.kt")
         }
 
