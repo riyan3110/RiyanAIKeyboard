@@ -38,7 +38,7 @@ val patchSmartProductVision = tasks.register("patchSmartProductVision") {
         // OpenRouter, TabiAI, 9Router, BluesMinds, xKiro and OrcaRouter. AI Horde is normalized by
         // HumanVisionPrompt below, then passes through the exact same quality gate above.
         val oldHumanRule = "Buat query pencarian visual yang pendek, natural, dan faktual: bahasa Indonesia, 3–12 kata, maksimal sekitar 112 karakter. Query hanya boleh berisi subjek utama dan 2–3 ciri paling jelas yang benar-benar terlihat pada foto saat ini. "
-        val newHumanRule = "Untuk subject_type person atau human_figure, field query WAJIB berupa detailed English visual-search prompt yang natural, spesifik, dan deskriptif: idealnya 14–32 kata, maksimal sekitar 320 karakter. Untuk manusia yang JELAS DEWASA, gunakan adult woman atau adult man dan jangan berhenti pada deskripsi generik seperti adult woman sexy wearing shorts. Wajib jelaskan sebanyak mungkin ciri yang benar-benar terlihat: front/rear/side view, pose, hair length/color/texture, upper garment dan lower garment secara terpisah, warna, material/fabric, tight/fitted/bodycon/loose fit, neckline, straps/sleeves, accessories, serta scene/background. Jika styling orang dewasa terlihat sensual, revealing, atau body-emphasizing, gunakan bahasa dewasa yang langsung dan jangan disamarkan: sexy, sensual, visible cleavage, prominent/full bust, defined waist, curvy hips, prominent buttocks, buttocks outlined through tight clothing, exposed upper thighs, exposed thigh, deep/plunging neckline, tight shorts, tight leggings, tight mini skirt, fitted satin dress, bodycon dress, bikini, atau lingerie HANYA jika ciri tersebut benar-benar terlihat pada gambar. Jangan menghapus detail seksual/dewasa yang memang tampak hanya agar terdengar aman atau umum. Sebaliknya, JANGAN mengarang nudity, genitalia, hidden anatomy, sexual acts, ukuran/bentuk tubuh yang tidak terlihat, identitas, atau etnisitas. Jika usia tidak jelas atau mungkin di bawah 18 tahun, wajib gunakan deskripsi netral tanpa sexy/sexualized wording. Untuk subject non-manusia, tetap gunakan query pendek dan faktual serta pertahankan merek/model/spesifikasi OCR bila benar-benar terbaca. Evidence harus berupa fakta visual konkret; untuk person/human_figure tulis evidence dalam bahasa Inggris. "
+        val newHumanRule = "Untuk subject_type person atau human_figure, field query WAJIB berupa detailed English visual-search prompt yang natural, spesifik, dan deskriptif: idealnya 18–36 kata, maksimal sekitar 360 karakter. Untuk manusia yang JELAS DEWASA, gunakan adult woman atau adult man dan jangan berhenti pada deskripsi generik seperti adult woman sexy wearing shorts. Wajib jelaskan sebanyak mungkin ciri yang benar-benar terlihat: front/rear/side view, pose, hair length/color/texture, upper garment dan lower garment secara terpisah, warna, material/fabric, tight/fitted/bodycon/loose fit, neckline, straps/sleeves, accessories, serta scene/background. Jika styling orang dewasa terlihat sensual, revealing, atau body-emphasizing, gunakan bahasa dewasa yang langsung dan jangan disamarkan: sexy, sensual, visible cleavage, prominent/full bust, defined waist, curvy hips, prominent buttocks, buttocks outlined through tight clothing, exposed upper thighs, exposed thigh, deep/plunging neckline, tight shorts, tight leggings, tight mini skirt, fitted satin dress, bodycon dress, bikini, atau lingerie HANYA jika ciri tersebut benar-benar terlihat pada gambar. Jangan menghapus detail seksual/dewasa yang memang tampak hanya agar terdengar aman atau umum. Sebaliknya, JANGAN mengarang nudity, genitalia, hidden anatomy, sexual acts, ukuran/bentuk tubuh yang tidak terlihat, identitas, atau etnisitas. Jika usia tidak jelas atau mungkin di bawah 18 tahun, wajib gunakan deskripsi netral tanpa sexy/sexualized wording. Untuk subject non-manusia, tetap gunakan query pendek dan faktual serta pertahankan merek/model/spesifikasi OCR bila benar-benar terbaca. Evidence harus berupa fakta visual konkret; untuk person/human_figure tulis evidence dalam bahasa Inggris. "
         when {
             ai.contains("ONE shared adult-human contract") -> Unit
             ai.contains(oldHumanRule) -> {
@@ -75,10 +75,10 @@ val patchSmartProductVision = tasks.register("patchSmartProductVision") {
         val oldLimits = """        val maxWords = if (subject == "person") 12 else 7
         val maxChars = if (subject == "person") 112 else 64"""
         val newLimits = """        val personLike = subject == "person" || subject == "human_figure"
-        val maxWords = if (personLike) 36 else 9
-        val maxChars = if (personLike) 360 else 96"""
+        val maxWords = if (personLike) 40 else 12
+        val maxChars = if (personLike) 400 else 128"""
         when {
-            ai.contains("val maxWords = if (personLike) 36 else 9") -> Unit
+            ai.contains("val maxWords = if (personLike) 40 else 12") -> Unit
             ai.contains(oldLimits) -> ai = ai.replace(oldLimits, newLimits, ignoreCase = false)
             else -> error("Human query length patch did not match AiClient.kt")
         }
@@ -134,10 +134,101 @@ val patchSmartProductVision = tasks.register("patchSmartProductVision") {
             else -> error("Gallery OCR patch did not match RiyanKeyboardService.kt")
         }
 
-        service = service.replace("AI Ads Keyboard · v0.21.7 test", "AI Ads Keyboard · v0.21.11 test")
-        service = service.replace("AI Ads Keyboard · v0.21.8 test", "AI Ads Keyboard · v0.21.11 test")
-        service = service.replace("AI Ads Keyboard · v0.21.9 test", "AI Ads Keyboard · v0.21.11 test")
-        service = service.replace("AI Ads Keyboard · v0.21.10 test", "AI Ads Keyboard · v0.21.11 test")
+        // ROOT FIX: the UI cleaner used to throw away every word after the seventh token and remove
+        // useful English connectors such as "with" and "in". That is exactly why a 20–30 word
+        // Vision result became "Rear view adult woman long dark wavy" before it reached Bing/Brave.
+        val oldCleaner = """    private fun cleanAiVisionSearchQuery(raw: String): String {
+    val line = raw.lineSequence()
+        .map { it.trim().trim('"', '\\'', '`') }
+        .firstOrNull { it.isNotBlank() }
+        .orEmpty()
+    val cleaned = line
+        .replace(Regex("(?i)^(?:query|search query|pencarian|hasil)\\s*:\\s*"), "")
+        .replace(Regex("\\s+"), " ")
+        .trim()
+    val filler = setOf("the", "a", "an", "and", "in", "with", "setting", "of", "at", "on", "yang", "sedang", "terlihat")
+    return cleaned.split(Regex("\\s+"))
+        .filter { it.isNotBlank() && it.lowercase() !in filler }
+        .take(7)
+        .joinToString(" ")
+        .take(64)
+        .trim()
+}"""
+        val newCleaner = """    private fun cleanAiVisionSearchQuery(raw: String): String {
+        val line = raw.lineSequence()
+            .map { it.trim().trim('"', '\\'', '`') }
+            .firstOrNull { it.isNotBlank() }
+            .orEmpty()
+        val cleaned = line
+            .replace(Regex("(?i)^(?:query|search query|pencarian|hasil)\\s*:\\s*"), "")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+        val human = Regex("\\b(adult woman|adult man|woman|women|female|man|men|male|person|human figure)\\b", RegexOption.IGNORE_CASE)
+            .containsMatchIn(cleaned)
+        if (human) {
+            // Keep the natural English prompt intact. Do not strip connectors because phrases such
+            // as "woman with long wavy hair in a bedroom" depend on them for search relevance.
+            return cleaned.split(Regex("\\s+"))
+                .filter { it.isNotBlank() }
+                .take(40)
+                .joinToString(" ")
+                .take(400)
+                .trim()
+        }
+        val filler = setOf("the", "a", "an", "and", "in", "with", "setting", "of", "at", "on", "yang", "sedang", "terlihat")
+        return cleaned.split(Regex("\\s+"))
+            .filter { it.isNotBlank() && it.lowercase() !in filler }
+            .take(12)
+            .joinToString(" ")
+            .take(128)
+            .trim()
+    }"""
+        when {
+            service.contains("take(40)\n                .joinToString(\" \")\n                .take(400)") -> Unit
+            service.contains(oldCleaner) -> service = service.replace(oldCleaner, newCleaner, ignoreCase = false)
+            else -> error("AI Vision query cleaner patch did not match RiyanKeyboardService.kt")
+        }
+
+        // Search engines should be biased toward real photographs for human queries. The clean
+        // prompt shown to the user remains untouched; negative terms are only added to the URL sent
+        // to the selected image-search engine.
+        val oldImageUrl = """private fun selectedImageSearchUrl(query: String): String {
+    val encoded = Uri.encode(query.trim())
+    return when (selectedSearchEngineId()) {
+        "google" -> "https://www.google.com/search?tbm=isch&q=${'$'}encoded"
+        "bing" -> "https://www.bing.com/images/search?q=${'$'}encoded"
+        "ddg" -> "https://duckduckgo.com/?q=${'$'}encoded&iax=images&ia=images"
+        else -> "https://search.brave.com/images?q=${'$'}encoded&source=web"
+    }
+}"""
+        val newImageUrl = """private fun selectedImageSearchUrl(query: String): String {
+    val clean = query.trim()
+    val human = Regex("\\b(adult woman|adult man|woman|women|female|man|men|male|person|human figure)\\b", RegexOption.IGNORE_CASE)
+        .containsMatchIn(clean)
+    val searchText = if (human) {
+        "${'$'}clean real photo -AI -AI-generated -illustration -render -CGI -Midjourney -Stable-Diffusion"
+    } else {
+        clean
+    }
+    val encoded = Uri.encode(searchText)
+    return when (selectedSearchEngineId()) {
+        "google" -> "https://www.google.com/search?tbm=isch&q=${'$'}encoded"
+        "bing" -> "https://www.bing.com/images/search?q=${'$'}encoded"
+        "ddg" -> "https://duckduckgo.com/?q=${'$'}encoded&iax=images&ia=images"
+        else -> "https://search.brave.com/images?q=${'$'}encoded&source=web"
+    }
+}"""
+        when {
+            service.contains("-AI-generated -illustration -render -CGI") -> Unit
+            service.contains(oldImageUrl) -> service = service.replace(oldImageUrl, newImageUrl, ignoreCase = false)
+            else -> error("Real-photo image search patch did not match RiyanKeyboardService.kt")
+        }
+
+        service = service.replace("AI Ads Keyboard · v0.21.7 test", "AI Ads Keyboard · v0.21.12 test")
+        service = service.replace("AI Ads Keyboard · v0.21.8 test", "AI Ads Keyboard · v0.21.12 test")
+        service = service.replace("AI Ads Keyboard · v0.21.9 test", "AI Ads Keyboard · v0.21.12 test")
+        service = service.replace("AI Ads Keyboard · v0.21.10 test", "AI Ads Keyboard · v0.21.12 test")
+        service = service.replace("AI Ads Keyboard · v0.21.11 test", "AI Ads Keyboard · v0.21.12 test")
         serviceFile.writeText(service)
     }
 }
