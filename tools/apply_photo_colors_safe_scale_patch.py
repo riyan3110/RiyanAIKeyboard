@@ -122,6 +122,10 @@ try:
 except Exception:
     pass
 
+if not converted and shutil.which("dwebp"):
+    subprocess.run(["dwebp", str(SOURCE_ICON), "-o", str(COMPAT_ICON)], check=True)
+    converted = True
+
 if not converted and shutil.which("ffmpeg"):
     subprocess.run(
         ["ffmpeg", "-loglevel", "error", "-y", "-i", str(SOURCE_ICON), str(COMPAT_ICON)],
