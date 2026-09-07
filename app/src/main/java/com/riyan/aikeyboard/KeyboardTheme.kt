@@ -22,7 +22,9 @@ data class KeyboardThemePalette(
     val pressedKey: Int,
     val accent: Int,
     val text: Int,
-    val usesPhoto: Boolean
+    val usesPhoto: Boolean,
+    val border: Int = Color.rgb(181, 86, 249),
+    val numberText: Int = Color.WHITE
 )
 
 object KeyboardTheme {
@@ -52,6 +54,10 @@ object KeyboardTheme {
     fun palette(prefs: SharedPreferences): KeyboardThemePalette {
         val mode = prefs.getString("keyboard_theme_mode", MODE_DARK).orEmpty()
         val custom = parseColor(prefs.getString("keyboard_theme_color", "#5D4AC4"), Color.rgb(93, 74, 196))
+        val customBorder = parseColor(prefs.getString("keyboard_custom_border_color", "#B556F9"), Color.rgb(181, 86, 249))
+        val customKey = parseColor(prefs.getString("keyboard_custom_key_color", "#32323C"), Color.rgb(50, 50, 60))
+        val customLetter = parseColor(prefs.getString("keyboard_custom_letter_color", "#FFFFFF"), Color.WHITE)
+        val customNumber = parseColor(prefs.getString("keyboard_custom_number_color", "#FFFFFF"), Color.WHITE)
         val accent = when (mode) {
             MODE_PURPLE -> Color.rgb(104, 75, 214)
             MODE_BLUE -> Color.rgb(25, 118, 210)
@@ -94,6 +100,19 @@ object KeyboardTheme {
                 usesPhoto = false
             )
         }
+        if (mode == MODE_CUSTOM) {
+            return KeyboardThemePalette(
+                background = blend(customBorder, Color.BLACK, 0.82f),
+                key = customKey,
+                specialKey = customKey,
+                pressedKey = blend(customKey, customBorder, 0.28f),
+                accent = customBorder,
+                text = customLetter,
+                usesPhoto = false,
+                border = customBorder,
+                numberText = customNumber
+            )
+        }
         return KeyboardThemePalette(
             background = blend(accent, Color.BLACK, 0.76f),
             key = blend(accent, Color.rgb(45, 45, 53), 0.48f),
@@ -118,8 +137,12 @@ object KeyboardTheme {
         return if (runCatching { Color.parseColor(cleaned) }.isSuccess) cleaned else "#5D4AC4"
     }
 
-    private fun parseColor(value: String?, fallback: Int): Int =
-        runCatching { Color.parseColor(normalizeColor(value.orEmpty())) }.getOrDefault(fallback)
+    private fun parseColor(value: String?, fallback: Int): Int {
+        val raw = value.orEmpty().trim()
+        if (raw.isBlank()) return fallback
+        val normalized = if (raw.startsWith("#")) raw else "#$raw"
+        return runCatching { Color.parseColor(normalized) }.getOrDefault(fallback)
+    }
 
     private fun loadThemeBitmap(context: Context, uriValue: String): Bitmap? {
         cachedPhotoBitmap?.takeIf { cachedPhotoUri == uriValue && !it.isRecycled }?.let { return it }

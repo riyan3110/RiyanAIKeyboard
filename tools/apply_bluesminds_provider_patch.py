@@ -134,9 +134,11 @@ def patch_cursor_keys(source: str) -> str:
     return source
 
 
-text = patch_key_view(text)
-text = patch_neon_key_border(text)
-text = patch_cursor_keys(text)
-KEYBOARD_SERVICE.write_text(text)
-
-print("Keyboard thinner neon border + restored direct touch patch applied")
+if "keyBorderColor = palette.border" in text and "referenceBubbleKeyBackground(pressed: Boolean, baseColor: Int)" in text:
+    print("Custom key color source detected; legacy keyboard visual patch skipped")
+else:
+    text = patch_key_view(text)
+    text = patch_neon_key_border(text)
+    text = patch_cursor_keys(text)
+    KEYBOARD_SERVICE.write_text(text)
+    print("Keyboard thinner neon border + restored direct touch patch applied")

@@ -1,1 +1,1 @@
-0.21.15-test-browser-modern-colored-controls
+0.21.18-test-photo-colors-safe-scale
