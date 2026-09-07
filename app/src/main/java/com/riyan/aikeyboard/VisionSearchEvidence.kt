@@ -52,7 +52,51 @@ object VisionSearchEvidence {
 
     fun refineQuery(visionQuery: String, localTextHint: String): String {
         val productIdentity = extractProductIdentity(localTextHint)
-        return if (productIdentity.isNotBlank()) productIdentity else visionQuery
+        if (productIdentity.isNotBlank()) return productIdentity
+
+        val clean = visionQuery.trim().replace(Regex("\\s+"), " ")
+        return if (looksHuman(clean)) hardenHumanPhotoSearch(clean) else clean
+    }
+
+    private fun looksHuman(query: String): Boolean {
+        val q = query.lowercase()
+        return Regex(
+            "\\b(adult woman|adult man|woman|women|female|man|men|male|person|wanita|perempuan|pria|laki-laki)\\b",
+            RegexOption.IGNORE_CASE
+        ).containsMatchIn(q)
+    }
+
+    /**
+     * Keep all providers consistent: human searches are normalized to English and strongly prefer
+     * real photography. Negative terms reduce AI-generated/rendered results in search engines,
+     * though a search engine may not honor every exclusion perfectly.
+     */
+    private fun hardenHumanPhotoSearch(query: String): String {
+        var q = query
+            .replace(Regex("(?i)\\bwanita\\b"), "adult woman")
+            .replace(Regex("(?i)\\bperempuan\\b"), "adult woman")
+            .replace(Regex("(?i)\\bpria\\b"), "adult man")
+            .replace(Regex("(?i)\\bdari belakang\\b"), "rear view")
+            .replace(Regex("(?i)\\bdari depan\\b"), "front view")
+            .replace(Regex("(?i)\\bdari samping\\b"), "side view")
+            .replace(Regex("(?i)\\bcelana pendek ketat\\b"), "tight shorts")
+            .replace(Regex("(?i)\\bcelana pendek\\b"), "shorts")
+            .replace(Regex("(?i)\\blegging ketat\\b"), "tight leggings")
+            .replace(Regex("(?i)\\brok mini ketat\\b"), "tight mini skirt")
+            .replace(Regex("(?i)\\brok mini\\b"), "mini skirt")
+            .replace(Regex("(?i)\\bbaju ketat\\b"), "fitted top")
+            .replace(Regex("(?i)\\babu-abu\\b"), "gray")
+            .replace(Regex("(?i)\\bputih\\b"), "white")
+            .replace(Regex("(?i)\\bhitam\\b"), "black")
+            .replace(Regex("(?i)\\bpakai\\b"), "wearing")
+            .replace(Regex("\\s+"), " ")
+            .trim(' ', ',')
+
+        val exclusions = "real photo photography -AI -AI-generated -Midjourney -\"Stable Diffusion\" -illustration -render -CGI"
+        if (!q.contains("real photo", ignoreCase = true)) {
+            q = "$q, $exclusions"
+        }
+        return q.take(420).trim()
     }
 
     private fun extractProductIdentity(localTextHint: String): String {
