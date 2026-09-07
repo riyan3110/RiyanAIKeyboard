@@ -1,0 +1,118 @@
+name: Fix Vision Query Cleaner v0.21.12
+
+on:
+  push:
+    branches: [ fix/vision-query-pan-zoom ]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, '[vision-cleaner-fixed]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/vision-query-pan-zoom
+          fetch-depth: 0
+
+      - name: Patch root Vision query truncation
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          service_path = Path('app/src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt')
+          service = service_path.read_text()
+
+          start_marker = '    private fun cleanAiVisionSearchQuery(raw: String): String {'
+          start = service.find(start_marker)
+          if start < 0:
+              raise SystemExit('cleanAiVisionSearchQuery start marker not found')
+          end = service.find('\n    private fun ', start + len(start_marker))
+          if end < 0:
+              raise SystemExit('cleanAiVisionSearchQuery end marker not found')
+
+          new_cleaner = r'''    private fun cleanAiVisionSearchQuery(raw: String): String {
+        val line = raw.lineSequence()
+            .map { it.trim().trim('"', '\'', '`') }
+            .firstOrNull { it.isNotBlank() }
+            .orEmpty()
+        val cleaned = line
+            .replace(Regex("(?i)^(?:query|search query|pencarian|hasil)\\s*:\\s*"), "")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+
+        val human = Regex(
+            "\\b(adult woman|adult man|woman|women|female|man|men|male|person|human figure)\\b",
+            RegexOption.IGNORE_CASE
+        ).containsMatchIn(cleaned)
+
+        if (human) {
+            // Human Vision prompts are intentionally long. Keep English connectors and all grounded
+            // clothing/body/pose/scene details; the old 7-word/64-char cleaner destroyed relevance.
+            return cleaned.split(Regex("\\s+"))
+                .filter { it.isNotBlank() }
+                .take(40)
+                .joinToString(" ")
+                .take(400)
+                .trim()
+        }
+
+        val filler = setOf("the", "a", "an", "and", "in", "with", "setting", "of", "at", "on", "yang", "sedang", "terlihat")
+        return cleaned.split(Regex("\\s+"))
+            .filter { it.isNotBlank() && it.lowercase() !in filler }
+            .take(12)
+            .joinToString(" ")
+            .take(128)
+            .trim()
+    }
+'''
+          service = service[:start] + new_cleaner + service[end:]
+
+          old_image_start = '''private fun selectedImageSearchUrl(query: String): String {
+    val encoded = Uri.encode(query.trim())'''
+          new_image_start = '''private fun selectedImageSearchUrl(query: String): String {
+    val clean = query.trim()
+    val human = Regex(
+        "\\b(adult woman|adult man|woman|women|female|man|men|male|person|human figure)\\b",
+        RegexOption.IGNORE_CASE
+    ).containsMatchIn(clean)
+    val searchText = if (human) {
+        "$clean real photo -AI -AI-generated -illustration -render -CGI -Midjourney -Stable-Diffusion"
+    } else {
+        clean
+    }
+    val encoded = Uri.encode(searchText)'''
+          if old_image_start not in service:
+              raise SystemExit('selectedImageSearchUrl marker not found')
+          service = service.replace(old_image_start, new_image_start, 1)
+
+          service = service.replace('AI Ads Keyboard · v0.21.11 test', 'AI Ads Keyboard · v0.21.12 test')
+          service_path.write_text(service)
+
+          validator_path = Path('app/src/main/java/com/riyan/aikeyboard/HumanVisionValidator.kt')
+          validator = validator_path.read_text()
+          validator = validator.replace('if (words.size < 10) return false', 'if (words.size < 16) return false')
+          validator = validator.replace('if (detailGroups < 2) return false', 'if (detailGroups < 3) return false')
+          validator_path.write_text(validator)
+
+          prompt_path = Path('app/src/main/java/com/riyan/aikeyboard/HumanVisionPrompt.kt')
+          prompt = prompt_path.read_text()
+          prompt = prompt.replace('.take(300)', '.take(380)')
+          prompt = prompt.replace('result.split(Regex("\\\\s+")).size < 9', 'result.split(Regex("\\\\s+")).size < 16')
+          prompt_path.write_text(prompt)
+          PY
+
+      - name: Commit permanent source fix
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/fix-vision-query-cleaner-v02112.yml
+          git add app/src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt \
+                  app/src/main/java/com/riyan/aikeyboard/HumanVisionValidator.kt \
+                  app/src/main/java/com/riyan/aikeyboard/HumanVisionPrompt.kt
+          git commit -m "Fix long human Vision search query at source [vision-cleaner-fixed]"
+          git push origin HEAD:fix/vision-query-pan-zoom
