@@ -1,1 +1,1 @@
-0.21.17-test-color-controls-visible-150
+0.21.18-test-photo-colors-safe-scale
