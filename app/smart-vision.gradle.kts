@@ -24,20 +24,31 @@ val patchSmartProductVision = tasks.register("patchSmartProductVision") {
         val newNormalize = """                val normalizedQuery = normalizeVisionResult(raw)
                     ?: throw IllegalStateException("Model ${'$'}{provider.label} tidak membuktikan bahwa gambar benar-benar dibaca.")
                 val query = VisionSearchEvidence.refineQuery(normalizedQuery, localTextHint)
+                if (!HumanVisionValidator.isAcceptable(query)) {
+                    throw IllegalStateException("Model ${'$'}{provider.label} memberi deskripsi manusia terlalu generik; coba provider Vision berikutnya.")
+                }
                 AiResponse(query, provider)"""
         when {
-            ai.contains("VisionSearchEvidence.refineQuery(normalizedQuery, localTextHint)") -> Unit
+            ai.contains("HumanVisionValidator.isAcceptable(query)") -> Unit
             ai.contains(oldNormalize) -> ai = ai.replace(oldNormalize, newNormalize, ignoreCase = false)
             else -> error("Smart vision normalize patch did not match AiClient.kt")
         }
 
-        // Human images use one shared contract on every multimodal provider: detailed English prompt.
+        // ONE shared adult-human contract is injected into the common Vision instruction used by
+        // OpenRouter, TabiAI, 9Router, BluesMinds, xKiro and OrcaRouter. AI Horde is normalized by
+        // HumanVisionPrompt below, then passes through the exact same quality gate above.
         val oldHumanRule = "Buat query pencarian visual yang pendek, natural, dan faktual: bahasa Indonesia, 3–12 kata, maksimal sekitar 112 karakter. Query hanya boleh berisi subjek utama dan 2–3 ciri paling jelas yang benar-benar terlihat pada foto saat ini. "
-        val newHumanRule = "Untuk subject_type person atau human_figure, field query WAJIB berupa detailed English visual-search prompt yang natural, spesifik, dan deskriptif: 8–28 kata, maksimal sekitar 240 karakter. Untuk manusia yang jelas dewasa, gunakan adult woman atau adult man dan jelaskan sebanyak mungkin ciri visual yang benar-benar terlihat: front/rear/side view, pose, hair length/color/texture, outfit color/type/material/fabric/fit, neckline, straps/sleeves, accessories, serta scene/background utama. Bila benar-benar terlihat pada orang dewasa, sertakan visible body silhouette details seperti bare shoulders, visible cleavage, defined waist, curvy hips, exposed thigh through a slit, atau long legs; istilah sexy atau glamorous hanya boleh dipakai bila styling jelas mendukungnya. Gunakan kata detail pakaian seperti satin, silk, leather, denim, lace, bodycon, fitted, tight, slip dress, mini skirt, leggings, shorts, atau thigh-high slit hanya bila tampak pada gambar. Jangan menebak anatomi di balik pakaian dan jangan mengarang bagian tubuh, ukuran, tindakan seksual, identitas, etnisitas, atau detail yang tidak terlihat. Jika usia tidak jelas atau mungkin di bawah 18 tahun, gunakan deskripsi netral tanpa sexy/sexualized wording. Untuk subject non-manusia, tetap gunakan query pendek dan faktual serta pertahankan merek/model/spesifikasi OCR bila benar-benar terbaca. Evidence harus berupa fakta visual konkret; untuk person/human_figure tulis evidence dalam bahasa Inggris. "
+        val newHumanRule = "Untuk subject_type person atau human_figure, field query WAJIB berupa detailed English visual-search prompt yang natural, spesifik, dan deskriptif: idealnya 14–32 kata, maksimal sekitar 320 karakter. Untuk manusia yang JELAS DEWASA, gunakan adult woman atau adult man dan jangan berhenti pada deskripsi generik seperti adult woman sexy wearing shorts. Wajib jelaskan sebanyak mungkin ciri yang benar-benar terlihat: front/rear/side view, pose, hair length/color/texture, upper garment dan lower garment secara terpisah, warna, material/fabric, tight/fitted/bodycon/loose fit, neckline, straps/sleeves, accessories, serta scene/background. Jika styling orang dewasa terlihat sensual, revealing, atau body-emphasizing, gunakan bahasa dewasa yang langsung dan jangan disamarkan: sexy, sensual, visible cleavage, prominent/full bust, defined waist, curvy hips, prominent buttocks, buttocks outlined through tight clothing, exposed upper thighs, exposed thigh, deep/plunging neckline, tight shorts, tight leggings, tight mini skirt, fitted satin dress, bodycon dress, bikini, atau lingerie HANYA jika ciri tersebut benar-benar terlihat pada gambar. Jangan menghapus detail seksual/dewasa yang memang tampak hanya agar terdengar aman atau umum. Sebaliknya, JANGAN mengarang nudity, genitalia, hidden anatomy, sexual acts, ukuran/bentuk tubuh yang tidak terlihat, identitas, atau etnisitas. Jika usia tidak jelas atau mungkin di bawah 18 tahun, wajib gunakan deskripsi netral tanpa sexy/sexualized wording. Untuk subject non-manusia, tetap gunakan query pendek dan faktual serta pertahankan merek/model/spesifikasi OCR bila benar-benar terbaca. Evidence harus berupa fakta visual konkret; untuk person/human_figure tulis evidence dalam bahasa Inggris. "
         when {
-            ai.contains("DETAILED ENGLISH image-search prompt") -> Unit
-            ai.contains("detailed English visual-search prompt") -> Unit
-            ai.contains(oldHumanRule) -> ai = ai.replace(oldHumanRule, newHumanRule, ignoreCase = false)
+            ai.contains("ONE shared adult-human contract") -> Unit
+            ai.contains(oldHumanRule) -> {
+                ai = ai.replace(oldHumanRule, newHumanRule, ignoreCase = false)
+                // Marker so a patched source is recognizable without weakening the generated instruction.
+                ai = ai.replace(
+                    "Analisis isi gambar yang benar-benar diterima, bukan tebakan dari warna atau teks pendamping. ",
+                    "Analisis isi gambar yang benar-benar diterima, bukan tebakan dari warna atau teks pendamping. ONE shared adult-human contract. "
+                )
+            }
             else -> error("Detailed human Vision instruction patch did not match AiClient.kt")
         }
 
@@ -53,11 +64,10 @@ val patchSmartProductVision = tasks.register("patchSmartProductVision") {
         ai = ai.replace("            \"human_figure\" -> \"figur manusia/humanoid\"", "            \"human_figure\" -> \"\"")
 
         val oldSemanticThreshold = """        if (subject !in setOf("text", "scene") && semanticTokens.size < 2) return null"""
-        val newSemanticThreshold = """        if (subject in setOf("person", "human_figure") && semanticTokens.size < 6) return null
+        val newSemanticThreshold = """        if (subject in setOf("person", "human_figure") && semanticTokens.size < 8) return null
         if (subject !in setOf("text", "scene", "person", "human_figure") && semanticTokens.size < 2) return null"""
         when {
-            ai.contains("semanticTokens.size < 6") -> Unit
-            ai.contains("detailedEnough = semanticTokens.size >= 6") -> Unit
+            ai.contains("semanticTokens.size < 8") -> Unit
             ai.contains(oldSemanticThreshold) -> ai = ai.replace(oldSemanticThreshold, newSemanticThreshold, ignoreCase = false)
             else -> error("Human semantic threshold patch did not match AiClient.kt")
         }
@@ -65,11 +75,10 @@ val patchSmartProductVision = tasks.register("patchSmartProductVision") {
         val oldLimits = """        val maxWords = if (subject == "person") 12 else 7
         val maxChars = if (subject == "person") 112 else 64"""
         val newLimits = """        val personLike = subject == "person" || subject == "human_figure"
-        val maxWords = if (personLike) 32 else 9
-        val maxChars = if (personLike) 320 else 96"""
+        val maxWords = if (personLike) 36 else 9
+        val maxChars = if (personLike) 360 else 96"""
         when {
-            ai.contains("val maxWords = if (personLike) 32 else 9") -> Unit
-            ai.contains("val maxWords = if (subject == \"person\") 32 else 7") -> Unit
+            ai.contains("val maxWords = if (personLike) 36 else 9") -> Unit
             ai.contains(oldLimits) -> ai = ai.replace(oldLimits, newLimits, ignoreCase = false)
             else -> error("Human query length patch did not match AiClient.kt")
         }
@@ -86,7 +95,6 @@ val patchSmartProductVision = tasks.register("patchSmartProductVision") {
         }
     }"""
         when {
-            ai.contains("OCR hint from this same image crop") -> Unit
             ai.contains("Teks OCR lokal berikut hanya evidence tambahan") -> Unit
             ai.contains(instructionMarker) -> ai = ai.replace(instructionMarker, instructionReplacement, ignoreCase = false)
             else -> error("Smart vision instruction patch did not match AiClient.kt")
@@ -94,7 +102,7 @@ val patchSmartProductVision = tasks.register("patchSmartProductVision") {
         aiFile.writeText(ai)
 
         // AI Horde has no full multimodal LLM, so convert its Alchemy caption/tags with the same
-        // detailed English human-prompt contract instead of the older Indonesian compact query.
+        // detailed English adult-human contract instead of the older Indonesian compact query.
         val hordeFile = file("src/main/java/com/riyan/aikeyboard/AiHordeAlchemyVision.kt")
         var horde = hordeFile.readText()
         horde = horde.replace(
@@ -126,9 +134,10 @@ val patchSmartProductVision = tasks.register("patchSmartProductVision") {
             else -> error("Gallery OCR patch did not match RiyanKeyboardService.kt")
         }
 
-        service = service.replace("AI Ads Keyboard · v0.21.7 test", "AI Ads Keyboard · v0.21.10 test")
-        service = service.replace("AI Ads Keyboard · v0.21.8 test", "AI Ads Keyboard · v0.21.10 test")
-        service = service.replace("AI Ads Keyboard · v0.21.9 test", "AI Ads Keyboard · v0.21.10 test")
+        service = service.replace("AI Ads Keyboard · v0.21.7 test", "AI Ads Keyboard · v0.21.11 test")
+        service = service.replace("AI Ads Keyboard · v0.21.8 test", "AI Ads Keyboard · v0.21.11 test")
+        service = service.replace("AI Ads Keyboard · v0.21.9 test", "AI Ads Keyboard · v0.21.11 test")
+        service = service.replace("AI Ads Keyboard · v0.21.10 test", "AI Ads Keyboard · v0.21.11 test")
         serviceFile.writeText(service)
     }
 }
