@@ -1,1 +1,1 @@
-0.21.13-test-clean-vision-search
+0.21.14-test-browser-auto-fullscreen-controls
