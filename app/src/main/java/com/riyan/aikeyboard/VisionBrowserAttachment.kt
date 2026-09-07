@@ -43,7 +43,7 @@ object VisionBrowserAttachment {
         }.getOrNull()
 
         if (scaled !== bitmap && !scaled.isRecycled) scaled.recycle()
-        if (bytes.isNullOrEmpty()) return
+        if (bytes == null || bytes.isEmpty()) return
 
         synchronized(lock) {
             jpegBytes = bytes
