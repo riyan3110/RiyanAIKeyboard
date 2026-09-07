@@ -1,1 +1,1 @@
-0.21.23-test-vision-search-google
+0.21.25-test-haptic-gap-fix
