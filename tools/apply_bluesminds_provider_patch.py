@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 import runpy
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -32,17 +33,12 @@ def patch_key_view(source: str) -> str:
         raise RuntimeError("Keyboard visual patch marker not found: keyView block")
 
     block = source[start:end]
-
-    # Keep the previous optical centering correction for descender letters.
     old_label = '            if (spec.alternate != null) translationY = dpFloat(4f)'
     new_label = '''            if (spec.label in setOf("q", "y", "p", "g", "j")) {
                 translationY = dpFloat(-2f)
             } else if (spec.alternate != null && spec.label.none { it.isLetterOrDigit() }) translationY = dpFloat(4f)'''
     block = replace_once(block, old_label, new_label, "descender centering")
 
-    # Keep the proven working touch path on the actual key frame. The border is
-    # part of this frame, so pressing anywhere on the visible face/border uses
-    # the same listener and action as the legend area.
     block = replace_once(
         block,
         '''                    actionTriggered = false
@@ -74,7 +70,6 @@ def patch_key_view(source: str) -> str:
                     true''',
         "cancel key border feedback",
     )
-
     return source[:start] + block + source[end:]
 
 
@@ -100,8 +95,6 @@ def patch_neon_key_border(source: str) -> str:
 
 
 def patch_cursor_keys(source: str) -> str:
-    # Cursor-arrow buttons keep their original proven touch listener directly on
-    # the visible frame, while using the same thinner neon purple border.
     start_marker = "    private fun cursorDirectionButton(label: String, keyCode: Int): View {"
     end_marker = "\n    private fun cursorPadTouchListener(): View.OnTouchListener {"
     start = source.find(start_marker)
@@ -130,7 +123,6 @@ def patch_cursor_keys(source: str) -> str:
     )
     source = source[:start] + block + source[end:]
 
-    # Touchpad/d-pad container borders use the same thinner reference purple.
     old_cursor_stroke = "        setStroke(dp(2), if (pressed) Color.rgb(214, 133, 255) else Color.rgb(127, 86, 180))"
     new_cursor_stroke = "        setStroke(dp(if (pressed) 3 else 2), if (pressed) Color.rgb(205, 124, 255) else Color.rgb(181, 86, 249))"
     source = replace_once(source, old_cursor_stroke, new_cursor_stroke, "cursor pad neon border")
@@ -138,9 +130,7 @@ def patch_cursor_keys(source: str) -> str:
 
 
 def patch_vision_attachment_service(source: str) -> str:
-    # Preserve the exact camera/gallery crop the user is looking at before the preview
-    # bitmap is recycled. The browser can then carry that image together with the AI
-    # Vision query instead of reducing the search to text only.
+    # Capture the exact camera/gallery crop before its temporary Bitmap is recycled.
     camera_marker = '''            val prepared = scaleBitmapForAiVision(targetFrame, 1536)
             val localHint = buildString {'''
     camera_replacement = '''            val prepared = scaleBitmapForAiVision(targetFrame, 1536)
@@ -155,14 +145,22 @@ def patch_vision_attachment_service(source: str) -> str:
             val encoded = runCatching {'''
     source = replace_once(source, gallery_marker, gallery_replacement, "gallery vision attachment capture")
 
-    query_marker = '''                    val query = response?.text?.let(::cleanAiVisionSearchQuery).orEmpty()'''
-    query_replacement = '''                    val query = response?.text?.let(::cleanAiVisionSearchQuery).orEmpty()
-                    VisionBrowserAttachment.updateQuery(query)'''
-    query_count = source.count(query_marker)
-    if query_count < 2 and query_replacement not in source:
-        raise RuntimeError("Keyboard visual patch marker not found: camera/gallery Vision query")
-    if query_replacement not in source:
-        source = source.replace(query_marker, query_replacement, 2)
+    # Camera and gallery live at different nesting depths. Match indentation instead of
+    # assuming both `val query` lines have the same number of spaces.
+    if "VisionBrowserAttachment.updateQuery(query)" not in source:
+        query_pattern = re.compile(
+            r'(?m)^(?P<indent>\s*)val\s+query\s*=\s*response\?\.text\?\.let\(::cleanAiVisionSearchQuery\)\.orEmpty\(\)\s*$'
+        )
+
+        def add_query_update(match: re.Match) -> str:
+            indent = match.group("indent")
+            return match.group(0) + "\n" + indent + "VisionBrowserAttachment.updateQuery(query)"
+
+        source, query_count = query_pattern.subn(add_query_update, source, count=2)
+        if query_count < 2:
+            raise RuntimeError(
+                f"Keyboard visual patch marker found only {query_count}/2 camera/gallery Vision queries"
+            )
 
     direct_marker = '''        if (!scannerVisualSearchPreferred && (scannerSelectedQuery.isNotBlank() || scannerSelectedUrl.isNotBlank())) {
             openSearchResults(scannerSelectedQuery, scannerSelectedUrl)'''
@@ -171,15 +169,23 @@ def patch_vision_attachment_service(source: str) -> str:
             openSearchResults(scannerSelectedQuery, scannerSelectedUrl)'''
     source = replace_once(source, direct_marker, direct_replacement, "clear stale attachment for direct scan")
 
-    failure_marker = '''                    if (query.isBlank()) {
-                        scannerSearchButton?.text = "Cari"'''
-    failure_replacement = '''                    if (query.isBlank()) {
-                        VisionBrowserAttachment.clear()
-                        scannerSearchButton?.text = "Cari"'''
-    if failure_replacement not in source:
-        if source.count(failure_marker) < 2:
-            raise RuntimeError("Keyboard visual patch marker not found: clear failed Vision attachment")
-        source = source.replace(failure_marker, failure_replacement, 2)
+    if "VisionBrowserAttachment.clear()\n" not in source or source.count("VisionBrowserAttachment.clear()") < 3:
+        failure_pattern = re.compile(
+            r'(?m)^(?P<indent>\s*)if\s*\(query\.isBlank\(\)\)\s*\{\s*\n(?P<buttonindent>\s*)scannerSearchButton\?\.text\s*=\s*"Cari"'
+        )
+
+        def clear_failed_query(match: re.Match) -> str:
+            return (
+                match.group("indent") + "if (query.isBlank()) {\n" +
+                match.group("buttonindent") + "VisionBrowserAttachment.clear()\n" +
+                match.group("buttonindent") + 'scannerSearchButton?.text = "Cari"'
+            )
+
+        source, failure_count = failure_pattern.subn(clear_failed_query, source, count=2)
+        if failure_count < 2:
+            raise RuntimeError(
+                f"Keyboard visual patch marker found only {failure_count}/2 failed Vision branches"
+            )
 
     return source
 
@@ -281,9 +287,9 @@ def patch_brave_visual_attachment(source: str) -> str:
 
     /**
      * Bing/Google image pages already expose an image file input. Feed the camera/gallery JPEG
-     * directly into that input so the browser receives the original visual evidence, not only the
-     * AI-generated text prompt. If a provider changes its DOM this gracefully falls back to the
-     * normal text image search while the native attachment chip remains visible.
+     * into that input so the browser receives the original visual evidence, not only text.
+     * If a provider changes its DOM this gracefully falls back to text image search while the
+     * native attachment chip remains visible.
      */
     private fun injectPendingVisionAttachment(view: WebView, rawUrl: String) {
         val snapshot = VisionBrowserAttachment.snapshot() ?: return
@@ -363,14 +369,14 @@ def patch_brave_visual_attachment(source: str) -> str:
                 var desc = Object.getOwnPropertyDescriptor(proto, 'value');
                 if (desc && desc.set) desc.set.call(field, query); else field.value = query;
                 field.focus();
-                try { field.dispatchEvent(new InputEvent('input', {bubbles:true, inputType:'insertText', data:query})); }
+                try { field.dispatchEvent(new InputEvent('input', {bubbles:true,inputType:'insertText',data:query})); }
                 catch (_) { field.dispatchEvent(new Event('input', {bubbles:true})); }
                 field.dispatchEvent(new Event('change', {bubbles:true}));
                 setTimeout(function() {
                   try {
                     if (field.form && typeof field.form.requestSubmit === 'function') field.form.requestSubmit();
                     else {
-                      var opt = {key:'Enter', code:'Enter', keyCode:13, which:13, bubbles:true, cancelable:true};
+                      var opt = {key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true,cancelable:true};
                       field.dispatchEvent(new KeyboardEvent('keydown', opt));
                       field.dispatchEvent(new KeyboardEvent('keyup', opt));
                     }
