@@ -88,6 +88,8 @@ s = replace_once(
     s,
     '''                    keyFace.background = referenceBubbleKeyBackground(pressed = true, baseColor = normalColor)
                     if (instantKeyResponse) {
+                        // Input first. Visual/haptic extras are intentionally deferred so a busy
+                        // host app never has to wait for the keyboard's preview animation.
                         // Give tactile feedback first so an auto-cap render can never delay vibration.
                         keyFeedback(view, longPress = false)
                         spec.action()
