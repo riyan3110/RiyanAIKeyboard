@@ -1,0 +1,139 @@
+name: Patch AiClient v0.21.10
+
+on:
+  push:
+    branches: [ fix/vision-query-pan-zoom ]
+    paths:
+      - '.github/workflows/patch-aiclient-v02110.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/vision-query-pan-zoom
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Patch common Vision contract for every provider
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path('app/src/main/java/com/riyan/aikeyboard/AiClient.kt')
+          s = p.read_text()
+
+          replacement = r'''    private fun visionInstruction(localTextHint: String): String = buildString {
+              append(
+                  "Analyze the pixels of the CURRENT image from scratch. First classify the main subject as person, human_figure, animal, vehicle, product, food, plant, text, illustration, object, scene, or unknown. " +
+                      "Never identify a real person. Human_figure is only for obvious illustration, statue, toy, render, or non-photographic humanoid; a photographic human must be person. " +
+                      "For subject_type=person, create a DETAILED ENGLISH image-search prompt, normally 14-30 words and up to 300 characters. Include as many clearly visible facts as possible: clearly-adult woman/man when age is certain, front/side/rear view, pose, hair, upper garment and lower garment separately, their colors, material, tight/fitted/loose fit, neckline/straps, visible waist/hips/thighs/body silhouette, and scene. " +
+                      "If the person is clearly adult and the visible styling is sexualized or body-emphasizing, use direct adult fashion/body language when visually supported: sexy, sensual, tight, body-hugging, visible cleavage, defined waist, curvy hips, buttocks outlined through tight clothing, prominent buttocks, exposed upper thighs, exposed thigh, deep neckline, or similar. Do not euphemize a visible adult body feature. " +
+                      "Never invent nudity, genitals, hidden anatomy, sexual acts, body size, or details not visible. If the person might be under 18 or age is uncertain, keep the description neutral and do not use sexualized terms. " +
+                      "For person results, reject generic wording such as 'woman wearing shorts' or 'adult woman sexy walking'. The query must include a viewpoint, specific clothing detail, and at least two additional visible details. " +
+                      "For non-person subjects, keep query concise and factual, preferably 3-12 words. For products, prioritize visible brand/model/spec text from the image over background objects. " +
+                      "Evidence must contain 4-8 concrete facts from this exact image and support every body/sensitive claim used in query. " +
+                      "Return ONLY minified JSON using: {\"subject_type\":\"person|human_figure|animal|vehicle|product|food|plant|text|illustration|object|scene|unknown\",\"confidence\":0.0,\"query\":\"...\",\"evidence\":\"...\"}. Use unknown if the image cannot actually be seen."
+              )
+              if (localTextHint.isNotBlank()) {
+                  append(" OCR hint from this same image crop; use it only when visibly consistent with the pixels: ")
+                  append(localTextHint.take(700))
+              }
+          }
+
+          private fun normalizePersonQueryLabel'''
+
+          pattern = re.compile(r'    private fun visionInstruction\(localTextHint: String\): String = buildString \{.*?\n    \}\n\n    private fun normalizePersonQueryLabel', re.S)
+          s, n = pattern.subn(replacement, s, count=1)
+          if n != 1:
+              raise SystemExit(f'visionInstruction replacement failed: {n}')
+
+          s = s.replace('val maxWords = if (subject == "person") 12 else 7', 'val maxWords = if (subject == "person") 32 else 7')
+          s = s.replace('val maxChars = if (subject == "person") 112 else 64', 'val maxChars = if (subject == "person") 320 else 64')
+
+          marker = '        val maxWords = if (subject == "person") 32 else 7'
+          guard = '''        if (subject == "person") {
+              val q = query.lowercase()
+              val hasView = Regex("\\b(rear view|back view|front view|side view|from behind|from the front|from the side|dari belakang|dari depan|dari samping)\\b", RegexOption.IGNORE_CASE).containsMatchIn(q)
+              val hasClothing = Regex("\\b(dress|gown|shorts|leggings|skirt|pants|trousers|camisole|tank top|crop top|shirt|blouse|top|gaun|celana|legging|rok|baju)\\b", RegexOption.IGNORE_CASE).containsMatchIn(q)
+              val detailedEnough = semanticTokens.size >= 6
+              if (!hasView || !hasClothing || !detailedEnough) return null
+          }
+
+          val maxWords = if (subject == "person") 32 else 7'''
+          if marker not in s:
+              raise SystemExit('person detail guard marker missing')
+          s = s.replace(marker, guard, 1)
+
+          p.write_text(s)
+          PY
+
+          grep -n "DETAILED ENGLISH image-search prompt" app/src/main/java/com/riyan/aikeyboard/AiClient.kt
+          grep -n "val maxWords = if (subject == \"person\") 32" app/src/main/java/com/riyan/aikeyboard/AiClient.kt
+
+      - name: Restore stable debug signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.riyan-ai-keyboard/debug.keystore
+          key: ${{ runner.os }}-riyan-ai-debug-keystore-v2
+
+      - name: Create debug key if missing
+        shell: bash
+        run: |
+          mkdir -p "$HOME/.riyan-ai-keyboard"
+          if [ ! -f "$HOME/.riyan-ai-keyboard/debug.keystore" ]; then
+            keytool -genkeypair -keystore "$HOME/.riyan-ai-keyboard/debug.keystore" -storepass android -alias androiddebugkey -keypass android -dname "CN=Riyan AI Keyboard Debug,O=Riyan,C=ID" -keyalg RSA -keysize 2048 -validity 10000
+          fi
+
+      - name: Apply persistent version
+        shell: bash
+        run: |
+          VERSION_NAME=$(tr -d '\r\n' < app/build-version.txt)
+          VERSION_CODE=$(tr -d '\r\n' < app/build-code.txt)
+          sed -i -E "s/versionName = \"[^\"]+\"/versionName = \"$VERSION_NAME\"/" app/build.gradle.kts
+          sed -i -E "s/versionCode = [0-9]+/versionCode = $VERSION_CODE/" app/build.gradle.kts
+
+      - name: Build APK
+        run: RIYAN_KEYSTORE_PATH="$HOME/.riyan-ai-keyboard/debug.keystore" gradle :app:assembleDebug
+
+      - name: Package versioned APK
+        id: package
+        shell: bash
+        run: |
+          VERSION_NAME=$(tr -d '\r\n' < app/build-version.txt)
+          SAFE_VERSION=$(printf '%s' "$VERSION_NAME" | tr -cs 'A-Za-z0-9._-' '-')
+          APK_NAME="AI-Ads-Keyboard-${SAFE_VERSION}.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "app/build/outputs/apk/debug/$APK_NAME"
+          echo "apk_path=app/build/outputs/apk/debug/$APK_NAME" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=AI-Ads-Keyboard-${SAFE_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Commit AiClient patch
+        shell: bash
+        run: |
+          git config user.name "ChatGPT"
+          git config user.email "actions@users.noreply.github.com"
+          git add app/src/main/java/com/riyan/aikeyboard/AiClient.kt
+          if ! git diff --cached --quiet; then
+            git commit -m "Enforce detailed adult human Vision across providers [skip ci]"
+            git push origin HEAD:fix/vision-query-pan-zoom
+          fi
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package.outputs.artifact_name }}
+          path: ${{ steps.package.outputs.apk_path }}

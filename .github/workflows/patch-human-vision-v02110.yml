@@ -1,0 +1,436 @@
+name: Patch Human Vision v0.21.10
+
+on:
+  push:
+    branches: [ fix/vision-query-pan-zoom ]
+    paths:
+      - '.github/workflows/patch-human-vision-v02110.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/vision-query-pan-zoom
+          fetch-depth: 0
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Patch detailed adult human vision from the root
+        shell: bash
+        run: |
+          cat > app/src/main/java/com/riyan/aikeyboard/HumanVisionPrompt.kt <<'KOTLIN'
+          package com.riyan.aikeyboard
+
+          /**
+           * Builds a detailed, grounded English search prompt for human images.
+           * Sexual/adult styling is allowed only for clearly adult subjects and only when visually supported.
+           */
+          object HumanVisionPrompt {
+              fun fromAlchemy(
+                  rawCaption: String,
+                  rawTags: List<Pair<String, Double>>,
+                  ageUnclear: Boolean
+              ): String {
+                  val strongTags = rawTags.filter { it.second >= 0.16 }
+                  val source = (rawCaption + " " + strongTags.joinToString(" ") { it.first })
+                      .lowercase()
+                      .replace(Regex("\\s+"), " ")
+                      .trim()
+
+                  fun has(pattern: String): Boolean =
+                      Regex(pattern, RegexOption.IGNORE_CASE).containsMatchIn(source)
+
+                  fun tagHas(pattern: String, minConfidence: Double = 0.18): Boolean =
+                      rawTags.any { (text, confidence) ->
+                          confidence >= minConfidence && Regex(pattern, RegexOption.IGNORE_CASE).containsMatchIn(text)
+                      }
+
+                  val adultWoman = !ageUnclear && has("\\b(adult woman|woman|women|female)\\b")
+                  val adultMan = !ageUnclear && !adultWoman && has("\\b(adult man|man|men|male)\\b")
+                  val subject = when {
+                      adultWoman -> "adult woman"
+                      adultMan -> "adult man"
+                      else -> "person"
+                  }
+
+                  val rearEvidence = has("\\b(from behind|seen from behind|back view|rear view|facing away|back to camera|turned away|backside)\\b") ||
+                      tagHas("\\b(ass|butt|buttocks|booty|backside)\\b")
+                  val frontEvidence = has("\\b(front view|from the front|facing camera|looking at camera|face visible)\\b")
+                  val sideEvidence = has("\\b(side view|from the side|profile view)\\b")
+                  val view = when {
+                      rearEvidence && !frontEvidence -> "rear view"
+                      sideEvidence -> "side view"
+                      frontEvidence -> "front view"
+                      else -> ""
+                  }
+
+                  val pose = when {
+                      has("\\b(sitting|seated)\\b") -> "sitting"
+                      has("\\b(standing|stands)\\b") -> "standing"
+                      has("\\b(walking|walks)\\b") && !rearEvidence -> "walking"
+                      else -> ""
+                  }
+
+                  val colors = listOf("black", "white", "gray", "grey", "red", "blue", "green", "beige", "cream", "pink", "purple", "yellow", "brown")
+                  fun normalizeColor(value: String): String = when (value.lowercase()) {
+                      "grey" -> "gray"
+                      "cream" -> "beige"
+                      else -> value.lowercase()
+                  }
+
+                  fun colorFor(garmentPattern: String): String {
+                      val colorPattern = colors.joinToString("|")
+                      val patterns = listOf(
+                          Regex("\\b($colorPattern)\\s+(?:tight\\s+|fitted\\s+|bodycon\\s+|skin-tight\\s+)?(?:$garmentPattern)\\b", RegexOption.IGNORE_CASE),
+                          Regex("\\b(?:$garmentPattern)\\s+(?:in\\s+)?($colorPattern)\\b", RegexOption.IGNORE_CASE)
+                      )
+                      patterns.forEach { regex ->
+                          regex.find(source)?.groupValues?.getOrNull(1)?.takeIf { it.isNotBlank() }?.let { return normalizeColor(it) }
+                      }
+                      return ""
+                  }
+
+                  fun materialFor(garmentPattern: String): String {
+                      val materials = "satin|silk|leather|denim|lace|cotton|spandex|lycra|knit|knitted"
+                      Regex("\\b($materials)\\s+(?:tight\\s+|fitted\\s+)?(?:$garmentPattern)\\b", RegexOption.IGNORE_CASE)
+                          .find(source)?.groupValues?.getOrNull(1)?.let { return it.lowercase().replace("knitted", "knit") }
+                      Regex("\\b(?:$garmentPattern)\\s+(?:made of\\s+|in\\s+)?($materials)\\b", RegexOption.IGNORE_CASE)
+                          .find(source)?.groupValues?.getOrNull(1)?.let { return it.lowercase().replace("knitted", "knit") }
+                      return ""
+                  }
+
+                  fun fittedFor(garmentPattern: String): Boolean =
+                      Regex("\\b(?:tight|fitted|form-fitting|skin-tight|body-hugging|close-fitting|stretch|stretchy)\\s+(?:$garmentPattern)\\b", RegexOption.IGNORE_CASE).containsMatchIn(source) ||
+                          Regex("\\b(?:$garmentPattern)\\b.{0,18}\\b(tight|fitted|form-fitting|skin-tight|body-hugging|close-fitting)\\b", RegexOption.IGNORE_CASE).containsMatchIn(source)
+
+                  val topPattern = "camisole|tank top|crop top|halter top|blouse|shirt|top"
+                  val lowerPattern = "short shorts|athletic shorts|gym shorts|shorts|leggings|yoga pants|mini skirt|miniskirt|skirt|pants|trousers"
+                  val dressPattern = "slip dress|camisole dress|bodycon dress|dress|gown"
+
+                  val topGarment = when {
+                      has("\\bcamisole\\b") -> "camisole top"
+                      has("\\btank top\\b") -> "tank top"
+                      has("\\bcrop top\\b") -> "crop top"
+                      has("\\bhalter top\\b") -> "halter top"
+                      has("\\bblouse\\b") -> "blouse"
+                      has("\\bshirt\\b") -> "shirt"
+                      has("\\btop\\b") -> "top"
+                      else -> ""
+                  }
+                  val lowerGarment = when {
+                      has("\\b(short shorts|hot pants)\\b") -> "short shorts"
+                      has("\\b(athletic shorts|gym shorts)\\b") -> "athletic shorts"
+                      has("\\bshorts\\b") -> "shorts"
+                      has("\\b(leggings|yoga pants)\\b") -> "leggings"
+                      has("\\b(mini skirt|miniskirt)\\b") -> "mini skirt"
+                      has("\\bskirt\\b") -> "skirt"
+                      has("\\b(pants|trousers)\\b") -> "pants"
+                      else -> ""
+                  }
+                  val dressGarment = when {
+                      has("\\b(slip dress|camisole dress)\\b") -> "slip dress"
+                      has("\\bbodycon dress\\b") -> "bodycon dress"
+                      has("\\b(dress|gown)\\b") -> "dress"
+                      else -> ""
+                  }
+
+                  fun garmentPhrase(garment: String, pattern: String): String {
+                      if (garment.isBlank()) return ""
+                      val color = colorFor(pattern)
+                      val material = materialFor(pattern)
+                      val fitted = fittedFor(pattern)
+                      return listOf(
+                          if (fitted) "tight" else "",
+                          color,
+                          material,
+                          garment
+                      ).filter { it.isNotBlank() }.distinct().joinToString(" ")
+                  }
+
+                  var topPhrase = garmentPhrase(topGarment, topPattern)
+                  var lowerPhrase = garmentPhrase(lowerGarment, lowerPattern)
+                  val dressPhrase = garmentPhrase(dressGarment, dressPattern)
+
+                  // If both white and gray are present, do not let the top color incorrectly paint the shorts.
+                  if (topGarment.isNotBlank() && lowerGarment.isNotBlank()) {
+                      if (topPhrase.contains("white") && !lowerPhrase.contains(Regex("\\b(black|white|gray|red|blue|green|beige|pink|purple|yellow|brown)\\b")) && has("\\b(gray|grey)\\b")) {
+                          lowerPhrase = "gray " + lowerPhrase
+                      }
+                      if (lowerPhrase.contains("white") && topPhrase.isBlank() && has("\\b(gray|grey)\\b")) {
+                          lowerPhrase = lowerPhrase.replace("white", "gray")
+                      }
+                  }
+
+                  val clothingPhrase = when {
+                      dressPhrase.isNotBlank() -> "wearing a $dressPhrase"
+                      topPhrase.isNotBlank() && lowerPhrase.isNotBlank() -> "wearing a $topPhrase and $lowerPhrase"
+                      lowerPhrase.isNotBlank() -> "wearing $lowerPhrase"
+                      topPhrase.isNotBlank() -> "wearing a $topPhrase"
+                      else -> ""
+                  }
+
+                  val tightLower = lowerGarment.isNotBlank() && (fittedFor(lowerPattern) || has("\\b(spandex|lycra|body-hugging|skin-tight)\\b"))
+                  val buttEvidence = rearEvidence && tagHas("\\b(ass|butt|buttocks|booty|backside)\\b", 0.16)
+                  val sexualFashionCue = !ageUnclear && (adultWoman || adultMan) && (
+                      tightLower || fittedFor(dressPattern) || fittedFor(topPattern) ||
+                          has("\\b(cleavage|decolletage|plunging|deep v|high slit|thigh slit|mini skirt|bodycon|bikini|lingerie|sensual|sexy|seductive)\\b") ||
+                          buttEvidence
+                      )
+                  val style = when {
+                      sexualFashionCue -> "sexy"
+                      !ageUnclear && has("\\b(glamorous|elegant|fashionable)\\b") -> "glamorous"
+                      else -> ""
+                  }
+
+                  val visibleDetails = mutableListOf<String>()
+                  if (!ageUnclear && has("\\b(cleavage|decolletage)\\b")) visibleDetails += "visible cleavage"
+                  if (!ageUnclear && has("\\b(hourglass|defined waist|narrow waist|small waist)\\b")) visibleDetails += "defined waist"
+                  if (!ageUnclear && has("\\b(curvy|wide hips|curvy hips|hourglass|thick hips)\\b")) visibleDetails += "curvy hips"
+                  if (!ageUnclear && buttEvidence && tightLower) visibleDetails += "buttocks outlined through tight shorts"
+                  if (!ageUnclear && has("\\b(big butt|large butt|prominent buttocks|round buttocks|big booty|large booty)\\b") && rearEvidence) visibleDetails += "prominent buttocks"
+                  if (lowerGarment.contains("shorts") && has("\\b(thigh|thighs|bare legs|legs)\\b")) visibleDetails += "exposed upper thighs"
+                  if (!ageUnclear && has("\\b(high slit|thigh slit|exposed thigh)\\b")) visibleDetails += "exposed thigh"
+                  if (has("\\b(plunging neckline|deep v-neck|deep v neck|v-neckline)\\b")) visibleDetails += "deep V-neckline"
+                  if (has("\\b(spaghetti straps|thin straps)\\b")) visibleDetails += "thin shoulder straps"
+
+                  val hairLength = when {
+                      has("\\blong hair\\b") -> "long"
+                      has("\\bshort hair\\b") -> "short"
+                      has("\\b(shoulder-length hair|medium hair)\\b") -> "shoulder-length"
+                      else -> ""
+                  }
+                  val hairColor = when {
+                      has("\\bblack hair\\b") -> "black"
+                      has("\\b(dark brown hair|brown hair)\\b") -> "dark brown"
+                      has("\\b(blonde hair|blond hair)\\b") -> "blonde"
+                      has("\\bred hair\\b") -> "red"
+                      else -> ""
+                  }
+                  val hairTexture = when {
+                      has("\\bwavy hair\\b") -> "wavy"
+                      has("\\bcurly hair\\b") -> "curly"
+                      has("\\bstraight hair\\b") -> "straight"
+                      else -> ""
+                  }
+                  val hair = listOf(hairLength, hairColor, hairTexture)
+                      .filter { it.isNotBlank() }.distinct().joinToString(" ")
+                      .let { if (it.isBlank()) "" else "$it hair" }
+
+                  val scene = when {
+                      has("\\bbedroom\\b") -> "in a bedroom"
+                      has("\\b(living room|indoors|indoor room)\\b") -> "indoors"
+                      has("\\b(art gallery|gallery|museum|art exhibition)\\b") -> "in an art gallery"
+                      has("\\b(street|city street)\\b") -> "on a street"
+                      has("\\b(outdoors|outdoor|park|garden)\\b") -> "outdoors"
+                      else -> ""
+                  }
+
+                  val result = buildList {
+                      add(subject)
+                      if (style.isNotBlank()) add(style)
+                      if (view.isNotBlank()) add(view)
+                      if (clothingPhrase.isNotBlank()) add(clothingPhrase)
+                      addAll(visibleDetails.distinct())
+                      if (hair.isNotBlank()) add(hair)
+                      if (pose.isNotBlank()) add(pose)
+                      if (scene.isNotBlank()) add(scene)
+                  }.filter { it.isNotBlank() }
+                      .joinToString(", ")
+                      .replace(Regex("\\s+"), " ")
+                      .take(300)
+                      .trim(' ', ',')
+
+                  // Alchemy is noisy. A generic person result must be rejected so another vision provider can try.
+                  val isAdult = adultWoman || adultMan
+                  if (isAdult && (view.isBlank() || clothingPhrase.isBlank())) return ""
+                  if (isAdult && result.split(Regex("\\s+")).size < 9) return ""
+                  return result
+              }
+          }
+          KOTLIN
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path('app/src/main/java/com/riyan/aikeyboard/AiClient.kt')
+          s = p.read_text()
+
+          new_fn = r'''    private fun visionInstruction(localTextHint: String): String = buildString {
+              append(
+                  "Analyze the pixels of the CURRENT image from scratch. First classify the main subject as person, human_figure, animal, vehicle, product, food, plant, text, illustration, object, scene, or unknown. " +
+                      "Never identify a real person. Human_figure is only for obvious illustration, statue, toy, render, or non-photographic humanoid; a photographic human must be person. " +
+                      "For subject_type=person, create a DETAILED ENGLISH image-search prompt, normally 14-30 words and up to 300 characters. It must describe as many clearly visible facts as possible: clearly-adult woman/man when age is certain, front/side/rear view, pose, hair, upper garment and lower garment separately, their colors, material, tight/fitted/loose fit, neckline/straps, visible waist/hips/thighs/body silhouette, and scene. " +
+                      "If the person is clearly adult and the visible styling is sexualized or body-emphasizing, use direct adult fashion/body language when visually supported: sexy, sensual, tight, body-hugging, visible cleavage, defined waist, curvy hips, buttocks outlined through tight clothing, prominent buttocks, exposed upper thighs, exposed thigh, deep neckline, or similar. Do NOT euphemize a visible adult body feature. " +
+                      "However, never invent nudity, genitals, hidden anatomy, sexual acts, body size, or any detail not actually visible. If the person might be under 18 or age is uncertain, keep the description neutral and do not use sexualized terms. " +
+                      "For person results, do not return a generic phrase such as 'woman wearing shorts' or 'adult woman sexy walking'. Include the viewpoint plus specific clothing detail and at least two additional visible details. " +
+                      "For non-person subjects, keep query concise and factual, preferably 3-12 words. For products, prioritize visible brand/model/spec text from the image over background objects. " +
+                      "Evidence must contain 4-8 concrete facts from this exact image. Every sensitive/body claim in query must be supported by evidence. " +
+                      "Return ONLY minified JSON with this exact schema: {\"subject_type\":\"person|human_figure|animal|vehicle|product|food|plant|text|illustration|object|scene|unknown\",\"confidence\":0.0,\"query\":\"...\",\"evidence\":\"...\"}. Use unknown if the image cannot actually be seen."
+              )
+              if (localTextHint.isNotBlank()) {
+                  append(" OCR hint from the same image crop (use only when it is visibly consistent with the pixels): ")
+                  append(localTextHint.take(700))
+              }
+          }
+
+          private fun normalizePersonQueryLabel'''
+
+          pattern = re.compile(r'    private fun visionInstruction\(localTextHint: String\): String = buildString \{.*?\n    \}\n\n    private fun normalizePersonQueryLabel', re.S)
+          s2, n = pattern.subn(new_fn, s, count=1)
+          if n != 1:
+              raise SystemExit(f'visionInstruction replacement failed: {n}')
+          s = s2
+
+          s = s.replace('val maxWords = if (subject == "person") 12 else 7', 'val maxWords = if (subject == "person") 32 else 7')
+          s = s.replace('val maxChars = if (subject == "person") 112 else 64', 'val maxChars = if (subject == "person") 320 else 64')
+
+          marker = '''        val maxWords = if (subject == "person") 32 else 7'''
+          guard = '''        if (subject == "person") {
+              val q = query.lowercase()
+              val hasView = Regex("\\b(rear view|back view|front view|side view|from behind|from the front|from the side|dari belakang|dari depan|dari samping)\\b", RegexOption.IGNORE_CASE).containsMatchIn(q)
+              val hasClothing = Regex("\\b(dress|gown|shorts|leggings|skirt|pants|trousers|camisole|tank top|crop top|shirt|blouse|top|gaun|celana|legging|rok|baju)\\b", RegexOption.IGNORE_CASE).containsMatchIn(q)
+              val detailedEnough = semanticTokens.size >= 6
+              if (!hasView || !hasClothing || !detailedEnough) return null
+          }
+
+          val maxWords = if (subject == "person") 32 else 7'''
+          if marker not in s:
+              raise SystemExit('person detail guard marker missing')
+          s = s.replace(marker, guard, 1)
+          p.write_text(s)
+
+          p = Path('app/src/main/java/com/riyan/aikeyboard/VisionSearchEvidence.kt')
+          s = p.read_text()
+          old = '''    fun refineQuery(visionQuery: String, localTextHint: String): String {
+              val productIdentity = extractProductIdentity(localTextHint)
+              return if (productIdentity.isNotBlank()) productIdentity else visionQuery
+          }
+
+          private fun extractProductIdentity'''
+          new = '''    fun refineQuery(visionQuery: String, localTextHint: String): String {
+              val productIdentity = extractProductIdentity(localTextHint)
+              if (productIdentity.isNotBlank()) return productIdentity
+
+              val clean = visionQuery.trim().replace(Regex("\\s+"), " ")
+              return if (looksHuman(clean)) hardenHumanPhotoSearch(clean) else clean
+          }
+
+          private fun looksHuman(query: String): Boolean {
+              val q = query.lowercase()
+              return Regex("\\b(adult woman|adult man|woman|women|female|man|men|male|person|wanita|perempuan|pria|laki-laki)\\b", RegexOption.IGNORE_CASE).containsMatchIn(q)
+          }
+
+          private fun hardenHumanPhotoSearch(query: String): String {
+              var q = query
+                  .replace(Regex("(?i)\\bwanita\\b"), "adult woman")
+                  .replace(Regex("(?i)\\bperempuan\\b"), "adult woman")
+                  .replace(Regex("(?i)\\bpria\\b"), "adult man")
+                  .replace(Regex("(?i)\\bdari belakang\\b"), "rear view")
+                  .replace(Regex("(?i)\\bdari depan\\b"), "front view")
+                  .replace(Regex("(?i)\\bdari samping\\b"), "side view")
+                  .replace(Regex("(?i)\\bcelana pendek ketat\\b"), "tight shorts")
+                  .replace(Regex("(?i)\\bcelana pendek\\b"), "shorts")
+                  .replace(Regex("(?i)\\blegging ketat\\b"), "tight leggings")
+                  .replace(Regex("(?i)\\brok mini ketat\\b"), "tight mini skirt")
+                  .replace(Regex("(?i)\\brok mini\\b"), "mini skirt")
+                  .replace(Regex("(?i)\\bbaju ketat\\b"), "fitted top")
+                  .replace(Regex("(?i)\\babu-abu\\b"), "gray")
+                  .replace(Regex("(?i)\\bputih\\b"), "white")
+                  .replace(Regex("(?i)\\bhitam\\b"), "black")
+                  .replace(Regex("(?i)\\bpakai\\b"), "wearing")
+                  .replace(Regex("\\s+"), " ")
+                  .trim(' ', ',')
+
+              val exclusions = "real photo photography -AI -AI-generated -Midjourney -\\\"Stable Diffusion\\\" -illustration -render -CGI"
+              if (!q.contains("real photo", ignoreCase = true)) q = "$q, $exclusions"
+              return q.take(420).trim()
+          }
+
+          private fun extractProductIdentity'''
+          if old not in s:
+              raise SystemExit('VisionSearchEvidence refineQuery block not found')
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+          PY
+
+          printf '%s\n' '0.21.10-test-adult-detailed-real-photo' > app/build-version.txt
+          printf '%s\n' '31' > app/build-code.txt
+
+      - name: Validate patch text
+        shell: bash
+        run: |
+          grep -n "DETAILED ENGLISH image-search prompt" app/src/main/java/com/riyan/aikeyboard/AiClient.kt
+          grep -n "buttocks outlined through tight shorts" app/src/main/java/com/riyan/aikeyboard/HumanVisionPrompt.kt
+          grep -n "real photo photography" app/src/main/java/com/riyan/aikeyboard/VisionSearchEvidence.kt
+          cat app/build-version.txt
+          cat app/build-code.txt
+
+      - name: Restore stable debug signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.riyan-ai-keyboard/debug.keystore
+          key: ${{ runner.os }}-riyan-ai-debug-keystore-v2
+
+      - name: Create debug key if missing
+        shell: bash
+        run: |
+          mkdir -p "$HOME/.riyan-ai-keyboard"
+          if [ ! -f "$HOME/.riyan-ai-keyboard/debug.keystore" ]; then
+            keytool -genkeypair -keystore "$HOME/.riyan-ai-keyboard/debug.keystore" -storepass android -alias androiddebugkey -keypass android -dname "CN=Riyan AI Keyboard Debug,O=Riyan,C=ID" -keyalg RSA -keysize 2048 -validity 10000
+          fi
+
+      - name: Apply version metadata
+        shell: bash
+        run: |
+          VERSION_NAME=$(tr -d '\r\n' < app/build-version.txt)
+          VERSION_CODE=$(tr -d '\r\n' < app/build-code.txt)
+          sed -i -E "s/versionName = \"[^\"]+\"/versionName = \"$VERSION_NAME\"/" app/build.gradle.kts
+          sed -i -E "s/versionCode = [0-9]+/versionCode = $VERSION_CODE/" app/build.gradle.kts
+          grep -E 'version(Code|Name)' app/build.gradle.kts
+
+      - name: Build APK
+        run: RIYAN_KEYSTORE_PATH="$HOME/.riyan-ai-keyboard/debug.keystore" gradle :app:assembleDebug
+
+      - name: Package versioned APK
+        id: package
+        shell: bash
+        run: |
+          VERSION_NAME=$(tr -d '\r\n' < app/build-version.txt)
+          SAFE_VERSION=$(printf '%s' "$VERSION_NAME" | tr -cs 'A-Za-z0-9._-' '-')
+          APK_NAME="AI-Ads-Keyboard-${SAFE_VERSION}.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "app/build/outputs/apk/debug/$APK_NAME"
+          echo "apk_name=$APK_NAME" >> "$GITHUB_OUTPUT"
+          echo "apk_path=app/build/outputs/apk/debug/$APK_NAME" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=AI-Ads-Keyboard-${SAFE_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Commit source patch back to branch
+        shell: bash
+        run: |
+          git config user.name "ChatGPT"
+          git config user.email "actions@users.noreply.github.com"
+          git add app/src/main/java/com/riyan/aikeyboard/HumanVisionPrompt.kt app/src/main/java/com/riyan/aikeyboard/AiClient.kt app/src/main/java/com/riyan/aikeyboard/VisionSearchEvidence.kt app/build-version.txt app/build-code.txt
+          if ! git diff --cached --quiet; then
+            git commit -m "Improve adult human vision detail and prefer real photos [skip ci]"
+            git push origin HEAD:fix/vision-query-pan-zoom
+          fi
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package.outputs.artifact_name }}
+          path: ${{ steps.package.outputs.apk_path }}
