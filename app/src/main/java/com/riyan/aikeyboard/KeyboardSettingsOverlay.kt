@@ -62,6 +62,10 @@ class KeyboardSettingsOverlay(
         var personalPhrases: String,
         var themeMode: String,
         var themeColor: String,
+        var themeBorderColor: String,
+        var themeKeyColor: String,
+        var themeLetterColor: String,
+        var themeNumberColor: String,
         var portraitHeight: Int,
         var landscapeHeight: Int,
         var keyTextSize: Int,
@@ -401,9 +405,36 @@ class KeyboardSettingsOverlay(
         }
 
         if (draft.themeMode == KeyboardTheme.MODE_CUSTOM) {
-            body.addView(textInput("Warna, contoh #5D4AC4", draft.themeColor) { draft.themeColor = it }, LinearLayout.LayoutParams(-1, dp(46)).apply {
-                topMargin = dp(8)
+            val colorCard = cardContainer()
+            colorCard.addView(section("Warna Manual", compact = true))
+            colorCard.addView(description("Atur setiap bagian secara terpisah. Ketuk tombol untuk membuka pemilih warna manual."))
+            colorCard.addView(colorSettingButton("Bingkai", draft.themeBorderColor) { anchor ->
+                ManualColorPickerDialog.show(anchor, "Bingkai", parseDraftColor(draft.themeBorderColor, accent)) { picked ->
+                    val hex = colorToHex(picked)
+                    draft.themeBorderColor = hex
+                    draft.themeColor = hex
+                    renderBody()
+                }
             })
+            colorCard.addView(colorSettingButton("Warna tombol", draft.themeKeyColor) { anchor ->
+                ManualColorPickerDialog.show(anchor, "Warna tombol", parseDraftColor(draft.themeKeyColor, Color.rgb(50, 50, 60))) { picked ->
+                    draft.themeKeyColor = colorToHex(picked)
+                    renderBody()
+                }
+            })
+            colorCard.addView(colorSettingButton("Warna huruf", draft.themeLetterColor) { anchor ->
+                ManualColorPickerDialog.show(anchor, "Warna huruf", parseDraftColor(draft.themeLetterColor, Color.WHITE)) { picked ->
+                    draft.themeLetterColor = colorToHex(picked)
+                    renderBody()
+                }
+            })
+            colorCard.addView(colorSettingButton("Warna angka", draft.themeNumberColor) { anchor ->
+                ManualColorPickerDialog.show(anchor, "Warna angka", parseDraftColor(draft.themeNumberColor, Color.WHITE)) { picked ->
+                    draft.themeNumberColor = colorToHex(picked)
+                    renderBody()
+                }
+            })
+            body.addView(colorCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
         }
 
         if (draft.themeMode == KeyboardTheme.MODE_PHOTO) {
@@ -436,7 +467,7 @@ class KeyboardSettingsOverlay(
 
         val keyCard = cardContainer()
         keyCard.addView(sliderRow("Ukuran Teks Tombol", 16, 28, draft.keyTextSize, " sp") { draft.keyTextSize = it })
-        keyCard.addView(sliderRow("Skala Kotak Tombol", 65, 110, draft.keyBoxScale, "%") { draft.keyBoxScale = it })
+        keyCard.addView(sliderRow("Skala Kotak Tombol", 65, 150, draft.keyBoxScale, "%") { draft.keyBoxScale = it })
         keyCard.addView(sliderRow("Durasi Tekan Lama", 200, 900, draft.longPressMs, " ms") { draft.longPressMs = it })
         body.addView(keyCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
 
@@ -487,6 +518,10 @@ class KeyboardSettingsOverlay(
             .putString("personal_phrases", draft.personalPhrases.trim())
             .putString("keyboard_theme_mode", draft.themeMode)
             .putString("keyboard_theme_color", KeyboardTheme.normalizeColor(draft.themeColor))
+            .putString("keyboard_custom_border_color", KeyboardTheme.normalizeColor(draft.themeBorderColor))
+            .putString("keyboard_custom_key_color", KeyboardTheme.normalizeColor(draft.themeKeyColor))
+            .putString("keyboard_custom_letter_color", KeyboardTheme.normalizeColor(draft.themeLetterColor))
+            .putString("keyboard_custom_number_color", KeyboardTheme.normalizeColor(draft.themeNumberColor))
             .putInt("keyboard_height_portrait_dp", draft.portraitHeight)
             .putInt("keyboard_height_landscape_dp", draft.landscapeHeight)
             .putInt("keyboard_layout_version", 9)
@@ -546,6 +581,10 @@ class KeyboardSettingsOverlay(
         personalPhrases = prefs.getString("personal_phrases", "").orEmpty(),
         themeMode = prefs.getString("keyboard_theme_mode", KeyboardTheme.MODE_DARK).orEmpty(),
         themeColor = prefs.getString("keyboard_theme_color", "#5D4AC4").orEmpty(),
+        themeBorderColor = prefs.getString("keyboard_custom_border_color", prefs.getString("keyboard_theme_color", "#B556F9")).orEmpty(),
+        themeKeyColor = prefs.getString("keyboard_custom_key_color", "#32323C").orEmpty(),
+        themeLetterColor = prefs.getString("keyboard_custom_letter_color", "#FFFFFF").orEmpty(),
+        themeNumberColor = prefs.getString("keyboard_custom_number_color", "#FFFFFF").orEmpty(),
         portraitHeight = prefs.getInt("keyboard_height_portrait_dp", 220),
         landscapeHeight = prefs.getInt("keyboard_height_landscape_dp", 120),
         keyTextSize = prefs.getInt("key_text_size_sp", 21),
@@ -592,6 +631,10 @@ class KeyboardSettingsOverlay(
         personalPhrases = draft.personalPhrases,
         themeMode = KeyboardTheme.MODE_DARK,
         themeColor = "#5D4AC4",
+        themeBorderColor = "#B556F9",
+        themeKeyColor = "#32323C",
+        themeLetterColor = "#FFFFFF",
+        themeNumberColor = "#FFFFFF",
         portraitHeight = 220,
         landscapeHeight = 120,
         keyTextSize = 21,
@@ -742,6 +785,39 @@ class KeyboardSettingsOverlay(
         wrap.addView(value, LinearLayout.LayoutParams(-1, dp(28)))
         wrap.addView(slider, LinearLayout.LayoutParams(-1, dp(34)))
         return wrap
+    }
+
+    private fun parseDraftColor(value: String, fallback: Int): Int =
+        runCatching { Color.parseColor(KeyboardTheme.normalizeColor(value)) }.getOrDefault(fallback)
+
+    private fun colorToHex(color: Int): String = String.format("#%06X", 0xFFFFFF and color)
+
+    private fun colorSettingButton(label: String, colorValue: String, onPick: (View) -> Unit): LinearLayout {
+        val selectedColor = parseDraftColor(colorValue, accent)
+        val row = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(10), dp(7), dp(10), dp(7))
+            background = rounded(field, 9f, selectedColor, 2)
+            setOnClickListener { onPick(this) }
+        }
+        row.addView(View(context).apply {
+            background = rounded(selectedColor, 7f, Color.argb(180, 255, 255, 255), 1)
+        }, LinearLayout.LayoutParams(dp(30), dp(30)).apply { rightMargin = dp(10) })
+        row.addView(TextView(context).apply {
+            text = "$label\n${colorToHex(selectedColor)}"
+            textSize = 11.5f
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, Typeface.BOLD)
+        }, LinearLayout.LayoutParams(0, dp(42), 1f))
+        row.addView(TextView(context).apply {
+            text = "›"
+            textSize = 25f
+            gravity = Gravity.CENTER
+            setTextColor(Color.rgb(205, 199, 220))
+        }, LinearLayout.LayoutParams(dp(34), dp(42)))
+        row.layoutParams = LinearLayout.LayoutParams(-1, dp(58)).apply { topMargin = dp(6) }
+        return row
     }
 
     private fun themePreviewText(label: String, previewColor: Int): SpannableString {

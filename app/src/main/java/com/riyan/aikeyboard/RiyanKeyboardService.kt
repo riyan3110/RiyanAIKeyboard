@@ -268,6 +268,8 @@ class RiyanKeyboardService : InputMethodService() {
     private var pressedKeyBg = Color.rgb(93, 74, 196)
     private var purple = Color.rgb(89, 68, 196)
     private var keyTextColor = Color.WHITE
+    private var keyNumberColor = Color.WHITE
+    private var keyBorderColor = Color.rgb(181, 86, 249)
     private var themeUsesPhoto = false
 
     private val aiRegularTypeface by lazy {
@@ -459,7 +461,7 @@ class RiyanKeyboardService : InputMethodService() {
         baseKeyboardHeightDp = prefs.getInt(heightPreferenceKey, defaultHeight)
             .coerceIn(minKeyboardHeightDp, maxKeyboardHeightDp)
         keyTextSizeSp = prefs.getInt("key_text_size_sp", 21).coerceIn(16, 28).toFloat()
-        keyBoxScale = prefs.getInt("key_box_scale_percent", 100).coerceIn(65, 110) / 100f
+        keyBoxScale = prefs.getInt("key_box_scale_percent", 100).coerceIn(65, 150) / 100f
         val sensitivity = prefs.getInt("touch_sensitivity", 100).coerceIn(20, 400)
         touchTolerancePx = dpFloat(12f + sensitivity * 0.18f)
         instantKeyResponse = true
@@ -485,6 +487,8 @@ class RiyanKeyboardService : InputMethodService() {
         pressedKeyBg = palette.pressedKey
         purple = palette.accent
         keyTextColor = palette.text
+        keyNumberColor = palette.numberText
+        keyBorderColor = palette.border
         themeUsesPhoto = palette.usesPhoto
         if (::root.isInitialized) {
             updateRootPadding(root)
@@ -1483,7 +1487,7 @@ class RiyanKeyboardService : InputMethodService() {
         }
     ).apply {
         cornerRadius = dpFloat(17f)
-        setStroke(dp(if (pressed) 3 else 2), if (pressed) Color.rgb(205, 124, 255) else Color.rgb(181, 86, 249))
+        setStroke(dp(if (pressed) 3 else 2), keyBorderColor)
     }
 
     private fun moveCursor(keyCode: Int) {
@@ -1698,8 +1702,8 @@ class RiyanKeyboardService : InputMethodService() {
         val frame = FrameLayout(this).apply {
             // At the old 100% setting the regular caps now fill 90% of their cells instead of
             // only 78%. The new 110% maximum can reach 99%, while clamping prevents overlap.
-            scaleX = (keyBoxScale * if (referenceWideKey) 0.98f else 0.94f).coerceAtMost(1f)
-            scaleY = (keyBoxScale * if (referenceLargeKey) 0.96f else 0.90f).coerceAtMost(1f)
+            scaleX = (keyBoxScale * if (referenceWideKey) 0.98f else 0.94f).coerceAtMost(1.18f)
+            scaleY = (keyBoxScale * if (referenceLargeKey) 0.96f else 0.90f).coerceAtMost(1.22f)
             isClickable = true
             isFocusable = false
             clipChildren = false
@@ -1716,7 +1720,7 @@ class RiyanKeyboardService : InputMethodService() {
 
         // Main charcoal key face. This is the surface changed while pressing.
         val keyFace = View(this).apply {
-            background = referenceBubbleKeyBackground(pressed = false)
+            background = referenceBubbleKeyBackground(pressed = false, baseColor = normalColor)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) elevation = dpFloat(2.6f)
         }
         frame.addView(keyFace, FrameLayout.LayoutParams(-1, -1).apply {
@@ -1738,7 +1742,7 @@ class RiyanKeyboardService : InputMethodService() {
                 (spec.label.firstOrNull()?.code ?: 0) > 0x2600 -> keyTextSizeSp + 1f
                 else -> keyTextSizeSp
             }
-            setTextColor(Color.WHITE)
+            setTextColor(if (spec.label.isNotBlank() && spec.label.all { it.isDigit() }) keyNumberColor else keyTextColor)
             gravity = Gravity.CENTER
             if (spec.label in setOf("q", "y", "p", "g", "j")) {
                 translationY = dpFloat(-2f)
@@ -1776,7 +1780,7 @@ class RiyanKeyboardService : InputMethodService() {
                     downY = event.y
                     longTriggered = false
                     actionTriggered = false
-                    keyFace.background = referenceBubbleKeyBackground(pressed = true)
+                    keyFace.background = referenceBubbleKeyBackground(pressed = true, baseColor = normalColor)
                     if (instantKeyResponse) {
                         // Input first. Visual/haptic extras are intentionally deferred so a busy
                         // host app never has to wait for the keyboard's preview animation.
@@ -1806,7 +1810,7 @@ class RiyanKeyboardService : InputMethodService() {
                 MotionEvent.ACTION_UP -> {
                     longRunnable?.let(handler::removeCallbacks)
                     dismissKeyPreview()
-                    keyFace.background = referenceBubbleKeyBackground(pressed = false)
+                    keyFace.background = referenceBubbleKeyBackground(pressed = false, baseColor = normalColor)
                     val moved = hypot(event.x - downX, event.y - downY)
                     if (!longTriggered && !actionTriggered && moved <= touchTolerancePx) {
                         spec.action()
@@ -1818,7 +1822,7 @@ class RiyanKeyboardService : InputMethodService() {
                 MotionEvent.ACTION_CANCEL -> {
                     longRunnable?.let(handler::removeCallbacks)
                     dismissKeyPreview()
-                    keyFace.background = referenceBubbleKeyBackground(pressed = false)
+                    keyFace.background = referenceBubbleKeyBackground(pressed = false, baseColor = normalColor)
                     true
                 }
                 else -> false
@@ -1871,28 +1875,27 @@ class RiyanKeyboardService : InputMethodService() {
         }
     }
 
-    private fun referenceBubbleKeyBackground(pressed: Boolean): GradientDrawable {
-        val colors = if (pressed) {
-            intArrayOf(
-                Color.rgb(45, 44, 52),
-                Color.rgb(25, 24, 31),
-                Color.rgb(14, 14, 19)
-            )
-        } else {
-            intArrayOf(
-                Color.rgb(69, 67, 78),
-                Color.rgb(45, 44, 53),
-                Color.rgb(39, 38, 47),
-                Color.rgb(35, 34, 43)
-            )
-        }
+    private fun referenceBubbleKeyBackground(pressed: Boolean, baseColor: Int): GradientDrawable {
+        val face = if (pressed) pressedKeyBg else baseColor
+        val colors = intArrayOf(
+            mixColor(face, Color.WHITE, if (pressed) 0.16f else 0.10f),
+            face,
+            mixColor(face, Color.BLACK, 0.34f)
+        )
         return GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, colors).apply {
             cornerRadius = dpFloat(11f)
-            setStroke(
-                dp(if (pressed) 3 else 2),
-                if (pressed) Color.rgb(205, 124, 255) else Color.rgb(181, 86, 249)
-            )
+            setStroke(dp(if (pressed) 3 else 2), keyBorderColor)
         }
+    }
+
+    private fun mixColor(first: Int, second: Int, secondRatio: Float): Int {
+        val ratio = secondRatio.coerceIn(0f, 1f)
+        val inverse = 1f - ratio
+        return Color.rgb(
+            (Color.red(first) * inverse + Color.red(second) * ratio).toInt(),
+            (Color.green(first) * inverse + Color.green(second) * ratio).toInt(),
+            (Color.blue(first) * inverse + Color.blue(second) * ratio).toInt()
+        )
     }
 
     private fun referenceTopRimBackground(): GradientDrawable =
