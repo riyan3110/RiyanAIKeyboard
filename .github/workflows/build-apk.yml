@@ -65,7 +65,7 @@ jobs:
             sudo apt-get install -y --no-install-recommends webp
           fi
 
-      - name: Apply v0.21.22 compatibility patches
+      - name: Apply exact v0.21.22 feature patches
         shell: bash
         run: |
           python3 tools/apply_bluesminds_provider_patch.py
@@ -74,7 +74,6 @@ jobs:
           python3 tools/apply_bai_provider_patch.py
           python3 tools/apply_autocaps_brand_patch.py
           python3 tools/allow_brand_only_visible_label.py
-          python3 tools/apply_rollback_02123_prefs.py
 
       - name: Build test APK
         run: RIYAN_KEYSTORE_PATH="$HOME/.riyan-ai-keyboard/debug.keystore" gradle :app:assembleDebug -x :app:patchBluesMindsProvider
