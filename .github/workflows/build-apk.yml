@@ -57,8 +57,14 @@ jobs:
           fi
           grep -E 'version(Code|Name)' app/build.gradle.kts
 
+      - name: Apply browser auto-fullscreen and modern chrome patch
+        shell: bash
+        run: |
+          python3 tools/apply_bluesminds_provider_patch.py
+          python3 tools/apply_browser_chrome_patch.py
+
       - name: Build test APK
-        run: RIYAN_KEYSTORE_PATH="$HOME/.riyan-ai-keyboard/debug.keystore" gradle :app:assembleDebug
+        run: RIYAN_KEYSTORE_PATH="$HOME/.riyan-ai-keyboard/debug.keystore" gradle :app:assembleDebug -x :app:patchBluesMindsProvider
 
       - name: Give APK a permanent versioned filename
         id: package
