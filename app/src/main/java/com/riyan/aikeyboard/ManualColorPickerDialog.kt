@@ -48,7 +48,7 @@ object ManualColorPickerDialog {
             textSize = 38f
             gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
-            setOnClickListener { if (::popup.isInitialized) popup.dismiss() }
+            setOnClickListener { popup.dismiss() }
         }, LinearLayout.LayoutParams(dp(context, 52), dp(context, 48)))
         root.addView(header)
 
@@ -111,7 +111,7 @@ object ManualColorPickerDialog {
             gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
             background = rounded(Color.rgb(55, 54, 60), 10f, Color.rgb(78, 76, 86), 1, context)
-            setOnClickListener { if (::popup.isInitialized) popup.dismiss() }
+            setOnClickListener { popup.dismiss() }
         }, LinearLayout.LayoutParams(dp(context, 92), dp(context, 44)).apply { rightMargin = dp(context, 8) })
         actions.addView(TextView(context).apply {
             text = "Pilih Warna"
@@ -121,7 +121,7 @@ object ManualColorPickerDialog {
             background = rounded(Color.rgb(91, 68, 230), 10f, Color.rgb(125, 105, 255), 1, context)
             setOnClickListener {
                 val selected = currentColor()
-                if (::popup.isInitialized) popup.dismiss()
+                popup.dismiss()
                 onSelected(selected)
             }
         }, LinearLayout.LayoutParams(dp(context, 130), dp(context, 44)))
