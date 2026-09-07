@@ -22,13 +22,16 @@ object VisionSearchEvidence {
     private val productWords = setOf(
         "oil", "oli", "lubricant", "pelumas", "shampoo", "conditioner", "serum", "lotion",
         "cream", "sabun", "soap", "detergent", "coffee", "kopi", "tea", "teh", "milk", "susu",
-        "drink", "minuman", "snack", "makanan", "racing", "motorcycle", "motor"
+        "drink", "minuman", "snack", "makanan", "racing", "motorcycle", "motor", "phone", "smartphone",
+        "laptop", "tablet", "camera", "headphone", "speaker", "watch", "perfume", "fragrance", "vitamin",
+        "medicine", "cleaner", "toothpaste", "battery", "charger", "monitor", "keyboard", "mouse"
     )
 
     private val noise = setOf(
         "anti", "slip", "on", "clutch", "fully", "synthetic", "for", "stroke", "motorcycle",
         "api", "sn", "jaso", "ma2", "team", "the", "and", "with", "of", "product", "objek",
         "object", "bottle", "botol", "couch", "sofa", "chair", "kursi", "gray", "grey", "abu-abu",
+        "background", "wall", "room", "table", "desk", "floor", "seat", "carpet",
         "pengguna", "sedang", "memperbesar", "area", "target", "sekitar", "prioritaskan", "subjek",
         "utama", "pada", "ini", "dan", "detail", "kecil", "pembeda", "yang", "benar-benar", "terlihat",
         "abaikan", "latar", "tidak", "relevan", "teks", "lokal", "mungkin"
@@ -47,7 +50,7 @@ object VisionSearchEvidence {
             .filter { it.length >= 2 }
             .distinct()
             .joinToString(" | ")
-            .take(700)
+            .take(900)
     }
 
     fun refineQuery(visionQuery: String, localTextHint: String): String {
@@ -55,24 +58,23 @@ object VisionSearchEvidence {
         if (productIdentity.isNotBlank()) return productIdentity
 
         val clean = visionQuery.trim().replace(Regex("\\s+"), " ")
-        return if (looksHuman(clean)) hardenHumanPhotoSearch(clean) else clean
+        return if (looksHuman(clean)) normalizeHumanSearch(clean) else clean
     }
 
     private fun looksHuman(query: String): Boolean {
-        val q = query.lowercase()
         return Regex(
-            "\\b(adult woman|adult man|woman|women|female|man|men|male|person|wanita|perempuan|pria|laki-laki)\\b",
+            "\\b(adult woman|adult man|woman|women|female|man|men|male|person|human figure|wanita|perempuan|pria|laki-laki)\\b",
             RegexOption.IGNORE_CASE
-        ).containsMatchIn(q)
+        ).containsMatchIn(query)
     }
 
     /**
-     * Keep all providers consistent: human searches are normalized to English and strongly prefer
-     * real photography. Negative terms reduce AI-generated/rendered results in search engines,
-     * though a search engine may not honor every exclusion perfectly.
+     * Keep every provider on the same readable English query format. Search-engine-specific
+     * switches are intentionally NOT appended here; the browser owns those separately so the
+     * visible prompt stays clean and can travel together with the source image attachment.
      */
-    private fun hardenHumanPhotoSearch(query: String): String {
-        var q = query
+    private fun normalizeHumanSearch(query: String): String {
+        return query
             .replace(Regex("(?i)\\bwanita\\b"), "adult woman")
             .replace(Regex("(?i)\\bperempuan\\b"), "adult woman")
             .replace(Regex("(?i)\\bpria\\b"), "adult man")
@@ -89,14 +91,10 @@ object VisionSearchEvidence {
             .replace(Regex("(?i)\\bputih\\b"), "white")
             .replace(Regex("(?i)\\bhitam\\b"), "black")
             .replace(Regex("(?i)\\bpakai\\b"), "wearing")
+            .replace(Regex("(?i)\\breal\\s+photo(?:graphy)?\\b|\\bphotography\\b|-(?:AI(?:-generated)?|illustration|render|CGI|Midjourney|Stable-Diffusion)"), " ")
             .replace(Regex("\\s+"), " ")
-            .trim(' ', ',')
-
-        val exclusions = "real photo photography -AI -AI-generated -Midjourney -\"Stable Diffusion\" -illustration -render -CGI"
-        if (!q.contains("real photo", ignoreCase = true)) {
-            q = "$q, $exclusions"
-        }
-        return q.take(420).trim()
+            .trim(' ', ',', '.', ';')
+            .take(420)
     }
 
     private fun extractProductIdentity(localTextHint: String): String {
@@ -119,7 +117,14 @@ object VisionSearchEvidence {
         val meaningfulAlpha = originalTokens.count { token ->
             token.length >= 3 && token.any(Char::isLetter) && token.lowercase() !in noise
         }
-        if (meaningfulAlpha < 2 || (!hasCategory && !hasSpec)) return ""
+        val hasBrandLikeToken = originalTokens.any { token ->
+            val letters = token.filter(Char::isLetter)
+            token.length in 3..24 && letters.length >= 2 &&
+                (letters.count(Char::isUpperCase) >= 2 || token.firstOrNull()?.isUpperCase() == true) &&
+                token.lowercase() !in noise
+        }
+        if (meaningfulAlpha < 2) return ""
+        if (!hasCategory && !hasSpec && !(hasBrandLikeToken && meaningfulAlpha >= 3)) return ""
 
         val chosen = mutableListOf<String>()
         val seen = linkedSetOf<String>()
@@ -131,13 +136,13 @@ object VisionSearchEvidence {
             if (lower.all { it.isDigit() } && clean.length > 6) continue
             if (!seen.add(lower)) continue
             chosen += normalizeSpec(clean)
-            if (chosen.size >= 8) break
+            if (chosen.size >= 10) break
         }
 
         if (chosen.size < 2) return ""
         return chosen.joinToString(" ")
             .replace(Regex("\\s+"), " ")
-            .take(104)
+            .take(140)
             .trim()
     }
 
