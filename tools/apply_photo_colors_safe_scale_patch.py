@@ -78,6 +78,27 @@ new_comment = '''            // Keep 100% as the visual baseline. Above 100%, gr
 '''
 if old_comment in text:
     text = text.replace(old_comment, new_comment, 1)
+
+# 4) Keep the space key slightly narrower at large scales. The neighboring
+# comma/period keys keep their existing size; only the space key stops expanding
+# beyond its cell so 150% still leaves a visible gap on both sides.
+old_frame_scale = '''            scaleX = (keyBoxScale * if (referenceWideKey) 0.98f else 0.94f).coerceAtMost(1.18f)
+            scaleY = (keyBoxScale * if (referenceLargeKey) 0.96f else 0.90f).coerceAtMost(1.22f)
+'''
+new_frame_scale = '''            val horizontalScale = when {
+                spec.label == "spasi" && keyBoxScale > 1f -> {
+                    // Preserve the 100% space-key width, then allow only a tiny amount of growth.
+                    // At the 150% setting this stays inside its layout cell instead of touching
+                    // the comma/period keys beside it.
+                    (0.98f + ((keyBoxScale - 1f) * 0.04f)).coerceAtMost(0.99f)
+                }
+                referenceWideKey -> (keyBoxScale * 0.98f).coerceAtMost(1.18f)
+                else -> (keyBoxScale * 0.94f).coerceAtMost(1.18f)
+            }
+            scaleX = horizontalScale
+            scaleY = (keyBoxScale * if (referenceLargeKey) 0.96f else 0.90f).coerceAtMost(1.22f)
+'''
+text = replace_once(text, old_frame_scale, new_frame_scale, "narrow space key at high scale")
 SERVICE.write_text(text)
 
-print("Photo-theme manual colors + safe 150% key-scale patch applied")
+print("Photo colors + safe 150% scale + spaced space-key patch applied")
