@@ -1,0 +1,57 @@
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+SERVICE = ROOT / "app/src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt"
+SMART = ROOT / "app/smart-vision.gradle.kts"
+
+service = SERVICE.read_text(encoding="utf-8")
+
+old_gallery = '''            val visualUrl: String? = null // Brave Search remains the embedded search surface.
+            val result = if (encoded.isNullOrBlank()) {
+                Result.failure<AiResponse>(IllegalStateException("Gambar galeri gagal disiapkan."))
+            } else {
+                AiClient.visionProduct(aiSettings(), encoded, "")
+            }'''
+new_gallery = '''            val galleryLocalHint = runCatching {
+                VisionSearchEvidence.recognizeText(scannerTextRecognizer, prepared)
+            }.getOrDefault("")
+            val visualUrl: String? = null // embedded search surface
+            val result = if (encoded.isNullOrBlank()) {
+                Result.failure<AiResponse>(IllegalStateException("Gambar galeri gagal disiapkan."))
+            } else {
+                AiClient.visionProduct(aiSettings(), encoded, galleryLocalHint)
+            }'''
+
+if "VisionSearchEvidence.recognizeText(scannerTextRecognizer, prepared)" not in service:
+    if old_gallery not in service:
+        raise RuntimeError("Gallery OCR compatibility marker not found")
+    service = service.replace(old_gallery, new_gallery, 1)
+
+SERVICE.write_text(service, encoding="utf-8")
+
+# The legacy Gradle smart-vision task enforced English-only, short human prompts and
+# rewrote multilingual output back to English. The new persistent Python patch now owns
+# Vision behavior, so keep only the task/dependency name for build compatibility.
+SMART.write_text('''// Vision/search behavior is applied by tools/apply_vision_search_google_patch.py.
+// This compatibility task intentionally performs no source rewriting so multilingual,
+// long prompts and the Google-default search behavior are not overwritten at preBuild.
+val patchSmartProductVision = tasks.register("patchSmartProductVision") {
+    doLast {
+        println("Multilingual natural Vision/search patch already applied; legacy smart-vision rewrite skipped")
+    }
+}
+
+patchSmartProductVision.configure {
+    mustRunAfter("patchDynamicImeAction")
+    mustRunAfter("patchBluesMindsProvider")
+    mustRunAfter("patchSettingsInputAndGallery")
+    mustRunAfter("patchReferenceBrandingAndKeyCentering")
+    mustRunAfter("patchVisibleVersionLabel")
+}
+
+tasks.named("preBuild").configure {
+    dependsOn(patchSmartProductVision)
+}
+''', encoding="utf-8")
+
+print("Applied gallery OCR compatibility and disabled obsolete English-only smart Vision rewrite")
