@@ -4,7 +4,6 @@ val patchSmartProductVision = tasks.register("patchSmartProductVision") {
         val aiFile = file("src/main/java/com/riyan/aikeyboard/AiClient.kt")
         var ai = aiFile.readText()
 
-        // All native Vision providers receive the same OCR evidence from the exact crop.
         ai = ai.replace(
             "requestOpenRouterVision(settings, jpegBase64, \"\")",
             "requestOpenRouterVision(settings, jpegBase64, localTextHint)"
@@ -34,9 +33,6 @@ val patchSmartProductVision = tasks.register("patchSmartProductVision") {
             else -> error("Smart vision normalize patch did not match AiClient.kt")
         }
 
-        // ONE shared adult-human contract is injected into the common Vision instruction used by
-        // OpenRouter, TabiAI, 9Router, BluesMinds, xKiro and OrcaRouter. AI Horde is normalized by
-        // HumanVisionPrompt below, then passes through the exact same quality gate above.
         val oldHumanRule = "Buat query pencarian visual yang pendek, natural, dan faktual: bahasa Indonesia, 3–12 kata, maksimal sekitar 112 karakter. Query hanya boleh berisi subjek utama dan 2–3 ciri paling jelas yang benar-benar terlihat pada foto saat ini. "
         val newHumanRule = "Untuk subject_type person atau human_figure, field query WAJIB berupa satu kalimat English visual-search prompt yang natural, rapi, spesifik, dan deskriptif: idealnya 20–38 kata, maksimal sekitar 360 karakter. Jangan menghasilkan daftar keyword yang patah-patah dan jangan menambahkan kata pencarian teknis seperti real photo, photography, -AI, -AI-generated, -Midjourney, -Stable-Diffusion, -render, -CGI, atau filter mesin pencari lain ke field query. Untuk manusia yang JELAS DEWASA, gunakan adult woman atau adult man dan jangan berhenti pada deskripsi generik. Jelaskan ciri yang benar-benar terlihat secara berurutan: camera/view angle, pose, hair, upper garment, lower garment, warna, material/fabric, fit/cut, bagian tubuh yang tampak melalui pakaian, lalu scene/background. Jika styling orang dewasa terlihat sensual, revealing, atau body-emphasizing, gunakan bahasa dewasa yang langsung dan faktual seperti sexy, sensual, visible cleavage, defined waist, curvy hips, prominent buttocks, buttocks outlined through tight clothing, exposed upper thighs, deep/plunging neckline, tight shorts, tight leggings, tight mini skirt, fitted satin dress, bodycon dress, bikini, atau lingerie HANYA jika benar-benar terlihat. Jangan mengarang nudity, genitalia, hidden anatomy, sexual acts, ukuran/bentuk tubuh yang tidak terlihat, identitas, atau etnisitas. Jika usia tidak jelas atau mungkin di bawah 18 tahun, wajib gunakan deskripsi netral tanpa sexualized wording. Untuk subject non-manusia, tetap gunakan query pendek dan faktual serta pertahankan merek/model/spesifikasi OCR bila benar-benar terbaca. Evidence harus berupa fakta visual konkret; untuk person/human_figure tulis evidence dalam bahasa Inggris. "
         when {
@@ -100,8 +96,6 @@ val patchSmartProductVision = tasks.register("patchSmartProductVision") {
         }
         aiFile.writeText(ai)
 
-        // AI Horde has no full multimodal LLM, so convert its Alchemy caption/tags with the same
-        // detailed English adult-human contract instead of the older Indonesian compact query.
         val hordeFile = file("src/main/java/com/riyan/aikeyboard/AiHordeAlchemyVision.kt")
         var horde = hordeFile.readText()
         horde = horde.replace(
@@ -133,7 +127,6 @@ val patchSmartProductVision = tasks.register("patchSmartProductVision") {
             else -> error("Gallery OCR patch did not match RiyanKeyboardService.kt")
         }
 
-        // Keep the human query itself readable. Search-engine modifiers are not allowed to leak into it.
         val cleanerMarker = "    private fun cleanAiVisionSearchQuery(raw: String): String {"
         val cleanerStart = service.indexOf(cleanerMarker)
         if (cleanerStart < 0) error("AI Vision cleaner start marker not found")
@@ -149,8 +142,7 @@ val patchSmartProductVision = tasks.register("patchSmartProductVision") {
             .replace(".take(64)", ".take(400)")
         service = service.substring(0, cleanerStart) + relaxedCleaner + service.substring(cleanerEnd)
 
-        // ROOT FIX for the duplicated suffix seen in Bing/Brave: strip every old technical
-        // search modifier from the incoming query and append only one short photography hint.
+        // Keep the prompt readable and strip every technical suffix before opening image search.
         val imageMarker = "private fun selectedImageSearchUrl(query: String): String {"
         val imageStart = service.indexOf(imageMarker)
         if (imageStart < 0) error("Image search URL function start marker not found")
@@ -168,15 +160,11 @@ val patchSmartProductVision = tasks.register("patchSmartProductVision") {
     ).containsMatchIn(clean)
     val searchText = if (human) "${'$'}clean photo" else clean
     val encoded = Uri.encode(searchText)
-    val safe = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(BraveBrowserPanel.KEY_SAFE_SEARCH, BraveBrowserPanel.SAFE_MODERATE)
-        ?: BraveBrowserPanel.SAFE_MODERATE
-    val engine = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(BraveBrowserPanel.KEY_SEARCH_ENGINE, BraveBrowserPanel.ENGINE_BRAVE)
-        ?: BraveBrowserPanel.ENGINE_BRAVE
-    return when (engine) {
-        BraveBrowserPanel.ENGINE_GOOGLE -> "https://www.google.com/search?tbm=isch&q=${'$'}encoded&safe=${'$'}{if (safe == BraveBrowserPanel.SAFE_OFF) "off" else "active"}"
-        BraveBrowserPanel.ENGINE_BING -> "https://www.bing.com/images/search?q=${'$'}encoded&adlt=${'$'}{when (safe) { BraveBrowserPanel.SAFE_STRICT -> "strict"; BraveBrowserPanel.SAFE_OFF -> "off"; else -> "moderate" }}"
-        BraveBrowserPanel.ENGINE_DDG -> "https://duckduckgo.com/?q=${'$'}encoded&iax=images&ia=images&kp=${'$'}{if (safe == BraveBrowserPanel.SAFE_OFF) "-2" else "1"}"
-        else -> "https://search.brave.com/images?q=${'$'}encoded&safesearch=${'$'}{Uri.encode(safe)}"
+    return when (selectedSearchEngineId()) {
+        "google" -> "https://www.google.com/search?tbm=isch&q=${'$'}encoded"
+        "bing" -> "https://www.bing.com/images/search?q=${'$'}encoded"
+        "ddg" -> "https://duckduckgo.com/?q=${'$'}encoded&iax=images&ia=images"
+        else -> "https://search.brave.com/images?q=${'$'}encoded&source=web"
     }
 }"""
         service = service.substring(0, imageStart) + replacementImageFunction + service.substring(imageEnd)
