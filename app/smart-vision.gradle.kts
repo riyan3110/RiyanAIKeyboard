@@ -133,46 +133,21 @@ val patchSmartProductVision = tasks.register("patchSmartProductVision") {
             else -> error("Gallery OCR patch did not match RiyanKeyboardService.kt")
         }
 
-        // ROOT FIX: cleanAiVisionSearchQuery used to truncate every Vision prompt to 7 words/64 chars.
+        // ROOT FIX: do not rewrite the Kotlin function. Only relax the known limits in-place.
         val cleanerMarker = "    private fun cleanAiVisionSearchQuery(raw: String): String {"
         val cleanerStart = service.indexOf(cleanerMarker)
         if (cleanerStart < 0) error("AI Vision cleaner start marker not found")
         val cleanerEnd = service.indexOf("\n    private fun ", cleanerStart + cleanerMarker.length)
         if (cleanerEnd < 0) error("AI Vision cleaner end marker not found")
         val currentCleaner = service.substring(cleanerStart, cleanerEnd)
-        if (!currentCleaner.contains(".take(40)")) {
-            val newCleaner = """    private fun cleanAiVisionSearchQuery(raw: String): String {
-        val line = raw.lineSequence()
-            .map { it.trim().trim('"', '\\'', '`') }
-            .firstOrNull { it.isNotBlank() }
-            .orEmpty()
-        val cleaned = line
-            .replace(Regex("(?i)^(?:query|search query|pencarian|hasil)\\s*:\\s*"), "")
-            .replace(Regex("\\s+"), " ")
-            .trim()
-        val human = Regex(
-            "\\b(adult woman|adult man|woman|women|female|man|men|male|person|human figure)\\b",
-            RegexOption.IGNORE_CASE
-        ).containsMatchIn(cleaned)
-        if (human) {
-            return cleaned.split(Regex("\\s+"))
-                .filter { it.isNotBlank() }
-                .take(40)
-                .joinToString(" ")
-                .take(400)
-                .trim()
-        }
-        val filler = setOf("the", "a", "an", "and", "in", "with", "setting", "of", "at", "on", "yang", "sedang", "terlihat")
-        return cleaned.split(Regex("\\s+"))
-            .filter { it.isNotBlank() && it.lowercase() !in filler }
-            .take(12)
-            .joinToString(" ")
-            .take(128)
-            .trim()
-    }
-"""
-            service = service.substring(0, cleanerStart) + newCleaner + service.substring(cleanerEnd)
-        }
+        val relaxedCleaner = currentCleaner
+            .replace(
+                """val filler = setOf("the", "a", "an", "and", "in", "with", "setting", "of", "at", "on", "yang", "sedang", "terlihat")""",
+                """val filler = setOf("yang", "sedang", "terlihat")"""
+            )
+            .replace(".take(7)", ".take(40)")
+            .replace(".take(64)", ".take(400)")
+        service = service.substring(0, cleanerStart) + relaxedCleaner + service.substring(cleanerEnd)
 
         // Bias human-image search toward actual photography without polluting the prompt shown in UI.
         val oldImagePrefix = """private fun selectedImageSearchUrl(query: String): String {
