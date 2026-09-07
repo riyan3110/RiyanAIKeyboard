@@ -57,6 +57,14 @@ jobs:
           fi
           grep -E 'version(Code|Name)' app/build.gradle.kts
 
+      - name: Install WebP conversion tool for APK icon compatibility
+        shell: bash
+        run: |
+          if ! command -v dwebp >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends webp
+          fi
+
       - name: Apply browser auto-fullscreen, modern chrome, photo colors, and safe key scale patches
         shell: bash
         run: |

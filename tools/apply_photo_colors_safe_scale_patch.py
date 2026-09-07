@@ -1,8 +1,13 @@
 from pathlib import Path
+import shutil
+import subprocess
 
 OVERLAY = Path("app/src/main/java/com/riyan/aikeyboard/KeyboardSettingsOverlay.kt")
 THEME = Path("app/src/main/java/com/riyan/aikeyboard/KeyboardTheme.kt")
 SERVICE = Path("app/src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt")
+MANIFEST = Path("app/src/main/AndroidManifest.xml")
+SOURCE_ICON = Path("app/src/main/res/drawable-nodpi/app_icon.webp")
+COMPAT_ICON = Path("app/src/main/res/drawable/app_icon_compat.png")
 
 
 def replace_once(text: str, old: str, new: str, label: str) -> str:
@@ -78,6 +83,70 @@ new_comment = '''            // Keep 100% as the visual baseline. Above 100%, gr
 '''
 if old_comment in text:
     text = text.replace(old_comment, new_comment, 1)
+
+# 4) Keep the space key slightly narrower at large scales. The neighboring
+# comma/period keys keep their existing size; only the space key stops expanding
+# beyond its cell so 150% still leaves a visible gap on both sides.
+old_frame_scale = '''            scaleX = (keyBoxScale * if (referenceWideKey) 0.98f else 0.94f).coerceAtMost(1.18f)
+            scaleY = (keyBoxScale * if (referenceLargeKey) 0.96f else 0.90f).coerceAtMost(1.22f)
+'''
+new_frame_scale = '''            val horizontalScale = when {
+                spec.label == "spasi" && keyBoxScale > 1f -> {
+                    // Preserve the normal space-key width and add almost no extra width above 100%.
+                    // At 150% the space key stays inside its cell, leaving a gap to comma/period.
+                    (0.98f + ((keyBoxScale - 1f) * 0.04f)).coerceAtMost(0.99f)
+                }
+                referenceWideKey -> (keyBoxScale * 0.98f).coerceAtMost(1.18f)
+                else -> (keyBoxScale * 0.94f).coerceAtMost(1.18f)
+            }
+            scaleX = horizontalScale
+            scaleY = (keyBoxScale * if (referenceLargeKey) 0.96f else 0.90f).coerceAtMost(1.22f)
+'''
+text = replace_once(text, old_frame_scale, new_frame_scale, "narrow space key at high scale")
 SERVICE.write_text(text)
 
-print("Photo-theme manual colors + safe 150% key-scale patch applied")
+
+# 5) Package the existing app artwork as a plain PNG resource and point the
+# manifest directly at it. Some Android file managers cannot extract APK icons
+# reliably when the launcher icon only exists as a nodpi WebP resource.
+COMPAT_ICON.parent.mkdir(parents=True, exist_ok=True)
+if not SOURCE_ICON.exists():
+    raise RuntimeError(f"Source app icon not found: {SOURCE_ICON}")
+
+converted = False
+try:
+    from PIL import Image
+    with Image.open(SOURCE_ICON) as image:
+        image.convert("RGBA").save(COMPAT_ICON, "PNG", optimize=True)
+    converted = True
+except Exception:
+    pass
+
+if not converted and shutil.which("dwebp"):
+    subprocess.run(["dwebp", str(SOURCE_ICON), "-o", str(COMPAT_ICON)], check=True)
+    converted = True
+
+if not converted and shutil.which("ffmpeg"):
+    subprocess.run(
+        ["ffmpeg", "-loglevel", "error", "-y", "-i", str(SOURCE_ICON), str(COMPAT_ICON)],
+        check=True,
+    )
+    converted = True
+
+if not converted and shutil.which("convert"):
+    subprocess.run(["convert", str(SOURCE_ICON), str(COMPAT_ICON)], check=True)
+    converted = True
+
+if not converted or not COMPAT_ICON.exists():
+    raise RuntimeError("Could not convert launcher WebP to compatibility PNG")
+
+manifest = MANIFEST.read_text()
+manifest = replace_once(
+    manifest,
+    'android:icon="@drawable/app_icon" android:roundIcon="@drawable/app_icon"',
+    'android:icon="@drawable/app_icon_compat" android:roundIcon="@drawable/app_icon_compat"',
+    "compatibility PNG launcher icon",
+)
+MANIFEST.write_text(manifest)
+
+print("Photo colors + safe 150% scale + spaced space key + APK icon compatibility patch applied")
