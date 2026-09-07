@@ -404,13 +404,14 @@ class KeyboardSettingsOverlay(
             body.addView(row)
         }
 
-        if (draft.themeMode == KeyboardTheme.MODE_CUSTOM) {
+        run {
             val colorCard = cardContainer()
             colorCard.addView(section("Warna Manual", compact = true))
             colorCard.addView(description("Atur setiap bagian secara terpisah. Ketuk tombol untuk membuka pemilih warna manual."))
             colorCard.addView(colorSettingButton("Bingkai", draft.themeBorderColor) { anchor ->
                 ManualColorPickerDialog.show(anchor, "Bingkai", parseDraftColor(draft.themeBorderColor, accent)) { picked ->
                     val hex = colorToHex(picked)
+                    draft.themeMode = KeyboardTheme.MODE_CUSTOM
                     draft.themeBorderColor = hex
                     draft.themeColor = hex
                     renderBody()
@@ -418,18 +419,21 @@ class KeyboardSettingsOverlay(
             })
             colorCard.addView(colorSettingButton("Warna tombol", draft.themeKeyColor) { anchor ->
                 ManualColorPickerDialog.show(anchor, "Warna tombol", parseDraftColor(draft.themeKeyColor, Color.rgb(50, 50, 60))) { picked ->
+                    draft.themeMode = KeyboardTheme.MODE_CUSTOM
                     draft.themeKeyColor = colorToHex(picked)
                     renderBody()
                 }
             })
             colorCard.addView(colorSettingButton("Warna huruf", draft.themeLetterColor) { anchor ->
                 ManualColorPickerDialog.show(anchor, "Warna huruf", parseDraftColor(draft.themeLetterColor, Color.WHITE)) { picked ->
+                    draft.themeMode = KeyboardTheme.MODE_CUSTOM
                     draft.themeLetterColor = colorToHex(picked)
                     renderBody()
                 }
             })
             colorCard.addView(colorSettingButton("Warna angka", draft.themeNumberColor) { anchor ->
                 ManualColorPickerDialog.show(anchor, "Warna angka", parseDraftColor(draft.themeNumberColor, Color.WHITE)) { picked ->
+                    draft.themeMode = KeyboardTheme.MODE_CUSTOM
                     draft.themeNumberColor = colorToHex(picked)
                     renderBody()
                 }
@@ -467,7 +471,7 @@ class KeyboardSettingsOverlay(
 
         val keyCard = cardContainer()
         keyCard.addView(sliderRow("Ukuran Teks Tombol", 16, 28, draft.keyTextSize, " sp") { draft.keyTextSize = it })
-        keyCard.addView(sliderRow("Skala Kotak Tombol", 65, 150, draft.keyBoxScale, "%") { draft.keyBoxScale = it })
+        keyCard.addView(sliderRow("Skala Kotak Tombol (Maks. 150%)", 65, 150, draft.keyBoxScale, "%") { draft.keyBoxScale = it })
         keyCard.addView(sliderRow("Durasi Tekan Lama", 200, 900, draft.longPressMs, " ms") { draft.longPressMs = it })
         body.addView(keyCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
 
