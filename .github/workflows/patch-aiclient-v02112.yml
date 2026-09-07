@@ -1,0 +1,171 @@
+name: Patch AiClient v0.21.12
+
+on:
+  push:
+    branches: [ fix/vision-query-pan-zoom ]
+    paths:
+      - '.github/workflows/patch-aiclient-v02112.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/vision-query-pan-zoom
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Patch shared Vision pipeline for every provider
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path('app/src/main/java/com/riyan/aikeyboard/AiClient.kt')
+          s = p.read_text()
+
+          s = s.replace('AiProvider.OPENROUTER -> requestOpenRouterVision(settings, jpegBase64, "")', 'AiProvider.OPENROUTER -> requestOpenRouterVision(settings, jpegBase64, localTextHint)')
+          s = s.replace('AiProvider.TABIAI -> requestTabiAiVision(settings, jpegBase64, "")', 'AiProvider.TABIAI -> requestTabiAiVision(settings, jpegBase64, localTextHint)')
+          s = s.replace('AiProvider.NINEROUTER -> request9RouterVision(settings, jpegBase64, "")', 'AiProvider.NINEROUTER -> request9RouterVision(settings, jpegBase64, localTextHint)')
+
+          old_result = '''                val query = normalizeVisionResult(raw)
+                    ?: throw IllegalStateException("Model ${provider.label} tidak membuktikan bahwa gambar benar-benar dibaca.")
+                AiResponse(query, provider)'''
+          new_result = '''                val query = normalizeVisionResult(raw)
+                    ?: throw IllegalStateException("Model ${provider.label} tidak membuktikan bahwa gambar benar-benar dibaca.")
+                val refinedQuery = VisionSearchEvidence.refineQuery(query, localTextHint)
+                if (!HumanVisionValidator.isAcceptable(refinedQuery)) {
+                    throw IllegalStateException("Model ${provider.label} menghasilkan deskripsi manusia yang terlalu pendek atau generik.")
+                }
+                AiResponse(refinedQuery, provider)'''
+          if old_result not in s:
+              raise SystemExit('vision result acceptance block not found')
+          s = s.replace(old_result, new_result, 1)
+
+          replacement = r'''    private fun visionInstruction(localTextHint: String): String = buildString {
+              append(
+                  "Analyze the CURRENT image from pixels only and start from zero for every request. First classify the main subject as person, human_figure, animal, vehicle, product, food, plant, text, illustration, object, scene, or unknown. " +
+                      "Never identify a real person. Human_figure is only for an obvious illustration, statue, toy, render, or non-photographic humanoid; a photographic human must be person. " +
+                      "For subject_type=person, return a DETAILED ENGLISH image-search prompt, normally 18-36 words and up to 420 characters. It must describe the same visible person, not a generic category. Include viewpoint, pose, hair, top and bottom garments separately, garment colors, material when visible, fit such as tight/fitted/loose, neckline or straps, visible waist/hips/thighs/body silhouette, and scene/background. " +
+                      "When the subject is clearly adult and the visible styling is body-emphasizing or sensual, use direct non-euphemistic adult fashion/body wording when visually supported, for example sexy, sensual, tight, fitted, body-hugging, visible cleavage, defined waist, curvy hips, prominent buttocks, buttocks outlined through tight clothing, exposed upper thighs, exposed thigh, deep neckline, thin straps, or similar visible features. " +
+                      "Do not invent nudity, genitals, hidden anatomy, sexual acts, body size, or details that are not visible. If age is uncertain or the person might be under 18, keep the description neutral and do not use sexualized wording. " +
+                      "Reject short human queries. A person query MUST include: adult woman/man only when age is clear, viewpoint, specific clothing with color or fit, and at least three more visible details chosen from hair, pose, body silhouette, neckline/straps, legs/thighs, or scene. Do not output generic text such as 'rear view adult woman long dark wavy' or 'woman wearing shorts'. " +
+                      "For non-person subjects, keep the query concise and factual, normally 3-12 words. For products, prioritize visible brand/model/spec text over background objects. " +
+                      "Evidence must contain 5-9 concrete facts from this exact image and support every body or sensitive claim used in query. " +
+                      "Return ONLY minified JSON with: {\"subject_type\":\"person|human_figure|animal|vehicle|product|food|plant|text|illustration|object|scene|unknown\",\"confidence\":0.0,\"query\":\"...\",\"evidence\":\"...\"}. Use unknown if the image cannot actually be seen."
+              )
+              if (localTextHint.isNotBlank()) {
+                  append(" OCR hint from this exact image crop; use it only when visibly consistent with the pixels: ")
+                  append(localTextHint.take(700))
+              }
+          }
+
+          private fun normalizePersonQueryLabel'''
+
+          pattern = re.compile(r'    private fun visionInstruction\(localTextHint: String\): String = buildString \{.*?\n    \}\n\n    private fun normalizePersonQueryLabel', re.S)
+          s, n = pattern.subn(replacement, s, count=1)
+          if n != 1:
+              raise SystemExit(f'visionInstruction replacement failed: {n}')
+
+          replacements = [
+              ('val maxWords = if (subject == "person") 12 else 7', 'val maxWords = if (subject == "person") 40 else 7'),
+              ('val maxWords = if (subject == "person") 32 else 7', 'val maxWords = if (subject == "person") 40 else 7'),
+              ('val maxChars = if (subject == "person") 112 else 64', 'val maxChars = if (subject == "person") 420 else 64'),
+              ('val maxChars = if (subject == "person") 320 else 64', 'val maxChars = if (subject == "person") 420 else 64'),
+          ]
+          for old, new in replacements:
+              s = s.replace(old, new)
+
+          p.write_text(s)
+
+          v = Path('app/src/main/java/com/riyan/aikeyboard/HumanVisionValidator.kt')
+          t = v.read_text()
+          t = t.replace('if (words.size < 10) return false', 'if (words.size < 14) return false')
+          t = t.replace('if (detailGroups < 2) return false', 'if (detailGroups < 4) return false')
+          t = t.replace('''        if (!hasClothing) return false
+
+        var detailGroups = 0''', '''        if (!hasClothing) return false
+        val hasView = has("\\b(front view|rear view|back view|side view|from behind|facing camera|facing away)\\b")
+        if (!hasView) return false
+
+        var detailGroups = 0''')
+          v.write_text(t)
+
+          e = Path('app/src/main/java/com/riyan/aikeyboard/VisionSearchEvidence.kt')
+          u = e.read_text()
+          u = u.replace('return q.take(420).trim()', 'return q.take(620).trim()')
+          e.write_text(u)
+
+          Path('app/build-version.txt').write_text('0.21.12-test-long-human-vision\n')
+          Path('app/build-code.txt').write_text('33\n')
+          PY
+
+          grep -n "18-36 words" app/src/main/java/com/riyan/aikeyboard/AiClient.kt
+          grep -n "HumanVisionValidator.isAcceptable" app/src/main/java/com/riyan/aikeyboard/AiClient.kt
+          grep -n "words.size < 14" app/src/main/java/com/riyan/aikeyboard/HumanVisionValidator.kt
+
+      - name: Restore stable debug signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.riyan-ai-keyboard/debug.keystore
+          key: ${{ runner.os }}-riyan-ai-debug-keystore-v2
+
+      - name: Create debug key if missing
+        shell: bash
+        run: |
+          mkdir -p "$HOME/.riyan-ai-keyboard"
+          if [ ! -f "$HOME/.riyan-ai-keyboard/debug.keystore" ]; then
+            keytool -genkeypair -keystore "$HOME/.riyan-ai-keyboard/debug.keystore" -storepass android -alias androiddebugkey -keypass android -dname "CN=Riyan AI Keyboard Debug,O=Riyan,C=ID" -keyalg RSA -keysize 2048 -validity 10000
+          fi
+
+      - name: Apply persistent version
+        shell: bash
+        run: |
+          VERSION_NAME=$(tr -d '\r\n' < app/build-version.txt)
+          VERSION_CODE=$(tr -d '\r\n' < app/build-code.txt)
+          sed -i -E "s/versionName = \"[^\"]+\"/versionName = \"$VERSION_NAME\"/" app/build.gradle.kts
+          sed -i -E "s/versionCode = [0-9]+/versionCode = $VERSION_CODE/" app/build.gradle.kts
+
+      - name: Build APK
+        run: RIYAN_KEYSTORE_PATH="$HOME/.riyan-ai-keyboard/debug.keystore" gradle :app:assembleDebug
+
+      - name: Package versioned APK
+        id: package
+        shell: bash
+        run: |
+          VERSION_NAME=$(tr -d '\r\n' < app/build-version.txt)
+          SAFE_VERSION=$(printf '%s' "$VERSION_NAME" | tr -cs 'A-Za-z0-9._-' '-')
+          APK_NAME="AI-Ads-Keyboard-${SAFE_VERSION}.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "app/build/outputs/apk/debug/$APK_NAME"
+          echo "apk_path=app/build/outputs/apk/debug/$APK_NAME" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=AI-Ads-Keyboard-${SAFE_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Commit patch
+        shell: bash
+        run: |
+          git config user.name "ChatGPT"
+          git config user.email "actions@users.noreply.github.com"
+          git add app/src/main/java/com/riyan/aikeyboard/AiClient.kt app/src/main/java/com/riyan/aikeyboard/HumanVisionValidator.kt app/src/main/java/com/riyan/aikeyboard/VisionSearchEvidence.kt app/build-version.txt app/build-code.txt
+          if ! git diff --cached --quiet; then
+            git commit -m "Fix long detailed human Vision prompts across all providers [skip ci]"
+            git push origin HEAD:fix/vision-query-pan-zoom
+          fi
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package.outputs.artifact_name }}
+          path: ${{ steps.package.outputs.apk_path }}
