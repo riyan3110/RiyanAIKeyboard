@@ -1,1 +1,1 @@
-0.21.21-test-autocaps-brand-toggle
+0.21.22-test-autocaps-brand-visible
