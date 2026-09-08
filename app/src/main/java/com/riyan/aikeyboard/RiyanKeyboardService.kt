@@ -148,6 +148,10 @@ class RiyanKeyboardService : InputMethodService() {
     private lateinit var searchSurfaceContent: FrameLayout
     private var searchWebView: WebView? = null
     private var braveBrowserPanel: BraveBrowserPanel? = null
+    private var browserImagePickerActive = false
+    private var browserImagePickerHostPackage: String? = null
+    private var browserImagePickerRestoreUntil = 0L
+    private val restoreBrowserAfterPicker = Runnable { restoreBrowserAfterImagePicker() }
     private var searchInput: EditText? = null
     private var scannerPreviewView: PreviewView? = null
     private var scannerGalleryImageView: ImageView? = null
@@ -302,6 +306,7 @@ class RiyanKeyboardService : InputMethodService() {
     }
 
     override fun onDestroy() {
+        WebImagePickerActivity.cancelFor(this)
         clipboardManager.removePrimaryClipChangedListener(clipboardListener)
         dismissKeyPreview(release = true)
         handler.removeCallbacksAndMessages(null)
@@ -345,6 +350,10 @@ class RiyanKeyboardService : InputMethodService() {
 
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
         super.onStartInput(attribute, restarting)
+        if (browserImagePickerRestoreUntil > 0L) {
+            handler.removeCallbacks(restoreBrowserAfterPicker)
+            handler.post(restoreBrowserAfterPicker)
+        }
         if (::keyboardPanel.isInitialized) {
             handler.post { refreshEnterKeyIfNeeded() }
         }
@@ -352,6 +361,16 @@ class RiyanKeyboardService : InputMethodService() {
 
     override fun onCreateInputView(): View {
         loadPreferences()
+
+        // Picking a photo can cause Android to request the IME view again. Preserve the live
+        // WebView and its file-input callback rather than rebuilding/loading the Bing page.
+        if ((browserImagePickerActive || browserImagePickerRestoreUntil > 0L) &&
+            ::inputHost.isInitialized && braveBrowserPanel != null
+        ) {
+            (inputHost.parent as? ViewGroup)?.removeView(inputHost)
+            applyRootHeight()
+            return inputHost
+        }
 
         inputHost = FrameLayout(this).apply {
             clipChildren = false
@@ -409,6 +428,44 @@ class RiyanKeyboardService : InputMethodService() {
     override fun onWindowHidden() {
         stopEmbeddedScanner(keepRequested = true)
         super.onWindowHidden()
+    }
+
+    fun onBrowserImagePickerOpened() {
+        handler.removeCallbacks(restoreBrowserAfterPicker)
+        browserImagePickerHostPackage = currentInputEditorInfo?.packageName
+        browserImagePickerRestoreUntil = 0L
+        browserImagePickerActive = true
+    }
+
+    fun onBrowserImagePickerFinished() {
+        browserImagePickerActive = false
+        browserImagePickerRestoreUntil = SystemClock.uptimeMillis() + 5000L
+        handler.removeCallbacks(restoreBrowserAfterPicker)
+        handler.postDelayed(restoreBrowserAfterPicker, 120L)
+    }
+
+    private fun restoreBrowserAfterImagePicker() {
+        if (browserImagePickerRestoreUntil == 0L) return
+        if (!searchSurfaceVisible || braveBrowserPanel == null ||
+            SystemClock.uptimeMillis() >= browserImagePickerRestoreUntil
+        ) {
+            browserImagePickerRestoreUntil = 0L
+            browserImagePickerHostPackage = null
+            return
+        }
+        // requestShowSelf is only useful once Android has rebound the original editor. Do not
+        // show the keyboard over the picker, its search field, or a different foreground app.
+        if (currentInputConnection != null && browserImagePickerHostPackage != null &&
+            currentInputEditorInfo?.packageName == browserImagePickerHostPackage
+        ) {
+            if (isInputViewShown) {
+                browserImagePickerRestoreUntil = 0L
+                browserImagePickerHostPackage = null
+                return
+            }
+            requestShowSelf(0)
+        }
+        handler.postDelayed(restoreBrowserAfterPicker, 200L)
     }
 
     private fun loadPreferences() {
@@ -2300,6 +2357,11 @@ class RiyanKeyboardService : InputMethodService() {
     }
 
     private fun closeSearchSurface() {
+        WebImagePickerActivity.cancelFor(this)
+        browserImagePickerActive = false
+        browserImagePickerRestoreUntil = 0L
+        browserImagePickerHostPackage = null
+        handler.removeCallbacks(restoreBrowserAfterPicker)
         braveBrowserPanel?.release()
         braveBrowserPanel = null
         searchWebView = null
