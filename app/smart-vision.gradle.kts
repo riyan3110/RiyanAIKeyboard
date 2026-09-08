@@ -29,6 +29,7 @@ val patchSmartProductVision = tasks.register("patchSmartProductVision") {
                 AiResponse(query, provider)"""
         when {
             ai.contains("HumanVisionValidator.isAcceptable(query)") -> Unit
+            ai.contains("VisionSearchEvidence.refineQuery(it, localTextHint)") -> Unit
             ai.contains(oldNormalize) -> ai = ai.replace(oldNormalize, newNormalize, ignoreCase = false)
             else -> error("Smart vision normalize patch did not match AiClient.kt")
         }
@@ -37,6 +38,7 @@ val patchSmartProductVision = tasks.register("patchSmartProductVision") {
         val newHumanRule = "Untuk subject_type person atau human_figure, field query WAJIB berupa satu kalimat English visual-search prompt yang natural, rapi, spesifik, dan deskriptif: idealnya 20–38 kata, maksimal sekitar 360 karakter. Jangan menghasilkan daftar keyword yang patah-patah dan jangan menambahkan kata pencarian teknis seperti real photo, photography, -AI, -AI-generated, -Midjourney, -Stable-Diffusion, -render, -CGI, atau filter mesin pencari lain ke field query. Untuk manusia yang JELAS DEWASA, gunakan adult woman atau adult man dan jangan berhenti pada deskripsi generik. Jelaskan ciri yang benar-benar terlihat secara berurutan: camera/view angle, pose, hair, upper garment, lower garment, warna, material/fabric, fit/cut, bagian tubuh yang tampak melalui pakaian, lalu scene/background. Jika styling orang dewasa terlihat sensual, revealing, atau body-emphasizing, gunakan bahasa dewasa yang langsung dan faktual seperti sexy, sensual, visible cleavage, defined waist, curvy hips, prominent buttocks, buttocks outlined through tight clothing, exposed upper thighs, deep/plunging neckline, tight shorts, tight leggings, tight mini skirt, fitted satin dress, bodycon dress, bikini, atau lingerie HANYA jika benar-benar terlihat. Jangan mengarang nudity, genitalia, hidden anatomy, sexual acts, ukuran/bentuk tubuh yang tidak terlihat, identitas, atau etnisitas. Jika usia tidak jelas atau mungkin di bawah 18 tahun, wajib gunakan deskripsi netral tanpa sexualized wording. Untuk subject non-manusia, tetap gunakan query pendek dan faktual serta pertahankan merek/model/spesifikasi OCR bila benar-benar terbaca. Evidence harus berupa fakta visual konkret; untuk person/human_figure tulis evidence dalam bahasa Inggris. "
         when {
             ai.contains("ONE shared adult-human contract") -> Unit
+            ai.contains("Untuk subjek yang PASTI dewasa (18+)") -> Unit
             ai.contains(oldHumanRule) -> {
                 ai = ai.replace(oldHumanRule, newHumanRule, ignoreCase = false)
                 ai = ai.replace(
@@ -74,6 +76,7 @@ val patchSmartProductVision = tasks.register("patchSmartProductVision") {
         val maxChars = if (personLike) 400 else 128"""
         when {
             ai.contains("val maxWords = if (personLike) 40 else 12") -> Unit
+            ai.contains("personLike -> 40") && ai.contains("subject == \"product\" -> 24") -> Unit
             ai.contains(oldLimits) -> ai = ai.replace(oldLimits, newLimits, ignoreCase = false)
             else -> error("Human query length patch did not match AiClient.kt")
         }
@@ -91,6 +94,7 @@ val patchSmartProductVision = tasks.register("patchSmartProductVision") {
     }"""
         when {
             ai.contains("Teks OCR lokal berikut hanya evidence tambahan") -> Unit
+            ai.contains("Bukti OCR/konteks lokal dari gambar") -> Unit
             ai.contains(instructionMarker) -> ai = ai.replace(instructionMarker, instructionReplacement, ignoreCase = false)
             else -> error("Smart vision instruction patch did not match AiClient.kt")
         }
