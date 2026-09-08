@@ -53,6 +53,9 @@ data class AiSettings(
 data class AiResponse(val text: String, val provider: AiProvider)
 
 object AiClient {
+    private const val VISION_CONNECT_TIMEOUT_MS = 8_000
+    private const val VISION_READ_TIMEOUT_MS = 22_000
+
     fun transform(settings: AiSettings, action: String, text: String): Result<AiResponse> {
         if (text.isBlank()) {
             return Result.failure(IllegalArgumentException("Pilih, tempel, atau impor teks terlebih dahulu."))
@@ -118,28 +121,33 @@ object AiClient {
             return Result.failure(IllegalArgumentException("Gambar kamera kosong."))
         }
 
-        // Vision is routed by capability, not merely by whichever text model is primary.
-        // Some coding/text models accept image_url syntactically but silently ignore the image.
-        // Therefore every configured provider is tried and its answer is accepted only when it
-        // returns a structured semantic classification of the image itself.
+        // Skip providers that have no usable configuration. Previously Vision walked all seven
+        // providers, and a text-only/unreachable endpoint could consume a full minute before the
+        // next useful provider was attempted. AI Horde remains the last-resort image provider.
         val providers = buildList {
             add(settings.primaryProvider)
-            AiProvider.entries.filter { it != settings.primaryProvider }.forEach(::add)
+            AiProvider.entries
+                .filter { it != settings.primaryProvider && it != AiProvider.AIHORDE }
+                .filter { isVisionProviderConfigured(settings, it) }
+                .forEach(::add)
+            if (settings.primaryProvider != AiProvider.AIHORDE) add(AiProvider.AIHORDE)
         }.distinct()
 
         var lastError: Throwable? = null
         providers.forEach { provider ->
             val attempt = runCatching {
                 val raw = when (provider) {
-                    AiProvider.OPENROUTER -> requestOpenRouterVision(settings, jpegBase64, "")
-                    AiProvider.TABIAI -> requestTabiAiVision(settings, jpegBase64, "")
-                    AiProvider.NINEROUTER -> request9RouterVision(settings, jpegBase64, "")
+                    AiProvider.OPENROUTER -> requestOpenRouterVision(settings, jpegBase64, localTextHint)
+                    AiProvider.TABIAI -> requestTabiAiVision(settings, jpegBase64, localTextHint)
+                    AiProvider.NINEROUTER -> request9RouterVision(settings, jpegBase64, localTextHint)
                     AiProvider.BLUESMINDS -> requestCompatibleVision(settings.bluesMindsApiKey, settings.bluesMindsBaseUrl, settings.bluesMindsModel, "BluesMinds", jpegBase64, localTextHint)
                     AiProvider.XKIRO -> requestCompatibleVision(settings.xKiroApiKey, settings.xKiroBaseUrl, settings.xKiroModel, "xKiro", jpegBase64, localTextHint)
                     AiProvider.ORCAROUTER -> requestCompatibleVision(settings.orcaRouterApiKey, settings.orcaRouterBaseUrl, settings.orcaRouterModel, "OrcaRouter", jpegBase64, localTextHint)
                     AiProvider.AIHORDE -> AiHordeAlchemyVision.request(settings, jpegBase64)
                 }
-                val query = normalizeVisionResult(raw)
+                val query = normalizeVisionResult(raw)?.let {
+                    VisionSearchEvidence.refineQuery(it, localTextHint)
+                }
                     ?: throw IllegalStateException("Model ${provider.label} tidak membuktikan bahwa gambar benar-benar dibaca.")
                 AiResponse(query, provider)
             }
@@ -148,6 +156,19 @@ object AiClient {
         }
 
         return Result.failure(lastError ?: IllegalStateException("Tidak ada model vision yang berhasil membaca gambar."))
+    }
+
+    private fun isVisionProviderConfigured(settings: AiSettings, provider: AiProvider): Boolean = when (provider.id) {
+        "openrouter" -> settings.openRouterApiKey.isNotBlank() && settings.openRouterModel.isNotBlank()
+        "tabiai" -> settings.tabiApiKey.isNotBlank() && settings.tabiModel.isNotBlank()
+        "9router" -> settings.nineRouterApiKey.isNotBlank() && settings.nineRouterModel.isNotBlank()
+        "bluesminds" -> settings.bluesMindsApiKey.isNotBlank() && settings.bluesMindsModel.isNotBlank()
+        "xkiro" -> settings.xKiroApiKey.isNotBlank() && settings.xKiroModel.isNotBlank()
+        "orcarouter" -> settings.orcaRouterApiKey.isNotBlank() && settings.orcaRouterModel.isNotBlank()
+        "aihorde" -> true
+        // PRIVATE provider entries are injected by the existing build scripts. Their request
+        // functions already reject blank keys immediately, so retaining them here is inexpensive.
+        else -> true
     }
 
     private fun execute(
@@ -201,13 +222,18 @@ object AiClient {
             "Analisis isi gambar yang benar-benar diterima, bukan tebakan dari warna atau teks pendamping. " +
                 "LANGKAH PERTAMA wajib menentukan BENTUK/SUBJEK utama: manusia nyata, figur manusia/humanoid, hewan, kendaraan, produk, makanan, tanaman, teks/dokumen, ilustrasi, objek lain, atau adegan. " +
                 "Gambar kartun, gambar tangan, poster, mainan, patung, atau karakter bergaya yang jelas berbentuk manusia harus diklasifikasikan sebagai human_figure, bukan sekadar warna/pola. " +
-                "Jika manusia nyata terlihat, klasifikasikan sebagai person dan jangan mencoba menentukan identitas orang. Foto manusia nyata harus tetap person; gunakan human_figure hanya jika jelas berupa ilustrasi, patung, mainan, render, atau karakter nonfotografis. Untuk subjek yang jelas dewasa, gunakan sebutan ringkas wanita atau pria; jika tidak jelas, gunakan orang dewasa. Sebut hanya tubuh, pakaian, pose, dan objek yang BENAR-BENAR terlihat. Jangan menebak anatomi di balik pakaian: bila area tubuh tertutup pakaian, deskripsikan pakaian itu, bukan bagian tubuh yang tertutup. Gunakan istilah dewasa yang lugas hanya bila ciri tersebut memang tampak langsung. Jika subjek tampak di bawah 18 tahun atau usia dewasa tidak dapat dipastikan, gunakan deskripsi netral. " +
-                "Setiap foto wajib dianalisis DARI NOL dan independen dari hasil foto sebelumnya. Jangan menyalin, mengulang, atau mengambil kata dari instruksi ini sebagai isi query. Buat query pencarian visual yang pendek, natural, dan faktual: bahasa Indonesia, 3–12 kata, maksimal sekitar 112 karakter. Query hanya boleh berisi subjek utama dan 2–3 ciri paling jelas yang benar-benar terlihat pada foto saat ini. Untuk pakaian ketat, sebut pakaian yang terlihat; jangan menganggap bagian tubuh terbuka hanya karena bentuknya terlihat melalui pakaian. Kata seperti terbuka atau telanjang hanya boleh dipakai bila kulit/bagian tersebut memang terlihat tanpa tertutup pakaian. Ukuran atau bentuk tubuh boleh disebut dengan bahasa lugas bila benar-benar tampak jelas dan didukung evidence visual; jangan mengarang ukuran tubuh, tindakan seksual, pose seksual, atau bagian tubuh yang tidak terlihat. Evidence wajib berisi 2–4 fakta visual konkret dari foto saat ini dan tidak boleh mengulang template. " +
+                "Jika manusia nyata terlihat, klasifikasikan sebagai person dan jangan mencoba menentukan identitas orang. Foto manusia nyata harus tetap person; gunakan human_figure hanya jika jelas berupa ilustrasi, patung, mainan, render, atau karakter nonfotografis. Untuk subjek yang PASTI dewasa (18+), tulis adult woman atau adult man dan buat query yang tegas serta lengkap: sudut pandang/pose, jenis-warna-bahan-ketat atau longgarnya pakaian, rambut, lokasi, lalu ciri tubuh atau unsur seksual dewasa yang benar-benar terlihat. Gunakan istilah langsung seperti sexy, cleavage, breasts, buttocks, nipples, vulva, penis, nude, atau topless hanya bila masing-masing tampak jelas dan disebut juga di evidence; jangan melembutkan istilah visual yang memang terlihat. Jika subjek tampak di bawah 18 tahun atau usia dewasa tidak dapat dipastikan, jangan gunakan istilah seksual atau anatomi intim dan gunakan deskripsi netral. Jangan menebak anatomi di balik pakaian atau tindakan seksual dari pose/ekspresi. " +
+                "Untuk produk, query wajib memuat sebanyak mungkin pembeda yang terbaca/terlihat: kategori produk, merek, nama/model/varian, jenis kemasan, warna, ukuran/volume, spesifikasi, dan tulisan label utama. Jangan berhenti pada kata umum seperti produk, botol, kotak, kosmetik, atau elektronik bila detail pembeda tersedia. " +
+                "Setiap foto wajib dianalisis DARI NOL dan independen dari hasil foto sebelumnya. Jangan menyalin, mengulang, atau mengambil kata dari instruksi ini sebagai isi query. Buat query pencarian visual natural dan faktual yang cukup lengkap untuk dikirim langsung ke mesin pencari: umumnya 10–24 kata, maksimal sekitar 280 karakter. Dahulukan ciri paling spesifik; jangan menambah fakta yang tidak terlihat. Evidence wajib berisi 3–6 fakta visual konkret dari foto saat ini dan tidak boleh mengulang template. " +
                 "Jangan mengarang merek, nama karakter, identitas, atau tulisan yang tidak terlihat. " +
                 "Balas HANYA JSON minified tanpa markdown dengan format: " +
                 "{\"subject_type\":\"person|human_figure|animal|vehicle|product|food|plant|text|illustration|object|scene|unknown\",\"confidence\":0.0,\"query\":\"...\",\"evidence\":\"...\"}. " +
                 "Gunakan unknown jika gambar memang tidak dapat dilihat atau subjek tidak dapat ditentukan."
         )
+        localTextHint.trim().takeIf { it.isNotBlank() }?.let {
+            append(" Bukti OCR/konteks lokal dari gambar yang boleh dipakai hanya jika cocok secara visual: ")
+            append(it.take(500))
+        }
     }
 
     private fun normalizePersonQueryLabel(rawQuery: String): String {
@@ -257,7 +283,8 @@ object AiClient {
         val queryLower = query.lowercase()
         val evidenceLower = evidence.lowercase()
         val claimsThatNeedEvidence = setOf(
-            "terbuka", "telanjang", "puting", "vulva", "vagina", "penis", "skrotum", "anus", "klitoris"
+            "terbuka", "telanjang", "puting", "vulva", "vagina", "penis", "skrotum", "anus", "klitoris",
+            "nude", "naked", "topless", "nipples", "scrotum", "clitoris"
         )
         if (claimsThatNeedEvidence.any { queryLower.contains(it) && !evidenceLower.contains(it) }) return null
 
@@ -292,8 +319,16 @@ object AiClient {
         if (subjectWords.none { it.length >= 4 && query.lowercase().contains(it) }) {
             query = "$prefix $query"
         }
-        val maxWords = if (subject == "person") 12 else 7
-        val maxChars = if (subject == "person") 112 else 64
+        val maxWords = when (subject) {
+            "person" -> 28
+            "product" -> 24
+            else -> 18
+        }
+        val maxChars = when (subject) {
+            "person" -> 300
+            "product" -> 260
+            else -> 200
+        }
         return query.split(Regex("\\s+"))
             .filter { it.isNotBlank() }
             .take(maxWords)
@@ -445,7 +480,9 @@ object AiClient {
                 "Authorization" to "Bearer ${settings.openRouterApiKey.trim()}",
                 "X-Title" to "AI Ads Keyboard Vision"
             ),
-            body = body
+            body = body,
+            connectTimeoutMs = VISION_CONNECT_TIMEOUT_MS,
+            readTimeoutMs = VISION_READ_TIMEOUT_MS
         )
         val message = response.getJSONArray("choices").getJSONObject(0).getJSONObject("message")
         val content = message.opt("content")
@@ -501,7 +538,9 @@ object AiClient {
                 "x-api-key" to settings.tabiApiKey.trim(),
                 "anthropic-version" to "2023-06-01"
             ),
-            body = body
+            body = body,
+            connectTimeoutMs = VISION_CONNECT_TIMEOUT_MS,
+            readTimeoutMs = VISION_READ_TIMEOUT_MS
         )
         val blocks = response.getJSONArray("content")
         val output = buildString {
@@ -580,7 +619,9 @@ object AiClient {
         val response = postJson(
             url = endpoint,
             headers = mapOf("Authorization" to "Bearer ${apiKey.trim()}"),
-            body = body
+            body = body,
+            connectTimeoutMs = VISION_CONNECT_TIMEOUT_MS,
+            readTimeoutMs = VISION_READ_TIMEOUT_MS
         )
         return extractOpenAiMessageText(response, providerLabel)
     }
@@ -673,7 +714,9 @@ object AiClient {
         val response = postJson(
             url = nineRouterChatUrl(settings.nineRouterBaseUrl),
             headers = mapOf("Authorization" to "Bearer ${settings.nineRouterApiKey.trim()}"),
-            body = body
+            body = body,
+            connectTimeoutMs = VISION_CONNECT_TIMEOUT_MS,
+            readTimeoutMs = VISION_READ_TIMEOUT_MS
         )
         val message = response.getJSONArray("choices").getJSONObject(0).getJSONObject("message")
         val content = message.opt("content")
@@ -1104,11 +1147,17 @@ object AiClient {
         .replace(Regex("\\s+"), " ")
         .trim()
 
-    private fun postJson(url: String, headers: Map<String, String>, body: JSONObject): JSONObject {
+    private fun postJson(
+        url: String,
+        headers: Map<String, String>,
+        body: JSONObject,
+        connectTimeoutMs: Int = 20_000,
+        readTimeoutMs: Int = 60_000
+    ): JSONObject {
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
-            connectTimeout = 20_000
-            readTimeout = 60_000
+            connectTimeout = connectTimeoutMs
+            readTimeout = readTimeoutMs
             doOutput = true
             setRequestProperty("Content-Type", "application/json; charset=utf-8")
             setRequestProperty("Accept", "application/json")

@@ -52,7 +52,15 @@ object VisionSearchEvidence {
 
     fun refineQuery(visionQuery: String, localTextHint: String): String {
         val productIdentity = extractProductIdentity(localTextHint)
-        if (productIdentity.isNotBlank()) return productIdentity
+        if (productIdentity.isNotBlank()) {
+            val seen = linkedSetOf<String>()
+            return (productIdentity + " " + visionQuery)
+                .split(Regex("\\s+"))
+                .filter { it.isNotBlank() && seen.add(it.lowercase()) }
+                .joinToString(" ")
+                .take(280)
+                .trim()
+        }
 
         val clean = visionQuery.trim().replace(Regex("\\s+"), " ")
         return if (looksHuman(clean)) hardenHumanPhotoSearch(clean) else clean

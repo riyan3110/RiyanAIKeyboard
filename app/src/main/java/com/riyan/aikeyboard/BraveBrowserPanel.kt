@@ -188,6 +188,7 @@ class BraveBrowserPanel(
                         }
                         persistTabs()
                         installBraveSearchSettingsBridge(view, clean)
+                        installBingCameraQualityShim(view, clean)
                     }
                 }
             }
@@ -1416,6 +1417,68 @@ class BraveBrowserPanel(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) safeBrowsingEnabled = true
         }
         applyPrivacySettings()
+    }
+
+    /**
+     * Bing Visual Search asks getUserMedia without consistently requesting a useful capture size
+     * inside an embedded WebView. Patch the request before the user opens Bing's camera, then ask
+     * the active camera track for the sharpest practical 16:9 stream it actually supports.
+     */
+    private fun installBingCameraQualityShim(view: WebView?, rawUrl: String) {
+        view ?: return
+        val host = runCatching { Uri.parse(rawUrl).host.orEmpty().lowercase() }.getOrDefault("")
+        if (host != "bing.com" && !host.endsWith(".bing.com")) return
+
+        val script = """
+            (function() {
+              if (window.__aiAdsBingCameraQualityPatched) return true;
+              var media = navigator.mediaDevices;
+              if (!media || typeof media.getUserMedia !== 'function') return false;
+              var original = media.getUserMedia.bind(media);
+              media.getUserMedia = function(constraints) {
+                var next = Object.assign({}, constraints || {});
+                if (next.video !== false) {
+                  var video = (next.video && typeof next.video === 'object')
+                    ? Object.assign({}, next.video) : {};
+                  video.width = { min: 1280, ideal: 1920 };
+                  video.height = { min: 720, ideal: 1080 };
+                  video.aspectRatio = { ideal: 1.7777777778 };
+                  video.frameRate = { min: 15, ideal: 30 };
+                  if (!video.facingMode) video.facingMode = { ideal: 'environment' };
+                  next.video = video;
+                }
+                return original(next).catch(function() {
+                  var fallback = Object.assign({}, next);
+                  fallback.video = Object.assign({}, next.video || {}, {
+                    width: { ideal: 1920 },
+                    height: { ideal: 1080 },
+                    frameRate: { ideal: 30 }
+                  });
+                  return original(fallback);
+                }).then(function(stream) {
+                  try {
+                    var track = stream.getVideoTracks && stream.getVideoTracks()[0];
+                    if (track && typeof track.applyConstraints === 'function') {
+                      var caps = (typeof track.getCapabilities === 'function')
+                        ? track.getCapabilities() : {};
+                      var targetWidth = Math.min(2560, (caps.width && caps.width.max) || 1920);
+                      var targetHeight = Math.min(1440, (caps.height && caps.height.max) || 1080);
+                      track.applyConstraints({
+                        width: { ideal: targetWidth },
+                        height: { ideal: targetHeight },
+                        frameRate: { ideal: 30 },
+                        advanced: [{ focusMode: 'continuous' }]
+                      }).catch(function(){});
+                    }
+                  } catch (_) {}
+                  return stream;
+                });
+              };
+              window.__aiAdsBingCameraQualityPatched = true;
+              return true;
+            })();
+        """.trimIndent()
+        view.evaluateJavascript(script, null)
     }
 
     private fun applyPrivacySettings() {

@@ -3841,7 +3841,7 @@ resultCard.bringToFront()
             // Search exactly what the user is aiming at. PreviewView already reflects CameraX zoom,
             // then we crop to the scanner target so background outside the aimed area cannot dominate.
             val targetFrame = cropScannerVisualTarget(frame)
-            val prepared = scaleBitmapForAiVision(targetFrame, 1536)
+            val prepared = scaleBitmapForAiVision(targetFrame, 1440)
             val localHint = buildString {
                 if (scannerCameraZoomRatio > 1.05f) {
                     append("Pengguna sedang memperbesar area target sekitar %.1fx. ".format(scannerCameraZoomRatio))
@@ -3856,7 +3856,7 @@ resultCard.bringToFront()
             thread {
                 val encoded = runCatching {
                     val output = java.io.ByteArrayOutputStream()
-                    check(prepared.compress(Bitmap.CompressFormat.JPEG, 92, output))
+                    check(prepared.compress(Bitmap.CompressFormat.JPEG, 88, output))
                     android.util.Base64.encodeToString(output.toByteArray(), android.util.Base64.NO_WRAP)
                 }.getOrNull()
 
@@ -3916,7 +3916,7 @@ resultCard.bringToFront()
         scannerStatusText?.text = "Menyiapkan gambar galeri untuk AI Vision…"
 
         thread {
-            val decodedFrame = decodeGalleryBitmap(uri, 1800)
+            val decodedFrame = decodeGalleryBitmap(uri, 1600)
             if (decodedFrame == null || decodedFrame.width < 40 || decodedFrame.height < 40) {
                 handler.post {
                     scannerSearchButton?.text = "Cari"
@@ -3928,10 +3928,10 @@ resultCard.bringToFront()
 
             val frame = cropGalleryForCurrentZoom(decodedFrame)
             if (frame !== decodedFrame && !decodedFrame.isRecycled) decodedFrame.recycle()
-            val prepared = scaleBitmapForAiVision(frame, 1536)
+            val prepared = scaleBitmapForAiVision(frame, 1440)
             val encoded = runCatching {
                 val output = ByteArrayOutputStream()
-                check(prepared.compress(Bitmap.CompressFormat.JPEG, 92, output))
+                check(prepared.compress(Bitmap.CompressFormat.JPEG, 88, output))
                 android.util.Base64.encodeToString(output.toByteArray(), android.util.Base64.NO_WRAP)
             }.getOrNull()
             val visualUrl: String? = null // Brave Search remains the embedded search surface.
@@ -4001,12 +4001,11 @@ resultCard.bringToFront()
         .replace(Regex("(?i)^(?:query|search query|pencarian|hasil)\\s*:\\s*"), "")
         .replace(Regex("\\s+"), " ")
         .trim()
-    val filler = setOf("the", "a", "an", "and", "in", "with", "setting", "of", "at", "on", "yang", "sedang", "terlihat")
     return cleaned.split(Regex("\\s+"))
-        .filter { it.isNotBlank() && it.lowercase() !in filler }
-        .take(7)
+        .filter { it.isNotBlank() }
+        .take(30)
         .joinToString(" ")
-        .take(64)
+        .take(320)
         .trim()
 }
 

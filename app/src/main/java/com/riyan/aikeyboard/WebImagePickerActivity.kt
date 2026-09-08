@@ -3,7 +3,9 @@ package com.riyan.aikeyboard
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.provider.MediaStore
 import android.webkit.ValueCallback
 import androidx.appcompat.app.AppCompatActivity
 
@@ -26,13 +28,30 @@ class WebImagePickerActivity : AppCompatActivity() {
             .firstOrNull { it.startsWith("image/", ignoreCase = true) }
             ?: "image/*"
 
-        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-            addCategory(Intent.CATEGORY_OPENABLE)
-            type = requested
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        // Bing exposes this through an HTML file input. Open Android's real photo picker first so
+        // the Gallery button goes straight to device photos instead of a generic Documents page.
+        // Keep OPEN_DOCUMENT as a final fallback for older/vendor-modified Android builds.
+        val candidates = buildList {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                add(Intent(MediaStore.ACTION_PICK_IMAGES).apply { type = requested })
+            }
+            add(Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI).apply {
+                type = requested
+            })
+            add(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = requested
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+            })
         }
-        runCatching { startActivityForResult(intent, REQUEST_PICK_IMAGE) }
-            .onFailure { finishWithResult(null) }
+
+        val launched = candidates.any { intent ->
+            runCatching {
+                startActivityForResult(intent, REQUEST_PICK_IMAGE)
+                true
+            }.getOrDefault(false)
+        }
+        if (!launched) finishWithResult(null)
     }
 
     @Deprecated("Kept for broad WebView compatibility")
