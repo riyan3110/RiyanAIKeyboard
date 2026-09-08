@@ -72,9 +72,11 @@ jobs:
           python3 tools/apply_browser_chrome_patch.py
           python3 tools/apply_photo_colors_safe_scale_patch.py
           python3 tools/apply_bai_provider_patch.py
+          python3 tools/apply_private_extra_providers_patch.py
           python3 tools/apply_autocaps_brand_patch.py
           python3 tools/allow_brand_only_visible_label.py
           python3 tools/apply_private_haptic_shift_popup_gap_patch.py
+          python3 tools/apply_private_tighter_gap_patch.py
 
       - name: Build test APK
         run: RIYAN_KEYSTORE_PATH="$HOME/.riyan-ai-keyboard/debug.keystore" gradle :app:assembleDebug -x :app:patchBluesMindsProvider
