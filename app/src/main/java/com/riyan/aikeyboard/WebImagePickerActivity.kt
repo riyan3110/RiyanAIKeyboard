@@ -2,28 +2,29 @@ package com.riyan.aikeyboard
 
 import android.content.Context
 import android.content.Intent
+import android.app.Activity
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
+import android.provider.DocumentsContract
 import android.provider.MediaStore
-import android.view.inputmethod.InputMethodManager
 import android.webkit.ValueCallback
-import android.inputmethodservice.InputMethodService
-import androidx.appcompat.app.AppCompatActivity
+import android.widget.Toast
 import java.lang.ref.WeakReference
 
 /**
- * Bridges WebView image-file requests (Bing Visual Search) to Android's system photo picker.
+ * Bridges WebView image-file requests (Bing Visual Search) to the device image/document picker.
  * It is deliberately not noHistory: it must stay alive until the picker returns its result.
  */
-class WebImagePickerActivity : AppCompatActivity() {
+class WebImagePickerActivity : Activity() {
     private var resultDelivered = false
+    private var requestId = 0L
+    private val pickerRequestCode: Int get() = 1000 + (requestId % 60000L).toInt()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (!hasPendingRequest()) {
+        requestId = intent.getLongExtra(EXTRA_REQUEST_ID, 0L)
+        if (!hasPendingRequest(requestId)) {
             finish()
             return
         }
@@ -33,52 +34,60 @@ class WebImagePickerActivity : AppCompatActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        // A duplicate Bing file-input event must reuse this bridge. Opening the system picker
-        // again here is what previously produced stacked Gallery/Photos pages.
+        val nextId = intent.getLongExtra(EXTRA_REQUEST_ID, 0L)
+        if (nextId != requestId && hasPendingRequest(nextId)) {
+            requestId = nextId
+            resultDelivered = false
+            openPicker()
+        }
     }
 
     private fun openPicker() {
-        val requested = pendingAcceptTypes
-            .orEmpty()
-            .map(String::trim)
-            .firstOrNull { it.startsWith("image/", ignoreCase = true) }
-            ?: "image/*"
-
-        // Bing exposes this through an HTML file input. Open Android's real photo picker first so
-        // the Gallery button goes straight to device photos instead of a generic Documents page.
-        // Keep OPEN_DOCUMENT as a final fallback for older/vendor-modified Android builds.
+        // Do not use ACTION_PICK_IMAGES here: some vendor Photo Pickers open successfully but
+        // display an empty library. DocumentsUI can browse device Images, DCIM and Downloads.
+        // Bing's accept list can begin with a single format; never filter out the other photos.
         val candidates = buildList {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                add(Intent(MediaStore.ACTION_PICK_IMAGES).apply {
-                    type = requested
-                    putExtra(Intent.EXTRA_ALLOW_MULTIPLE, false)
-                })
-            }
-            add(Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI).apply {
-                type = requested
-                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, false)
-            })
             add(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                 addCategory(Intent.CATEGORY_OPENABLE)
-                type = requested
+                type = "image/*"
                 putExtra(Intent.EXTRA_ALLOW_MULTIPLE, false)
+                putExtra(Intent.EXTRA_LOCAL_ONLY, true)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    putExtra(DocumentsContract.EXTRA_INITIAL_URI,
+                        DocumentsContract.buildRootUri("com.android.providers.media.documents", "images"))
+                }
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+            })
+            add(Intent(Intent.ACTION_PICK).apply {
+                setDataAndType(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, "image/*")
+                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, false)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            })
+            add(Intent(Intent.ACTION_GET_CONTENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "image/*"
+                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, false)
+                putExtra(Intent.EXTRA_LOCAL_ONLY, true)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             })
         }
 
         val launched = candidates.any { intent ->
             runCatching {
-                startActivityForResult(intent, REQUEST_PICK_IMAGE)
+                startActivityForResult(intent, pickerRequestCode)
                 true
             }.getOrDefault(false)
         }
-        if (!launched) finishWithResult(null)
+        if (!launched) {
+            Toast.makeText(this, "Pemilih foto perangkat tidak tersedia.", Toast.LENGTH_SHORT).show()
+            finishWithResult(null)
+        }
     }
 
     @Deprecated("Kept for broad WebView compatibility")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode != REQUEST_PICK_IMAGE) return
+        if (requestCode != pickerRequestCode) return
 
         val uris = if (resultCode == RESULT_OK) {
             buildList {
@@ -105,37 +114,35 @@ class WebImagePickerActivity : AppCompatActivity() {
     private fun finishWithResult(uris: Array<Uri>?) {
         if (resultDelivered) return
         resultDelivered = true
-        val completion = takePendingRequest()
+        val completion = takePendingRequest(requestId)
         val callback = completion.first
         val keyboardOwner = completion.second
-        callback?.onReceiveValue(uris)
+        // A stale WebView callback must never prevent the bridge from finishing or the IME
+        // from returning to the host app.
+        runCatching { callback?.onReceiveValue(uris) }
         finish()
         @Suppress("DEPRECATION")
         overridePendingTransition(0, 0)
-        // The Android photo picker temporarily takes focus away from the host app. Ask this same
-        // IME to return only after the selected URI has been delivered to Bing's WebView.
-        Handler(Looper.getMainLooper()).postDelayed({
-            keyboardOwner?.get()?.requestShowSelf(InputMethodManager.SHOW_IMPLICIT)
-        }, KEYBOARD_RESTORE_DELAY_MS)
+        keyboardOwner?.get()?.onBrowserImagePickerFinished()
     }
 
     companion object {
-        private const val REQUEST_PICK_IMAGE = 9231
-        private const val KEYBOARD_RESTORE_DELAY_MS = 220L
+        private const val EXTRA_REQUEST_ID = "web_image_request_id"
+        private var activeRequestId = 0L
         @Volatile private var pendingCallback: ValueCallback<Array<Uri>>? = null
-        @Volatile private var pendingAcceptTypes: Array<String>? = null
-        @Volatile private var keyboardOwner: WeakReference<InputMethodService>? = null
+        @Volatile private var keyboardOwner: WeakReference<RiyanKeyboardService>? = null
         @Volatile private var launchInFlight = false
 
         @Synchronized
-        private fun hasPendingRequest(): Boolean = launchInFlight && pendingCallback != null
+        private fun hasPendingRequest(id: Long): Boolean =
+            id == activeRequestId && launchInFlight && pendingCallback != null
 
         @Synchronized
-        private fun takePendingRequest(): Pair<ValueCallback<Array<Uri>>?, WeakReference<InputMethodService>?> {
+        private fun takePendingRequest(id: Long = activeRequestId): Pair<ValueCallback<Array<Uri>>?, WeakReference<RiyanKeyboardService>?> {
+            if (id != activeRequestId) return null to null
             val callback = pendingCallback
             val owner = keyboardOwner
             pendingCallback = null
-            pendingAcceptTypes = null
             keyboardOwner = null
             launchInFlight = false
             return callback to owner
@@ -145,21 +152,23 @@ class WebImagePickerActivity : AppCompatActivity() {
         fun launch(
             context: Context,
             callback: ValueCallback<Array<Uri>>,
-            acceptTypes: Array<String>?
+            @Suppress("UNUSED_PARAMETER") acceptTypes: Array<String>?
         ): Boolean {
             if (launchInFlight) {
                 // Bing can emit the same chooser request more than once for one tap. Complete only
                 // the duplicate callback and keep the first picker/callback alive.
-                callback.onReceiveValue(null)
+                if (callback !== pendingCallback) runCatching { callback.onReceiveValue(null) }
                 return true
             }
             launchInFlight = true
+            activeRequestId++
             pendingCallback = callback
-            pendingAcceptTypes = acceptTypes
-            keyboardOwner = (context as? InputMethodService)?.let(::WeakReference)
+            keyboardOwner = (context as? RiyanKeyboardService)?.let(::WeakReference)
+            keyboardOwner?.get()?.onBrowserImagePickerOpened()
             return runCatching {
                 context.startActivity(
                     Intent(context, WebImagePickerActivity::class.java)
+                        .putExtra(EXTRA_REQUEST_ID, activeRequestId)
                         .addFlags(
                             Intent.FLAG_ACTIVITY_NEW_TASK or
                                 Intent.FLAG_ACTIVITY_CLEAR_TOP or
@@ -169,9 +178,19 @@ class WebImagePickerActivity : AppCompatActivity() {
                 )
                 true
             }.getOrElse {
-                takePendingRequest().first?.onReceiveValue(null)
-                false
+                val completion = takePendingRequest()
+                runCatching { completion.first?.onReceiveValue(null) }
+                completion.second?.get()?.onBrowserImagePickerFinished()
+                // The callback was consumed, so WebView must not dispatch it a second time.
+                true
             }
+        }
+
+        @Synchronized
+        fun cancelFor(context: Context) {
+            if (keyboardOwner?.get() !== context) return
+            val completion = takePendingRequest()
+            runCatching { completion.first?.onReceiveValue(null) }
         }
     }
 }

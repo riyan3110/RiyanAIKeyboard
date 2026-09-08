@@ -79,7 +79,7 @@ jobs:
           python3 tools/apply_private_tighter_gap_patch.py
 
       - name: Build test APK
-        run: RIYAN_KEYSTORE_PATH="$HOME/.riyan-ai-keyboard/debug.keystore" gradle :app:assembleDebug -x :app:patchBluesMindsProvider
+        run: RIYAN_KEYSTORE_PATH="$HOME/.riyan-ai-keyboard/debug.keystore" gradle :app:testDebugUnitTest :app:assembleDebug -x :app:patchBluesMindsProvider
 
       - name: Give APK a permanent versioned filename
         id: package
