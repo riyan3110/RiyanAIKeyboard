@@ -51,6 +51,9 @@ class WebImagePickerActivityTest {
         val original = ValueCallback<Array<Uri>> { originalResults += it }
         val activity = open(original)
         val picker = shadowOf(activity).nextStartedActivityForResult.intent
+        // Robolectric records the initial picker in both the start-for-result queue and the
+        // global started-activity queue. Clear the baseline before checking duplicate taps.
+        while (shadowOf(app).nextStartedActivity != null) { }
         var duplicateCalls = 0
         WebImagePickerActivity.launch(app, original, null)
         WebImagePickerActivity.launch(app, ValueCallback {
