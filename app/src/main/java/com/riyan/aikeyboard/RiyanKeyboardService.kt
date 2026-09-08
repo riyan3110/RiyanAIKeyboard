@@ -4003,9 +4003,9 @@ resultCard.bringToFront()
         .trim()
     return cleaned.split(Regex("\\s+"))
         .filter { it.isNotBlank() }
-        .take(30)
+        .take(52)
         .joinToString(" ")
-        .take(320)
+        .take(520)
         .trim()
 }
 

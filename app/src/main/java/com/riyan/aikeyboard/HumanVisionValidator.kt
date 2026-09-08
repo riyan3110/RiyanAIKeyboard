@@ -11,7 +11,7 @@ object HumanVisionValidator {
         if (!looksHuman(clean)) return true
 
         val words = clean.split(Regex("\\s+")).filter { it.isNotBlank() }
-        if (words.size < 10) return false
+        if (words.size < 18) return false
 
         fun has(pattern: String): Boolean =
             Regex(pattern, RegexOption.IGNORE_CASE).containsMatchIn(clean)
@@ -29,7 +29,7 @@ object HumanVisionValidator {
         if (has("\\b(bedroom|living room|art gallery|gallery|museum|street|outdoors|indoors|park|garden|studio)\\b")) detailGroups++
         if (has("\\b(standing|sitting|seated|walking|posing|leaning|kneeling)\\b")) detailGroups++
 
-        if (detailGroups < 2) return false
+        if (detailGroups < 4) return false
 
         // Explicitly reject the failure pattern seen in testing: a generic adult label + one garment.
         if (Regex("(?i)^adult (woman|man),? sexy,? wearing .{0,55}(walking|standing)?$").matches(clean)) {

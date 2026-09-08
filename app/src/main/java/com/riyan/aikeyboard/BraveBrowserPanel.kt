@@ -86,6 +86,7 @@ class BraveBrowserPanel(
     private val tabs = mutableListOf<BrowserTab>()
     private var currentTabIndex = 0
     private var trackerCount = 0
+    private var lastBingTransientErrorUrl = ""
 
     private val darkBg = Color.rgb(31, 31, 33)
     private val darkBar = Color.rgb(46, 46, 48)
@@ -187,9 +188,16 @@ class BraveBrowserPanel(
                             saveHistory(view?.title.orEmpty(), clean)
                         }
                         persistTabs()
+                        applyPageCookiePolicy(view, clean)
                         installBraveSearchSettingsBridge(view, clean)
                         installBingCameraQualityShim(view, clean)
+                        recoverBingTransientError(view, clean)
                     }
+                }
+
+                override fun onPageCommitVisible(view: WebView?, url: String?) {
+                    super.onPageCommitVisible(view, url)
+                    installBingCameraQualityShim(view, url.orEmpty())
                 }
             }
             webChromeClient = object : WebChromeClient() {
@@ -1440,45 +1448,138 @@ class BraveBrowserPanel(
                 if (next.video !== false) {
                   var video = (next.video && typeof next.video === 'object')
                     ? Object.assign({}, next.video) : {};
-                  video.width = { min: 1280, ideal: 1920 };
-                  video.height = { min: 720, ideal: 1080 };
+                  video.width = { ideal: 1920 };
+                  video.height = { ideal: 1080 };
                   video.aspectRatio = { ideal: 1.7777777778 };
-                  video.frameRate = { min: 15, ideal: 30 };
+                  video.frameRate = { ideal: 30 };
+                  video.resizeMode = { ideal: 'none' };
                   if (!video.facingMode) video.facingMode = { ideal: 'environment' };
                   next.video = video;
                 }
                 return original(next).catch(function() {
-                  var fallback = Object.assign({}, next);
-                  fallback.video = Object.assign({}, next.video || {}, {
-                    width: { ideal: 1920 },
-                    height: { ideal: 1080 },
-                    frameRate: { ideal: 30 }
+                  return original({
+                    audio: next.audio || false,
+                    video: { facingMode: { ideal: 'environment' } }
                   });
-                  return original(fallback);
                 }).then(function(stream) {
                   try {
                     var track = stream.getVideoTracks && stream.getVideoTracks()[0];
-                    if (track && typeof track.applyConstraints === 'function') {
+                    if (track) {
+                      try { track.contentHint = 'detail'; } catch (_) {}
                       var caps = (typeof track.getCapabilities === 'function')
                         ? track.getCapabilities() : {};
-                      var targetWidth = Math.min(2560, (caps.width && caps.width.max) || 1920);
-                      var targetHeight = Math.min(1440, (caps.height && caps.height.max) || 1080);
-                      track.applyConstraints({
-                        width: { ideal: targetWidth },
-                        height: { ideal: targetHeight },
-                        frameRate: { ideal: 30 },
-                        advanced: [{ focusMode: 'continuous' }]
-                      }).catch(function(){});
+                      if (typeof track.applyConstraints === 'function') {
+                        var targetWidth = Math.min(1920, (caps.width && caps.width.max) || 1920);
+                        var targetHeight = Math.min(1080, (caps.height && caps.height.max) || 1080);
+                        var applied = {
+                          width: { ideal: targetWidth },
+                          height: { ideal: targetHeight },
+                          frameRate: { ideal: 30 }
+                        };
+                        if (caps.focusMode && Array.prototype.indexOf.call(caps.focusMode, 'continuous') >= 0) {
+                          applied.advanced = [{ focusMode: 'continuous' }];
+                        }
+                        track.applyConstraints(applied).catch(function(){});
+                      }
                     }
                   } catch (_) {}
                   return stream;
                 });
               };
+
+              // Bing sometimes captures the correctly focused video into a very small canvas.
+              // Preserve its crop, but render video frames at up to 1920 px before JPEG encoding.
+              try {
+                var contextProto = window.CanvasRenderingContext2D && CanvasRenderingContext2D.prototype;
+                if (contextProto && !contextProto.__aiAdsSharpVideoFrame) {
+                  var originalDrawImage = contextProto.drawImage;
+                  contextProto.drawImage = function(source) {
+                    var args = Array.prototype.slice.call(arguments, 1);
+                    var canvas = this.canvas;
+                    if (source instanceof HTMLVideoElement && source.videoWidth >= 1280 &&
+                        canvas && canvas.width > 0 && canvas.height > 0 &&
+                        Math.max(canvas.width, canvas.height) < 1280) {
+                      var oldWidth = canvas.width;
+                      var oldHeight = canvas.height;
+                      var scale = Math.min(1, 1920 / Math.max(source.videoWidth, source.videoHeight));
+                      var targetWidth = Math.max(1280, Math.round(source.videoWidth * scale));
+                      var targetHeight = Math.max(720, Math.round(source.videoHeight * scale));
+                      canvas.width = targetWidth;
+                      canvas.height = targetHeight;
+                      var sx = targetWidth / oldWidth;
+                      var sy = targetHeight / oldHeight;
+                      if (args.length === 4) {
+                        args[0] *= sx; args[1] *= sy; args[2] *= sx; args[3] *= sy;
+                      } else if (args.length === 8) {
+                        args[4] *= sx; args[5] *= sy; args[6] *= sx; args[7] *= sy;
+                      }
+                    }
+                    return originalDrawImage.apply(this, [source].concat(args));
+                  };
+                  contextProto.__aiAdsSharpVideoFrame = true;
+                }
+                var canvasProto = window.HTMLCanvasElement && HTMLCanvasElement.prototype;
+                if (canvasProto && !canvasProto.__aiAdsHighQualityEncoding) {
+                  var originalToBlob = canvasProto.toBlob;
+                  canvasProto.toBlob = function(callback, type, quality) {
+                    var mime = String(type || '').toLowerCase();
+                    var nextQuality = (mime.indexOf('jpeg') >= 0 || mime.indexOf('webp') >= 0)
+                      ? Math.max(Number(quality) || 0, 0.92) : quality;
+                    return originalToBlob.call(this, callback, type, nextQuality);
+                  };
+                  var originalToDataUrl = canvasProto.toDataURL;
+                  canvasProto.toDataURL = function(type, quality) {
+                    var mime = String(type || '').toLowerCase();
+                    var nextQuality = (mime.indexOf('jpeg') >= 0 || mime.indexOf('webp') >= 0)
+                      ? Math.max(Number(quality) || 0, 0.92) : quality;
+                    return originalToDataUrl.call(this, type, nextQuality);
+                  };
+                  canvasProto.__aiAdsHighQualityEncoding = true;
+                }
+              } catch (_) {}
               window.__aiAdsBingCameraQualityPatched = true;
               return true;
             })();
         """.trimIndent()
         view.evaluateJavascript(script, null)
+        view.postDelayed({
+            runCatching {
+                if (view.isAttachedToWindow && view.url?.contains("bing.com", ignoreCase = true) == true) {
+                    view.evaluateJavascript(script, null)
+                }
+            }
+        }, 300L)
+        view.postDelayed({
+            runCatching {
+                if (view.isAttachedToWindow && view.url?.contains("bing.com", ignoreCase = true) == true) {
+                    view.evaluateJavascript(script, null)
+                }
+            }
+        }, 900L)
+    }
+
+    private fun recoverBingTransientError(view: WebView?, rawUrl: String) {
+        view ?: return
+        val host = runCatching { Uri.parse(rawUrl).host.orEmpty().lowercase() }.getOrDefault("")
+        if (host != "bing.com" && !host.endsWith(".bing.com") && !host.endsWith(".edgesuite.net")) return
+        val probe = """
+            (function() {
+              var text = (document.body && document.body.innerText || '').toLowerCase();
+              return text.indexOf('an error occurred while processing your request') >= 0 &&
+                text.indexOf('reference #') >= 0;
+            })();
+        """.trimIndent()
+        view.evaluateJavascript(probe) { value ->
+            if (value != "true") {
+                if (host == "bing.com" || host.endsWith(".bing.com")) lastBingTransientErrorUrl = ""
+                return@evaluateJavascript
+            }
+            if (lastBingTransientErrorUrl == rawUrl) return@evaluateJavascript
+            lastBingTransientErrorUrl = rawUrl
+            view.postDelayed({
+                if (view.isAttachedToWindow && view.url == rawUrl) view.reload()
+            }, 650L)
+        }
     }
 
     private fun applyPrivacySettings() {
@@ -1488,6 +1589,17 @@ class BraveBrowserPanel(
             setAcceptCookie(cookies)
             setAcceptThirdPartyCookies(webView, cookies && !prefs.getBoolean(KEY_BLOCK_THIRD_PARTY_COOKIES, true))
         }
+    }
+
+    private fun applyPageCookiePolicy(view: WebView?, rawUrl: String) {
+        view ?: return
+        val host = runCatching { Uri.parse(rawUrl).host.orEmpty().lowercase() }.getOrDefault("")
+        val isBing = host == "bing.com" || host.endsWith(".bing.com")
+        val cookies = prefs.getBoolean(KEY_COOKIES, true)
+        val allowThirdParty = cookies && (isBing || !prefs.getBoolean(KEY_BLOCK_THIRD_PARTY_COOKIES, true))
+        // Bing Visual Search exchanges the captured frame with Microsoft/CDN endpoints. Blocking
+        // that cross-site cookie hop can leave only the slow edgesuite error page seen in testing.
+        CookieManager.getInstance().setAcceptThirdPartyCookies(view, allowThirdParty)
     }
 
     private fun applyBraveSearchPreferences() {

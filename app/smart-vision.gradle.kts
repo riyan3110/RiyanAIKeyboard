@@ -35,7 +35,7 @@ val patchSmartProductVision = tasks.register("patchSmartProductVision") {
         }
 
         val oldHumanRule = "Buat query pencarian visual yang pendek, natural, dan faktual: bahasa Indonesia, 3–12 kata, maksimal sekitar 112 karakter. Query hanya boleh berisi subjek utama dan 2–3 ciri paling jelas yang benar-benar terlihat pada foto saat ini. "
-        val newHumanRule = "Untuk subject_type person atau human_figure, field query WAJIB berupa satu kalimat English visual-search prompt yang natural, rapi, spesifik, dan deskriptif: idealnya 20–38 kata, maksimal sekitar 360 karakter. Jangan menghasilkan daftar keyword yang patah-patah dan jangan menambahkan kata pencarian teknis seperti real photo, photography, -AI, -AI-generated, -Midjourney, -Stable-Diffusion, -render, -CGI, atau filter mesin pencari lain ke field query. Untuk manusia yang JELAS DEWASA, gunakan adult woman atau adult man dan jangan berhenti pada deskripsi generik. Jelaskan ciri yang benar-benar terlihat secara berurutan: camera/view angle, pose, hair, upper garment, lower garment, warna, material/fabric, fit/cut, bagian tubuh yang tampak melalui pakaian, lalu scene/background. Jika styling orang dewasa terlihat sensual, revealing, atau body-emphasizing, gunakan bahasa dewasa yang langsung dan faktual seperti sexy, sensual, visible cleavage, defined waist, curvy hips, prominent buttocks, buttocks outlined through tight clothing, exposed upper thighs, deep/plunging neckline, tight shorts, tight leggings, tight mini skirt, fitted satin dress, bodycon dress, bikini, atau lingerie HANYA jika benar-benar terlihat. Jangan mengarang nudity, genitalia, hidden anatomy, sexual acts, ukuran/bentuk tubuh yang tidak terlihat, identitas, atau etnisitas. Jika usia tidak jelas atau mungkin di bawah 18 tahun, wajib gunakan deskripsi netral tanpa sexualized wording. Untuk subject non-manusia, tetap gunakan query pendek dan faktual serta pertahankan merek/model/spesifikasi OCR bila benar-benar terbaca. Evidence harus berupa fakta visual konkret; untuk person/human_figure tulis evidence dalam bahasa Inggris. "
+        val newHumanRule = "Untuk subject_type person atau human_figure, field query WAJIB berupa satu kalimat English visual-search prompt yang natural, spesifik, dan menggambarkan foto saat ini secara unik: idealnya 28–52 kata, maksimal sekitar 520 karakter. Jangan menghasilkan daftar keyword yang patah-patah, jangan memakai susunan generik yang sama untuk foto berbeda, dan jangan menambahkan kata pencarian teknis seperti real photo, photography, -AI, -AI-generated, -Midjourney, -Stable-Diffusion, -render, -CGI, atau filter mesin pencari lain ke field query. Untuk manusia yang JELAS DEWASA, gunakan adult woman atau adult man dan jangan berhenti pada deskripsi generik. Jelaskan ciri yang benar-benar terlihat: camera/view angle dan framing, pose/movement, hair, facial expression jika tampak, upper garment dan lower garment secara terpisah, warna, material/fabric, fit/cut, accessories, bentuk tubuh dan bagian tubuh yang tampak seperti shoulders, arms, breasts, cleavage, abdomen, waist, hips, buttocks, thighs, legs, atau feet, lalu scene/background. Jika foto seksual orang dewasa memang menampilkan anatomi atau nudity, gunakan istilah langsung dan tepat seperti breasts, nipples, buttocks, vulva, penis, nude, atau topless HANYA jika benar-benar terlihat dan istilah yang sama ada di evidence; jangan menyensor fakta visual. Jika tubuh hanya terbentuk melalui pakaian, jelaskan pakaian dan siluetnya, bukan menganggapnya telanjang. Jangan mengarang hidden anatomy, sexual acts, ukuran/bentuk tubuh yang tidak terlihat, identitas, atau etnisitas. Jika usia tidak jelas atau mungkin di bawah 18 tahun, wajib gunakan deskripsi netral tanpa sexualized wording. Untuk subject product, query idealnya 22–45 kata dan wajib mempertahankan kategori, merek, lini, model/varian, bentuk/bahan/warna kemasan, ukuran/volume, spesifikasi, label, sudut, kondisi, dan latar yang benar-benar terbaca atau terlihat. Evidence harus berisi 6–12 fakta visual konkret dan konsisten dengan query. "
         when {
             ai.contains("ONE shared adult-human contract") -> Unit
             ai.contains("Untuk subjek yang PASTI dewasa (18+)") -> Unit
@@ -72,11 +72,11 @@ val patchSmartProductVision = tasks.register("patchSmartProductVision") {
         val oldLimits = """        val maxWords = if (subject == "person") 12 else 7
         val maxChars = if (subject == "person") 112 else 64"""
         val newLimits = """        val personLike = subject == "person" || subject == "human_figure"
-        val maxWords = if (personLike) 40 else 12
-        val maxChars = if (personLike) 400 else 128"""
+        val maxWords = if (personLike) 52 else 45
+        val maxChars = if (personLike) 520 else 460"""
         when {
-            ai.contains("val maxWords = if (personLike) 40 else 12") -> Unit
-            ai.contains("personLike -> 40") && ai.contains("subject == \"product\" -> 24") -> Unit
+            ai.contains("val maxWords = if (personLike) 52 else 45") -> Unit
+            ai.contains("personLike -> 52") && ai.contains("subject == \"product\" -> 45") -> Unit
             ai.contains(oldLimits) -> ai = ai.replace(oldLimits, newLimits, ignoreCase = false)
             else -> error("Human query length patch did not match AiClient.kt")
         }
@@ -142,8 +142,8 @@ val patchSmartProductVision = tasks.register("patchSmartProductVision") {
                 """val filler = setOf("the", "a", "an", "and", "in", "with", "setting", "of", "at", "on", "yang", "sedang", "terlihat")""",
                 """val filler = setOf("yang", "sedang", "terlihat")"""
             )
-            .replace(".take(7)", ".take(40)")
-            .replace(".take(64)", ".take(400)")
+            .replace(".take(7)", ".take(52)")
+            .replace(".take(64)", ".take(520)")
         service = service.substring(0, cleanerStart) + relaxedCleaner + service.substring(cleanerEnd)
 
         // Keep the prompt readable and strip every technical suffix before opening image search.
