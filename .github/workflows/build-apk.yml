@@ -79,6 +79,7 @@ jobs:
           python3 tools/apply_private_haptic_shift_popup_gap_patch.py
           python3 tools/apply_private_tighter_gap_patch.py
           python3 tools/apply_private_ai_fresh_focus_shift_patch.py
+          python3 tools/apply_private_touch_emoji_patch.py
 
       - name: Build test APK
         run: RIYAN_KEYSTORE_PATH="$HOME/.riyan-ai-keyboard/debug.keystore" gradle :app:testDebugUnitTest :app:assembleDebug -x :app:patchBluesMindsProvider
