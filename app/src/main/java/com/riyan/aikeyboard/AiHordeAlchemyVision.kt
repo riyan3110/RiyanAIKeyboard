@@ -47,7 +47,7 @@ object AiHordeAlchemyVision {
         }
 
         val startedAt = System.currentTimeMillis()
-        val deadline = startedAt + 90_000L
+        val deadline = startedAt + 40_000L
         while (System.currentTimeMillis() < deadline) {
             Thread.sleep(1_500L)
             val status = getJson("$BASE_URL/interrogate/status/$requestId", headers)
@@ -61,7 +61,7 @@ object AiHordeAlchemyVision {
             val allDone = parsed.totalForms > 0 && parsed.completedForms == parsed.totalForms
             val enoughEvidence = parsed.caption.isNotBlank() || parsed.tags.isNotEmpty()
 
-            if ((state == "done" || allDone || (enoughEvidence && elapsed >= 25_000L)) && enoughEvidence) {
+            if ((state == "done" || allDone || (enoughEvidence && elapsed >= 9_000L)) && enoughEvidence) {
                 return buildGroundedResult(parsed)
             }
         }
@@ -251,9 +251,9 @@ object AiHordeAlchemyVision {
             .map { it.lowercase().trim() }
             .filter { it.isNotBlank() && it !in QUERY_NOISE }
             .distinct()
-            .take(12)
+            .take(20)
             .joinToString(" ")
-            .take(112)
+            .take(220)
             .trim()
     }
 
@@ -497,9 +497,9 @@ object AiHordeAlchemyVision {
             .map { it.trim('-', '_').lowercase() }
             .filter { it.length >= 2 && it !in QUERY_NOISE }
             .distinct()
-            .take(7)
+            .take(18)
             .joinToString(" ")
-            .take(64)
+            .take(220)
             .trim()
     }
 

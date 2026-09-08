@@ -2,9 +2,9 @@ name: Build APK
 
 on:
   push:
-    branches: [ main, release/v0.21.24-exact-v0.21.22-preserve-data ]
+    branches: [ main, private-main, release/v0.21.24-exact-v0.21.22-preserve-data ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, private-main ]
   workflow_dispatch:
 
 jobs:
