@@ -53,8 +53,8 @@ data class AiSettings(
 data class AiResponse(val text: String, val provider: AiProvider)
 
 object AiClient {
-    private const val VISION_CONNECT_TIMEOUT_MS = 8_000
-    private const val VISION_READ_TIMEOUT_MS = 22_000
+    private const val VISION_CONNECT_TIMEOUT_MS = 6_000
+    private const val VISION_READ_TIMEOUT_MS = 16_000
 
     fun transform(settings: AiSettings, action: String, text: String): Result<AiResponse> {
         if (text.isBlank()) {
@@ -222,9 +222,9 @@ object AiClient {
             "Analisis isi gambar yang benar-benar diterima, bukan tebakan dari warna atau teks pendamping. " +
                 "LANGKAH PERTAMA wajib menentukan BENTUK/SUBJEK utama: manusia nyata, figur manusia/humanoid, hewan, kendaraan, produk, makanan, tanaman, teks/dokumen, ilustrasi, objek lain, atau adegan. " +
                 "Gambar kartun, gambar tangan, poster, mainan, patung, atau karakter bergaya yang jelas berbentuk manusia harus diklasifikasikan sebagai human_figure, bukan sekadar warna/pola. " +
-                "Jika manusia nyata terlihat, klasifikasikan sebagai person dan jangan mencoba menentukan identitas orang. Foto manusia nyata harus tetap person; gunakan human_figure hanya jika jelas berupa ilustrasi, patung, mainan, render, atau karakter nonfotografis. Untuk subjek yang PASTI dewasa (18+), tulis adult woman atau adult man dan buat query yang tegas serta lengkap: sudut pandang/pose, jenis-warna-bahan-ketat atau longgarnya pakaian, rambut, lokasi, lalu ciri tubuh atau unsur seksual dewasa yang benar-benar terlihat. Gunakan istilah langsung seperti sexy, cleavage, breasts, buttocks, nipples, vulva, penis, nude, atau topless hanya bila masing-masing tampak jelas dan disebut juga di evidence; jangan melembutkan istilah visual yang memang terlihat. Jika subjek tampak di bawah 18 tahun atau usia dewasa tidak dapat dipastikan, jangan gunakan istilah seksual atau anatomi intim dan gunakan deskripsi netral. Jangan menebak anatomi di balik pakaian atau tindakan seksual dari pose/ekspresi. " +
-                "Untuk produk, query wajib memuat sebanyak mungkin pembeda yang terbaca/terlihat: kategori produk, merek, nama/model/varian, jenis kemasan, warna, ukuran/volume, spesifikasi, dan tulisan label utama. Jangan berhenti pada kata umum seperti produk, botol, kotak, kosmetik, atau elektronik bila detail pembeda tersedia. " +
-                "Setiap foto wajib dianalisis DARI NOL dan independen dari hasil foto sebelumnya. Jangan menyalin, mengulang, atau mengambil kata dari instruksi ini sebagai isi query. Buat query pencarian visual natural dan faktual yang cukup lengkap untuk dikirim langsung ke mesin pencari: umumnya 10–24 kata, maksimal sekitar 280 karakter. Dahulukan ciri paling spesifik; jangan menambah fakta yang tidak terlihat. Evidence wajib berisi 3–6 fakta visual konkret dari foto saat ini dan tidak boleh mengulang template. " +
+                "Jika manusia nyata terlihat, klasifikasikan sebagai person dan jangan mencoba menentukan identitas orang. Foto manusia nyata harus tetap person; gunakan human_figure hanya jika jelas berupa ilustrasi, patung, mainan, render, atau karakter nonfotografis. Untuk subjek yang PASTI dewasa (18+), tulis adult woman atau adult man dan buat query bahasa Inggris sepanjang 28–52 kata yang menggambarkan foto ini secara khusus, bukan template umum. Masukkan sebanyak mungkin ciri yang benar-benar terlihat: front/rear/side view dan framing, pose atau gerakan, rambut, ekspresi bila wajah terlihat, pakaian atas dan bawah secara terpisah, warna, bahan, potongan atau tingkat keketatan, aksesori, latar, serta bentuk tubuh dan bagian tubuh yang tampak seperti shoulders, arms, breasts, cleavage, abdomen, waist, hips, buttocks, thighs, legs, atau feet. Untuk gambar seksual orang dewasa, ungkapkan apa adanya dengan istilah tepat seperti sexy, sensual, revealing, breasts, nipples, buttocks, vulva, penis, nude, atau topless hanya bila masing-masing benar-benar tampak dan istilah yang sama tercantum di evidence; jangan menyensor atau menggantinya dengan istilah samar. Jika bagian tubuh hanya terbentuk melalui pakaian, jelaskan pakaian dan siluetnya, misalnya breasts under a fitted top atau buttocks outlined through tight leggings, bukan menganggapnya telanjang. Jika subjek tampak di bawah 18 tahun atau usia dewasa tidak dapat dipastikan, jangan gunakan istilah seksual atau anatomi intim dan gunakan deskripsi netral. Jangan menebak anatomi tertutup, identitas, etnisitas, atau tindakan seksual dari pose/ekspresi. " +
+                "Untuk produk, query bahasa Inggris wajib 22–45 kata dan memuat sebanyak mungkin pembeda yang terbaca/terlihat: kategori, merek, lini produk, nama/model/varian, bentuk dan bahan kemasan, warna, ukuran/volume, spesifikasi, tulisan label utama, sudut pandang, kondisi, dan latar. Jangan berhenti pada kata umum seperti produk, botol, kotak, kosmetik, atau elektronik bila detail pembeda tersedia. " +
+                "Setiap foto wajib dianalisis DARI NOL dan independen dari hasil foto sebelumnya. Jangan menyalin hasil lama, mengulang susunan kata generik yang sama, atau mengambil contoh kata dari instruksi ini kecuali memang cocok dengan piksel foto. Query harus satu kalimat pencarian visual natural, faktual, kaya ciri pembeda, maksimal sekitar 520 karakter, dan siap dikirim langsung ke Bing Images. Dahulukan subjek dan ciri paling spesifik; jangan menambah fakta yang tidak terlihat. Evidence wajib berisi 6–12 fakta visual konkret dari foto saat ini, memakai istilah yang konsisten dengan query, dan tidak boleh berupa template. " +
                 "Jangan mengarang merek, nama karakter, identitas, atau tulisan yang tidak terlihat. " +
                 "Balas HANYA JSON minified tanpa markdown dengan format: " +
                 "{\"subject_type\":\"person|human_figure|animal|vehicle|product|food|plant|text|illustration|object|scene|unknown\",\"confidence\":0.0,\"query\":\"...\",\"evidence\":\"...\"}. " +
@@ -321,13 +321,13 @@ object AiClient {
         }
         val personLike = subject == "person" || subject == "human_figure"
         val maxWords = when {
-            personLike -> 40
-            subject == "product" -> 24
+            personLike -> 52
+            subject == "product" -> 45
             else -> 18
         }
         val maxChars = when {
-            personLike -> 400
-            subject == "product" -> 260
+            personLike -> 520
+            subject == "product" -> 460
             else -> 200
         }
         return query.split(Regex("\\s+"))
@@ -464,8 +464,8 @@ object AiClient {
 
         val body = JSONObject()
             .put("model", settings.openRouterModel.trim())
-            .put("temperature", 0.05)
-            .put("max_tokens", 220)
+            .put("temperature", 0.12)
+            .put("max_tokens", 360)
             .put(
                 "messages",
                 JSONArray().put(
@@ -529,8 +529,8 @@ object AiClient {
 
         val body = JSONObject()
             .put("model", settings.tabiModel.trim())
-            .put("max_tokens", 220)
-            .put("temperature", 0.05)
+            .put("max_tokens", 360)
+            .put("temperature", 0.12)
             .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", content)))
 
         val response = postJson(
@@ -610,8 +610,8 @@ object AiClient {
             )
         val body = JSONObject()
             .put("model", model.trim())
-            .put("temperature", 0.05)
-            .put("max_tokens", 220)
+            .put("temperature", 0.12)
+            .put("max_tokens", 360)
             .put(
                 "messages", JSONArray().put(
                     JSONObject().put("role", "user").put("content", content)
@@ -701,8 +701,8 @@ object AiClient {
 
         val body = JSONObject()
             .put("model", settings.nineRouterModel.trim())
-            .put("temperature", 0.05)
-            .put("max_tokens", 220)
+            .put("temperature", 0.12)
+            .put("max_tokens", 360)
             .put(
                 "messages",
                 JSONArray().put(
