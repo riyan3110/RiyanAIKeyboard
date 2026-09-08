@@ -319,14 +319,15 @@ object AiClient {
         if (subjectWords.none { it.length >= 4 && query.lowercase().contains(it) }) {
             query = "$prefix $query"
         }
-        val maxWords = when (subject) {
-            "person" -> 28
-            "product" -> 24
+        val personLike = subject == "person" || subject == "human_figure"
+        val maxWords = when {
+            personLike -> 40
+            subject == "product" -> 24
             else -> 18
         }
-        val maxChars = when (subject) {
-            "person" -> 300
-            "product" -> 260
+        val maxChars = when {
+            personLike -> 400
+            subject == "product" -> 260
             else -> 200
         }
         return query.split(Regex("\\s+"))

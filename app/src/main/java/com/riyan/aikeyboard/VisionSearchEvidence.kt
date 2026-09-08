@@ -38,7 +38,7 @@ object VisionSearchEvidence {
         if (bitmap.width < 24 || bitmap.height < 24) return ""
         val result = Tasks.await(
             recognizer.process(InputImage.fromBitmap(bitmap, 0)),
-            4,
+            2,
             TimeUnit.SECONDS
         )
         return result.textBlocks
