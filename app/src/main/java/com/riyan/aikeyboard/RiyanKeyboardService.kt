@@ -2390,6 +2390,11 @@ class RiyanKeyboardService : InputMethodService() {
     private var voiceMicButton: ImageButton? = null
     private var voiceGeneration = 0
     private var voiceWorking = false
+    private var voiceModeActive = false
+    private var voiceSearchRequested = false
+    private var voiceReadyQuery = ""
+    private var voiceRawTranscript = ""
+    private var scannerSearchGeneration = 0
     private var voiceFallback: Runnable? = null
     private val voiceExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
 
@@ -2400,39 +2405,64 @@ class RiyanKeyboardService : InputMethodService() {
         voiceCapture?.cancel()
         voiceCapture = null
         voiceWorking = false
+        voiceModeActive = false
+        voiceSearchRequested = false
+        voiceReadyQuery = ""
+        voiceRawTranscript = ""
         voiceMicButton?.apply {
             imageTintList = ColorStateList.valueOf(Color.WHITE)
             contentDescription = "Mulai pencarian suara"
         }
     }
 
+    private fun restoreScannerAfterVoiceMode() {
+        if (!searchSurfaceVisible || !scannerActive || scannerGalleryUri != null) return
+        scannerPreviewView?.post { startEmbeddedScanner() }
+    }
+
     private fun toggleVoiceSearch() {
-        if (voiceWorking) {
+        if (voiceModeActive) {
             cancelVoiceSearch()
-            scannerResultText?.text = "Pencarian suara dibatalkan"
+            scannerResultText?.text = scannerSelectedQuery.ifBlank {
+                if (scannerGalleryUri != null) "AI Vision akan mengenali gambar dari galeri"
+                else "Arahkan objek ke kotak, lalu tekan Cari."
+            }
+            restoreScannerAfterVoiceMode()
             return
         }
-        voiceCapture?.let { it.finish(); return }
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             startActivity(Intent(this, MicrophonePermissionActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             return
         }
+
+        voiceModeActive = true
+        voiceSearchRequested = false
+        voiceReadyQuery = ""
+        voiceRawTranscript = ""
+        scannerSearchGeneration++
+        stopEmbeddedScanner(keepRequested = true)
+        scannerSearchButton?.text = "Cari"
+        scannerSearchButton?.isEnabled = true
+
         val generation = ++voiceGeneration
         voiceMicButton?.apply {
             imageTintList = ColorStateList.valueOf(Color.rgb(255, 92, 125))
-            contentDescription = "Hentikan rekaman dan cari"
+            contentDescription = "Matikan mode mikrofon"
         }
-        scannerResultText?.text = "Mendengarkan… ketuk mic lagi untuk selesai"
+        scannerResultText?.text = "Mendengarkan… tekan Cari untuk mencari suara"
         voiceCapture = PrivateVoiceCapture(this,
-            onPartial = { text -> if (generation == voiceGeneration) scannerResultText?.text = text },
+            onPartial = { text ->
+                if (generation == voiceGeneration && voiceModeActive) scannerResultText?.text = text
+            },
             onError = { message ->
                 if (generation == voiceGeneration) {
                     cancelVoiceSearch()
                     scannerResultText?.text = message
+                    restoreScannerAfterVoiceMode()
                 }
             },
             onResult = { transcript ->
-                if (generation == voiceGeneration) {
+                if (generation == voiceGeneration && voiceModeActive) {
                     voiceCapture = null
                     refineVoiceSearch(transcript, generation)
                 }
@@ -2440,26 +2470,65 @@ class RiyanKeyboardService : InputMethodService() {
         voiceCapture?.start()
     }
 
-    private fun refineVoiceSearch(transcript: String, generation: Int) {
-        voiceWorking = true
-        voiceMicButton?.contentDescription = "Batalkan pencarian suara"
-        scannerResultText?.text = "Merapikan ucapan: $transcript"
-        // Keep only the latest transcription locally; never retain background microphone audio.
-        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString("private_last_voice_transcript", transcript).apply()
-        val settings = aiSettings()
-        fun deliver(query: String) {
-            if (generation != voiceGeneration || !voiceWorking || !searchSurfaceVisible || !isInputViewShown) return
-            cancelVoiceSearch()
-            openSearchResults(query)
+    private fun performVoiceSearchOnly() {
+        if (!voiceModeActive) return
+        voiceSearchRequested = true
+
+        val ready = voiceReadyQuery.trim()
+        if (ready.isNotBlank() && !voiceWorking && voiceCapture == null) {
+            openSearchResults(ready)
+            return
         }
-        voiceFallback = Runnable { deliver(transcript) }.also { handler.postDelayed(it, 5000) }
-        // Do not queue unlimited AI calls when an endpoint is slow.
+
+        voiceCapture?.let { capture ->
+            scannerResultText?.text = "Menyelesaikan suara…"
+            capture.finish()
+            return
+        }
+
+        if (voiceWorking) {
+            scannerResultText?.text = voiceRawTranscript.ifBlank { "Merapikan suara…" }
+            return
+        }
+
+        if (voiceRawTranscript.isNotBlank()) {
+            openSearchResults(voiceRawTranscript)
+            return
+        }
+        scannerResultText?.text = "Ketuk mic dan bicara dulu"
+    }
+
+    private fun completeVoiceQuery(query: String, generation: Int) {
+        if (generation != voiceGeneration || !voiceModeActive || !searchSurfaceVisible || !isInputViewShown) return
+        voiceFallback?.let(handler::removeCallbacks)
+        voiceFallback = null
+        voiceReadyQuery = query.trim().ifBlank { voiceRawTranscript.trim() }
+        voiceWorking = false
+        if (voiceReadyQuery.isBlank()) {
+            scannerResultText?.text = "Suara belum terbaca · ketuk mic lalu coba lagi"
+            return
+        }
+        scannerResultText?.text = "Suara siap: $voiceReadyQuery"
+        if (voiceSearchRequested) openSearchResults(voiceReadyQuery)
+    }
+
+    private fun refineVoiceSearch(transcript: String, generation: Int) {
+        val cleanTranscript = transcript.trim()
+        voiceWorking = true
+        voiceRawTranscript = cleanTranscript
+        voiceReadyQuery = cleanTranscript
+        voiceMicButton?.contentDescription = "Matikan mode mikrofon"
+        scannerResultText?.text = "Merapikan ucapan: $cleanTranscript"
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString("private_last_voice_transcript", cleanTranscript).apply()
+        val settings = aiSettings()
+        voiceFallback = Runnable { completeVoiceQuery(cleanTranscript, generation) }
+            .also { handler.postDelayed(it, 5000) }
         if (voiceCorrectionRunning.compareAndSet(false, true)) {
             voiceExecutor.execute {
-                val result = try { AiClient.correctVoiceSearch(settings, transcript).getOrNull()?.text }
+                val result = try { AiClient.correctVoiceSearch(settings, cleanTranscript).getOrNull()?.text }
                     catch (_: Exception) { null }
                     finally { voiceCorrectionRunning.set(false) }
-                handler.post { deliver(PrivateVoiceQuery.choose(transcript, result)) }
+                handler.post { completeVoiceQuery(PrivateVoiceQuery.choose(cleanTranscript, result), generation) }
             }
         }
     }
@@ -3256,6 +3325,7 @@ resultCard.bringToFront()
     }
 
     private fun publishScannerBarcode(barcode: Barcode) {
+        if (voiceModeActive) return
         val raw = barcode.rawValue.orEmpty().trim()
         if (raw.isBlank()) return
         val directUrl = when {
@@ -3303,6 +3373,7 @@ resultCard.bringToFront()
         frameWidth: Int,
         frameHeight: Int
     ) {
+        if (voiceModeActive) return
         val target = scannerTargetRect(frameWidth, frameHeight)
         val primaryObject = objects.maxByOrNull { scannerObjectRelevance(it.bounds, target) }
         val objectBounds = primaryObject?.bounds
@@ -3961,6 +4032,12 @@ resultCard.bringToFront()
     }
 
     private fun performScannerSearch() {
+        if (voiceModeActive) {
+            performVoiceSearchOnly()
+            return
+        }
+        val searchGeneration = ++scannerSearchGeneration
+
         // Barcode/QR/direct URL remains exact and never needs AI vision.
         if (!scannerVisualSearchPreferred && (scannerSelectedQuery.isNotBlank() || scannerSelectedUrl.isNotBlank())) {
             openSearchResults(scannerSelectedQuery, scannerSelectedUrl)
@@ -3968,7 +4045,7 @@ resultCard.bringToFront()
         }
 
         scannerGalleryUri?.let {
-            performGalleryAiVisionSearch(it)
+            performGalleryAiVisionSearch(it, searchGeneration)
             return
         }
 
@@ -3981,6 +4058,7 @@ resultCard.bringToFront()
         scannerStatusText?.text = "Mengambil foto objek untuk AI Vision…"
 
         preview.post {
+            if (searchGeneration != scannerSearchGeneration || voiceModeActive) return@post
             val frame = runCatching { preview.bitmap }.getOrNull()
             if (frame == null || frame.width < 80 || frame.height < 80) {
                 scannerStatusText?.text = "Gambar kamera belum siap · fokuskan objek lalu coba lagi"
@@ -4023,6 +4101,7 @@ resultCard.bringToFront()
                 if (!frame.isRecycled) frame.recycle()
 
                 handler.post {
+                    if (searchGeneration != scannerSearchGeneration || voiceModeActive || !searchSurfaceVisible) return@post
                     val response = result.getOrNull()
                     val query = response?.text?.let(::cleanAiVisionSearchQuery).orEmpty()
                     if (!visualUrl.isNullOrBlank()) {
@@ -4061,7 +4140,8 @@ resultCard.bringToFront()
         }
     }
 
-    private fun performGalleryAiVisionSearch(uri: Uri) {
+    private fun performGalleryAiVisionSearch(uri: Uri, searchGeneration: Int) {
+        if (voiceModeActive || searchGeneration != scannerSearchGeneration) return
         scannerSearchButton?.isEnabled = false
         scannerSearchButton?.text = "…"
         scannerStatusText?.text = "Menyiapkan gambar galeri untuk AI Vision…"
@@ -4070,6 +4150,7 @@ resultCard.bringToFront()
             val decodedFrame = decodeGalleryBitmap(uri, 1600)
             if (decodedFrame == null || decodedFrame.width < 40 || decodedFrame.height < 40) {
                 handler.post {
+                    if (searchGeneration != scannerSearchGeneration || voiceModeActive || !searchSurfaceVisible) return@post
                     scannerSearchButton?.text = "Cari"
                     scannerSearchButton?.isEnabled = true
                     scannerStatusText?.text = "Gambar galeri gagal dibaca · pilih gambar lain"
@@ -4096,6 +4177,7 @@ resultCard.bringToFront()
             if (!frame.isRecycled) frame.recycle()
 
             handler.post {
+                if (searchGeneration != scannerSearchGeneration || voiceModeActive || !searchSurfaceVisible) return@post
                 if (scannerGalleryUri != uri) return@post
                 val response = result.getOrNull()
                 val query = response?.text?.let(::cleanAiVisionSearchQuery).orEmpty()
