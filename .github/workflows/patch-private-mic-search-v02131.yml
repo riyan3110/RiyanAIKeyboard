@@ -2,9 +2,10 @@ name: Patch PRIVATE mic search v0.21.31
 
 on:
   push:
-    branches: [ fix/private-mic-space-v030 ]
+    branches:
+      - fix/private-mic-space-v030
     paths:
-      - '.github/workflows/patch-private-mic-search-v02131.yml'
+      - .github/workflows/patch-private-mic-search-v02131.yml
 
 permissions:
   contents: write
@@ -28,270 +29,12 @@ jobs:
           gradle-version: '8.9'
 
       - name: Patch PRIVATE mic-only Search mode
+        run: python3 tools/patch_private_mic_search_v02131.py
+
+      - name: Verify PRIVATE Search isolation
         shell: bash
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-
-          p = Path('app/src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt')
-          s = p.read_text()
-
-          old_state = '''    private var voiceGeneration = 0
-              private var voiceWorking = false
-              private var voiceFallback: Runnable? = null'''.replace('              ', '    ')
-          new_state = '''    private var voiceGeneration = 0
-    private var voiceWorking = false
-    private var voiceModeActive = false
-    private var voiceSearchRequested = false
-    private var voiceReadyQuery = ""
-    private var voiceRawTranscript = ""
-    private var scannerSearchGeneration = 0
-    private var voiceFallback: Runnable? = null'''
-          if old_state not in s:
-              raise SystemExit('voice state anchor not found')
-          s = s.replace(old_state, new_state, 1)
-
-          voice_block = r'''    private fun cancelVoiceSearch() {
-        voiceGeneration++
-        voiceFallback?.let(handler::removeCallbacks)
-        voiceFallback = null
-        voiceCapture?.cancel()
-        voiceCapture = null
-        voiceWorking = false
-        voiceModeActive = false
-        voiceSearchRequested = false
-        voiceReadyQuery = ""
-        voiceRawTranscript = ""
-        voiceMicButton?.apply {
-            imageTintList = ColorStateList.valueOf(Color.WHITE)
-            contentDescription = "Mulai pencarian suara"
-        }
-    }
-
-    private fun restoreScannerAfterVoiceMode() {
-        if (!searchSurfaceVisible || !scannerActive || scannerGalleryUri != null) return
-        scannerPreviewView?.post { startEmbeddedScanner() }
-    }
-
-    private fun toggleVoiceSearch() {
-        if (voiceModeActive) {
-            cancelVoiceSearch()
-            scannerResultText?.text = scannerSelectedQuery.ifBlank {
-                if (scannerGalleryUri != null) "AI Vision akan mengenali gambar dari galeri"
-                else "Arahkan objek ke kotak, lalu tekan Cari."
-            }
-            restoreScannerAfterVoiceMode()
-            return
-        }
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            startActivity(Intent(this, MicrophonePermissionActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            return
-        }
-
-        voiceModeActive = true
-        voiceSearchRequested = false
-        voiceReadyQuery = ""
-        voiceRawTranscript = ""
-        scannerSearchGeneration++
-        stopEmbeddedScanner(keepRequested = true)
-        scannerSearchButton?.text = "Cari"
-        scannerSearchButton?.isEnabled = true
-
-        val generation = ++voiceGeneration
-        voiceMicButton?.apply {
-            imageTintList = ColorStateList.valueOf(Color.rgb(255, 92, 125))
-            contentDescription = "Matikan mode mikrofon"
-        }
-        scannerResultText?.text = "Mendengarkan… tekan Cari untuk mencari suara"
-        voiceCapture = PrivateVoiceCapture(this,
-            onPartial = { text ->
-                if (generation == voiceGeneration && voiceModeActive) scannerResultText?.text = text
-            },
-            onError = { message ->
-                if (generation == voiceGeneration) {
-                    cancelVoiceSearch()
-                    scannerResultText?.text = message
-                    restoreScannerAfterVoiceMode()
-                }
-            },
-            onResult = { transcript ->
-                if (generation == voiceGeneration && voiceModeActive) {
-                    voiceCapture = null
-                    refineVoiceSearch(transcript, generation)
-                }
-            })
-        voiceCapture?.start()
-    }
-
-    private fun performVoiceSearchOnly() {
-        if (!voiceModeActive) return
-        voiceSearchRequested = true
-
-        val ready = voiceReadyQuery.trim()
-        if (ready.isNotBlank() && !voiceWorking && voiceCapture == null) {
-            openSearchResults(ready)
-            return
-        }
-
-        voiceCapture?.let { capture ->
-            scannerResultText?.text = "Menyelesaikan suara…"
-            capture.finish()
-            return
-        }
-
-        if (voiceWorking) {
-            scannerResultText?.text = voiceRawTranscript.ifBlank { "Merapikan suara…" }
-            return
-        }
-
-        if (voiceRawTranscript.isNotBlank()) {
-            openSearchResults(voiceRawTranscript)
-            return
-        }
-        scannerResultText?.text = "Ketuk mic dan bicara dulu"
-    }
-
-    private fun completeVoiceQuery(query: String, generation: Int) {
-        if (generation != voiceGeneration || !voiceModeActive || !searchSurfaceVisible || !isInputViewShown) return
-        voiceFallback?.let(handler::removeCallbacks)
-        voiceFallback = null
-        voiceReadyQuery = query.trim().ifBlank { voiceRawTranscript.trim() }
-        voiceWorking = false
-        if (voiceReadyQuery.isBlank()) {
-            scannerResultText?.text = "Suara belum terbaca · ketuk mic lalu coba lagi"
-            return
-        }
-        scannerResultText?.text = "Suara siap: $voiceReadyQuery"
-        if (voiceSearchRequested) openSearchResults(voiceReadyQuery)
-    }
-
-    private fun refineVoiceSearch(transcript: String, generation: Int) {
-        val cleanTranscript = transcript.trim()
-        voiceWorking = true
-        voiceRawTranscript = cleanTranscript
-        voiceReadyQuery = cleanTranscript
-        voiceMicButton?.contentDescription = "Matikan mode mikrofon"
-        scannerResultText?.text = "Merapikan ucapan: $cleanTranscript"
-        // Keep only the latest transcription locally; never retain background microphone audio.
-        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString("private_last_voice_transcript", cleanTranscript).apply()
-        val settings = aiSettings()
-        voiceFallback = Runnable { completeVoiceQuery(cleanTranscript, generation) }
-            .also { handler.postDelayed(it, 5000) }
-        // Do not queue unlimited AI calls when an endpoint is slow.
-        if (voiceCorrectionRunning.compareAndSet(false, true)) {
-            voiceExecutor.execute {
-                val result = try { AiClient.correctVoiceSearch(settings, cleanTranscript).getOrNull()?.text }
-                    catch (_: Exception) { null }
-                    finally { voiceCorrectionRunning.set(false) }
-                handler.post { completeVoiceQuery(PrivateVoiceQuery.choose(cleanTranscript, result), generation) }
-            }
-        }
-    }
-    private val voiceCorrectionRunning = java.util.concurrent.atomic.AtomicBoolean(false)
-'''
-          pattern = re.compile(
-              r'    private fun cancelVoiceSearch\(\) \{.*?    private val voiceCorrectionRunning = java\.util\.concurrent\.atomic\.AtomicBoolean\(false\)\n',
-              re.S,
-          )
-          s, n = pattern.subn(voice_block, s, count=1)
-          if n != 1:
-              raise SystemExit(f'voice block replacement failed: {n}')
-
-          # Do not let in-flight local camera detections overwrite mic mode.
-          s = s.replace(
-              '    private fun publishScannerBarcode(barcode: Barcode) {\n',
-              '    private fun publishScannerBarcode(barcode: Barcode) {\n        if (voiceModeActive) return\n',
-              1,
-          )
-          s = s.replace(
-              '    private fun publishScannerVisualResult(\n',
-              '    private fun publishScannerVisualResult(\n',
-              1,
-          )
-          visual_anchor = '''    ) {
-        val target = scannerTargetRect(frameWidth, frameHeight)'''
-          visual_guard = '''    ) {
-        if (voiceModeActive) return
-        val target = scannerTargetRect(frameWidth, frameHeight)'''
-          if visual_anchor not in s:
-              raise SystemExit('visual-result guard anchor not found')
-          s = s.replace(visual_anchor, visual_guard, 1)
-
-          # Route the shared Cari button by active source. Camera/photo is never touched while mic mode is active.
-          start = s.index('    private fun performScannerSearch() {')
-          end = s.index('    private fun performGalleryAiVisionSearch', start)
-          camera = s[start:end]
-          camera = camera.replace(
-              '''    private fun performScannerSearch() {
-        // Barcode/QR/direct URL remains exact and never needs AI vision.''',
-              '''    private fun performScannerSearch() {
-        if (voiceModeActive) {
-            performVoiceSearchOnly()
-            return
-        }
-        val searchGeneration = ++scannerSearchGeneration
-
-        // Barcode/QR/direct URL remains exact and never needs AI vision.''',
-              1,
-          )
-          camera = camera.replace('performGalleryAiVisionSearch(it)', 'performGalleryAiVisionSearch(it, searchGeneration)', 1)
-          camera = camera.replace(
-              '''        preview.post {
-            val frame = runCatching { preview.bitmap }.getOrNull()''',
-              '''        preview.post {
-            if (searchGeneration != scannerSearchGeneration || voiceModeActive) return@post
-            val frame = runCatching { preview.bitmap }.getOrNull()''',
-              1,
-          )
-          camera = camera.replace(
-              '''                handler.post {
-                    val response = result.getOrNull()''',
-              '''                handler.post {
-                    if (searchGeneration != scannerSearchGeneration || voiceModeActive || !searchSurfaceVisible) return@post
-                    val response = result.getOrNull()''',
-              1,
-          )
-          if 'performVoiceSearchOnly()' not in camera or 'searchGeneration != scannerSearchGeneration' not in camera:
-              raise SystemExit('camera Search routing patch failed')
-          s = s[:start] + camera + s[end:]
-
-          # Apply the same generation guard to gallery AI so a late result cannot open the browser after mic is selected.
-          start = s.index('    private fun performGalleryAiVisionSearch')
-          end = s.index('    private fun scaleBitmapForAiVision', start)
-          gallery = s[start:end]
-          gallery = gallery.replace(
-              '    private fun performGalleryAiVisionSearch(uri: Uri) {',
-              '''    private fun performGalleryAiVisionSearch(uri: Uri, searchGeneration: Int) {
-        if (voiceModeActive || searchGeneration != scannerSearchGeneration) return''',
-              1,
-          )
-          gallery = gallery.replace(
-              '''                handler.post {
-                    scannerSearchButton?.text = "Cari"''',
-              '''                handler.post {
-                    if (searchGeneration != scannerSearchGeneration || voiceModeActive || !searchSurfaceVisible) return@post
-                    scannerSearchButton?.text = "Cari"''',
-              1,
-          )
-          gallery = gallery.replace(
-              '''            handler.post {
-                if (scannerGalleryUri != uri) return@post''',
-              '''            handler.post {
-                if (searchGeneration != scannerSearchGeneration || voiceModeActive || !searchSurfaceVisible) return@post
-                if (scannerGalleryUri != uri) return@post''',
-              1,
-          )
-          if 'searchGeneration: Int' not in gallery or gallery.count('searchGeneration != scannerSearchGeneration') < 2:
-              raise SystemExit('gallery Search guard patch failed')
-          s = s[:start] + gallery + s[end:]
-
-          p.write_text(s)
-          Path('app/build-version.txt').write_text('0.21.31\n')
-          Path('app/build-code.txt').write_text('61\n')
-          PY
-
-          grep -n "voiceModeActive" app/src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt | head -20
+          grep -n "private var voiceModeActive = false" app/src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt
           grep -n "performVoiceSearchOnly" app/src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt
           grep -n "searchGeneration != scannerSearchGeneration" app/src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt
 
@@ -316,6 +59,7 @@ jobs:
           VERSION_CODE=$(tr -d '\r\n' < app/build-code.txt)
           sed -i -E "s/versionName = \"[^\"]+\"/versionName = \"$VERSION_NAME\"/" app/build.gradle.kts
           sed -i -E "s/versionCode = [0-9]+/versionCode = $VERSION_CODE/" app/build.gradle.kts
+          grep -E 'version(Code|Name)' app/build.gradle.kts
 
       - name: Test and build PRIVATE APK
         run: RIYAN_KEYSTORE_PATH="$HOME/.riyan-ai-keyboard/debug.keystore" gradle :app:testDebugUnitTest :app:assembleDebug
@@ -335,7 +79,7 @@ jobs:
           git config user.email "actions@users.noreply.github.com"
           git add app/src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt app/build-version.txt app/build-code.txt
           if ! git diff --cached --quiet; then
-            git commit -m "PRIVATE 0.21.31: isolate mic Search from camera and gallery [skip ci]"
+            git commit -m "PRIVATE 0.21.31: isolate mic Search from camera and gallery"
             git push origin HEAD:fix/private-mic-space-v030
           fi
 
