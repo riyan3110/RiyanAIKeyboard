@@ -29,6 +29,7 @@ class PublicAiShiftTest {
         fun field(name: String) = RiyanKeyboardService::class.java.getDeclaredField(name).apply { isAccessible = true }
         val panel = field("keyboardPanel").get(service) as LinearLayout
         val rows = (0 until panel.childCount).map(panel::getChildAt)
+        assertTrue(rows.isNotEmpty())
         val shift = RiyanKeyboardService::class.java.getDeclaredMethod("handleShiftTap").apply { isAccessible = true }
         SystemClock.sleep(10)
         shift.invoke(service)

@@ -113,6 +113,7 @@ start = s.index('    private fun letterSpec(')
 end = s.index('    private fun renderSymbols(', start)
 block = s[start:end].replace('commit(shown)', 'commit(if (shift) char.uppercaseChar().toString() else char.toString())\n                lastShiftTapAt = 0L')
 block = block.replace('renderKeyboard()', 'refreshPublicCaseLabels()')
+block = block.replace('        if (now - lastShiftActionAt < SHIFT_ACTION_DEBOUNCE_MS) return\n', '')
 block = block.replace('now - lastShiftTapAt <= DOUBLE_TAP_SHIFT_MS', 'lastShiftTapAt > 0L && now - lastShiftTapAt <= DOUBLE_TAP_SHIFT_MS')
 block = block.replace('        val now = SystemClock.elapsedRealtime()', '        handler.removeCallbacks(publicAutoShiftRefresh)\n        publicManualShiftUntil = SystemClock.uptimeMillis() + 600L\n        autoCapsForceUntilMs = 0L\n        val now = SystemClock.elapsedRealtime()')
 s = s[:start] + block + s[end:]
