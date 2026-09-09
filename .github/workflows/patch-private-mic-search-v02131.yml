@@ -37,6 +37,9 @@ jobs:
           grep -n "private var voiceModeActive = false" app/src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt
           grep -n "performVoiceSearchOnly" app/src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt
           grep -n "searchGeneration != scannerSearchGeneration" app/src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt
+          cp app/src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt /tmp/RiyanKeyboardService.kt
+          cp app/build-version.txt /tmp/build-version.txt
+          cp app/build-code.txt /tmp/build-code.txt
 
       - name: Restore stable debug signing key
         uses: actions/cache@v4
@@ -61,8 +64,32 @@ jobs:
           sed -i -E "s/versionCode = [0-9]+/versionCode = $VERSION_CODE/" app/build.gradle.kts
           grep -E 'version(Code|Name)' app/build.gradle.kts
 
+      - name: Install WebP conversion tool
+        shell: bash
+        run: |
+          if ! command -v dwebp >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends webp
+          fi
+
+      - name: Apply existing PRIVATE build patches
+        shell: bash
+        run: |
+          python3 tools/apply_bluesminds_provider_patch.py
+          python3 tools/apply_browser_chrome_patch.py
+          python3 tools/apply_photo_colors_safe_scale_patch.py
+          python3 tools/apply_bai_provider_patch.py
+          python3 tools/apply_private_extra_providers_patch.py
+          python3 tools/apply_private_reference_urls_patch.py
+          python3 tools/apply_autocaps_brand_patch.py
+          python3 tools/allow_brand_only_visible_label.py
+          python3 tools/apply_private_haptic_shift_popup_gap_patch.py
+          python3 tools/apply_private_tighter_gap_patch.py
+          python3 tools/apply_private_ai_fresh_focus_shift_patch.py
+          python3 tools/apply_private_touch_emoji_patch.py
+
       - name: Test and build PRIVATE APK
-        run: RIYAN_KEYSTORE_PATH="$HOME/.riyan-ai-keyboard/debug.keystore" gradle :app:testDebugUnitTest :app:assembleDebug
+        run: RIYAN_KEYSTORE_PATH="$HOME/.riyan-ai-keyboard/debug.keystore" gradle :app:testDebugUnitTest :app:assembleDebug -x :app:patchBluesMindsProvider
 
       - name: Package PRIVATE APK
         id: package
@@ -72,12 +99,17 @@ jobs:
           cp app/build/outputs/apk/debug/app-debug.apk "app/build/outputs/apk/debug/$APK_NAME"
           echo "apk_path=app/build/outputs/apk/debug/$APK_NAME" >> "$GITHUB_OUTPUT"
 
-      - name: Commit PRIVATE patch
+      - name: Commit only PRIVATE mic Search changes
         shell: bash
         run: |
+          git reset --hard HEAD
+          cp /tmp/RiyanKeyboardService.kt app/src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt
+          cp /tmp/build-version.txt app/build-version.txt
+          cp /tmp/build-code.txt app/build-code.txt
           git config user.name "ChatGPT"
           git config user.email "actions@users.noreply.github.com"
           git add app/src/main/java/com/riyan/aikeyboard/RiyanKeyboardService.kt app/build-version.txt app/build-code.txt
+          git diff --cached --check
           if ! git diff --cached --quiet; then
             git commit -m "PRIVATE 0.21.31: isolate mic Search from camera and gallery"
             git push origin HEAD:fix/private-mic-space-v030
