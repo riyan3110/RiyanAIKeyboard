@@ -24,6 +24,12 @@ replace('    private fun performScannerSearch() {', '''    private var publicSea
             val generation = ++publicSearchGeneration
             scannerSearchButton?.isEnabled = false
             scannerResultText?.text = "Merapikan teks suara…"
+            handler.postDelayed({
+                if (generation == publicSearchGeneration && publicVoiceSearch.active && searchSurfaceVisible) {
+                    scannerSearchButton?.isEnabled = true
+                    openSearchResults(transcript)
+                }
+            }, 8000L)
             thread {
                 val corrected = AiClient.correctVoiceSearch(aiSettings(), transcript).getOrNull()?.text.orEmpty()
                 val query = PublicSearchText.voiceQuery(transcript, corrected)
@@ -57,7 +63,7 @@ for marker in ['private fun closeSearchSurface() {', 'private fun showEmbeddedCa
     replace(marker, marker + '\n        ++publicSearchGeneration\n        publicVoiceSearch.release()')
 # While speech is selected, live OCR/shape detections must not overwrite the transcript.
 start = s.index('    private fun startEmbeddedScanner()')
-end = s.index('    private fun performScannerSearch()')
+end = s.index('    private var publicSearchGeneration =')
 block = s[start:end]
 import re
 block = re.sub(r'(?m)^(\s*)(scanner(?:Result|Status)Text\?\.text =)', r'\1if (!publicVoiceSearch.active) \2', block)
