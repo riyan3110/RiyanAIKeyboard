@@ -270,3 +270,9 @@ tasks.named("preBuild").configure {
 }
 
 apply(from = "smart-vision.gradle.kts")
+
+val patchPrivateAiQuality by tasks.registering(Exec::class) {
+    dependsOn("patchSmartProductVision")
+    commandLine("python3", rootProject.file("tools/apply_private_ai_quality_patch.py").absolutePath)
+}
+tasks.named("preBuild").configure { dependsOn(patchPrivateAiQuality) }
