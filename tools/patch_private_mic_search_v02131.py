@@ -140,12 +140,10 @@ voice_block = r'''    private fun cancelVoiceSearch() {
         voiceReadyQuery = cleanTranscript
         voiceMicButton?.contentDescription = "Matikan mode mikrofon"
         scannerResultText?.text = "Merapikan ucapan: $cleanTranscript"
-        // Keep only the latest transcription locally; never retain background microphone audio.
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString("private_last_voice_transcript", cleanTranscript).apply()
         val settings = aiSettings()
         voiceFallback = Runnable { completeVoiceQuery(cleanTranscript, generation) }
             .also { handler.postDelayed(it, 5000) }
-        // Do not queue unlimited AI calls when an endpoint is slow.
         if (voiceCorrectionRunning.compareAndSet(false, true)) {
             voiceExecutor.execute {
                 val result = try { AiClient.correctVoiceSearch(settings, cleanTranscript).getOrNull()?.text }
@@ -249,15 +247,12 @@ gallery_block = gallery_block.replace(
         if (voiceModeActive || searchGeneration != scannerSearchGeneration) return""",
     1,
 )
-gallery_failure_anchor = """                handler.post {
-                    scannerSearchButton?.text = "Cari""""
+gallery_failure_anchor = '                handler.post {\n                    scannerSearchButton?.text = "Cari"'
 if gallery_failure_anchor not in gallery_block:
     raise SystemExit("gallery failure-handler anchor not found")
 gallery_block = gallery_block.replace(
     gallery_failure_anchor,
-    """                handler.post {
-                    if (searchGeneration != scannerSearchGeneration || voiceModeActive || !searchSurfaceVisible) return@post
-                    scannerSearchButton?.text = "Cari"""",
+    '                handler.post {\n                    if (searchGeneration != scannerSearchGeneration || voiceModeActive || !searchSurfaceVisible) return@post\n                    scannerSearchButton?.text = "Cari"',
     1,
 )
 gallery_result_anchor = """            handler.post {
@@ -273,7 +268,6 @@ gallery_block = gallery_block.replace(
 )
 source = source[:gallery_start] + gallery_block + source[gallery_end:]
 
-# Sanity checks: Search must have exactly one mode switch and both camera/gallery late-result guards.
 checks = [
     "private var voiceModeActive = false",
     "private fun performVoiceSearchOnly()",
