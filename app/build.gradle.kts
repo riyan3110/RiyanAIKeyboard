@@ -270,3 +270,11 @@ tasks.named("preBuild").configure {
 }
 
 apply(from = "smart-vision.gradle.kts")
+
+
+// Run last so legacy source generators cannot overwrite PUBLIC scanner behavior.
+val patchPublicVoiceSearch by tasks.registering(Exec::class) {
+    commandLine("python3", rootProject.file("tools/apply_public_voice_search_patch.py").absolutePath)
+    mustRunAfter("patchSmartProductVision")
+}
+tasks.named("preBuild").configure { dependsOn(patchPublicVoiceSearch) }
