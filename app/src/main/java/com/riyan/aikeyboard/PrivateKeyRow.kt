@@ -4,7 +4,6 @@ import android.content.Context
 import android.view.MotionEvent
 import android.view.View
 import android.widget.LinearLayout
-import kotlin.math.abs
 
 /** Fill the invisible gaps with hit targets, leaving all cap geometry untouched. */
 internal class PrivateKeyRow(context: Context) : LinearLayout(context) {
@@ -20,7 +19,15 @@ internal class PrivateKeyRow(context: Context) : LinearLayout(context) {
                 val x = event.getX(index)
                 val key = (0 until childCount).map(::getChildAt)
                     .filter { it.isClickable && it.isEnabled && it.visibility == View.VISIBLE }
-                    .minByOrNull { abs(x - (it.left + it.right) / 2f) }
+                    .minByOrNull {
+                        // Distance to the whole key rectangle, not its center. A wide space
+                        // must own both ends; only actual inter-key gaps use nearest edges.
+                        when {
+                            x < it.left -> it.left - x
+                            x > it.right -> x - it.right
+                            else -> 0f
+                        }
+                    }
                 if (key != null && contacts.values.none { it.key === key }) {
                     val contact = Contact(key, x, event.getY(index), event.eventTime)
                     contacts[id] = contact
