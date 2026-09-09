@@ -306,6 +306,7 @@ class RiyanKeyboardService : InputMethodService() {
     }
 
     override fun onDestroy() {
+        cancelVoiceSearch()
         WebImagePickerActivity.cancelFor(this)
         clipboardManager.removePrimaryClipChangedListener(clipboardListener)
         dismissKeyPreview(release = true)
@@ -321,6 +322,7 @@ class RiyanKeyboardService : InputMethodService() {
         scannerTextRecognizer.close()
         scannerImageLabeler.close()
         scannerObjectDetector.close()
+        voiceExecutor.shutdownNow()
         scannerExecutor.shutdown()
         super.onDestroy()
     }
@@ -426,6 +428,7 @@ class RiyanKeyboardService : InputMethodService() {
     }
 
     override fun onWindowHidden() {
+        cancelVoiceSearch()
         stopEmbeddedScanner(keepRequested = true)
         super.onWindowHidden()
     }
@@ -2357,6 +2360,7 @@ class RiyanKeyboardService : InputMethodService() {
     }
 
     private fun closeSearchSurface() {
+        cancelVoiceSearch()
         WebImagePickerActivity.cancelFor(this)
         browserImagePickerActive = false
         browserImagePickerRestoreUntil = 0L
@@ -2382,7 +2386,87 @@ class RiyanKeyboardService : InputMethodService() {
         applyRootHeight()
     }
 
+    private var voiceCapture: PrivateVoiceCapture? = null
+    private var voiceMicButton: ImageButton? = null
+    private var voiceGeneration = 0
+    private var voiceWorking = false
+    private var voiceFallback: Runnable? = null
+    private val voiceExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
+
+    private fun cancelVoiceSearch() {
+        voiceGeneration++
+        voiceFallback?.let(handler::removeCallbacks)
+        voiceFallback = null
+        voiceCapture?.cancel()
+        voiceCapture = null
+        voiceWorking = false
+        voiceMicButton?.apply {
+            imageTintList = ColorStateList.valueOf(Color.WHITE)
+            contentDescription = "Mulai pencarian suara"
+        }
+    }
+
+    private fun toggleVoiceSearch() {
+        if (voiceWorking) {
+            cancelVoiceSearch()
+            scannerResultText?.text = "Pencarian suara dibatalkan"
+            return
+        }
+        voiceCapture?.let { it.finish(); return }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            startActivity(Intent(this, MicrophonePermissionActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            return
+        }
+        val generation = ++voiceGeneration
+        voiceMicButton?.apply {
+            imageTintList = ColorStateList.valueOf(Color.rgb(255, 92, 125))
+            contentDescription = "Hentikan rekaman dan cari"
+        }
+        scannerResultText?.text = "Mendengarkan… ketuk mic lagi untuk selesai"
+        voiceCapture = PrivateVoiceCapture(this,
+            onPartial = { text -> if (generation == voiceGeneration) scannerResultText?.text = text },
+            onError = { message ->
+                if (generation == voiceGeneration) {
+                    cancelVoiceSearch()
+                    scannerResultText?.text = message
+                }
+            },
+            onResult = { transcript ->
+                if (generation == voiceGeneration) {
+                    voiceCapture = null
+                    refineVoiceSearch(transcript, generation)
+                }
+            })
+        voiceCapture?.start()
+    }
+
+    private fun refineVoiceSearch(transcript: String, generation: Int) {
+        voiceWorking = true
+        voiceMicButton?.contentDescription = "Batalkan pencarian suara"
+        scannerResultText?.text = "Merapikan ucapan: $transcript"
+        // Keep only the latest transcription locally; never retain background microphone audio.
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString("private_last_voice_transcript", transcript).apply()
+        val settings = aiSettings()
+        fun deliver(query: String) {
+            if (generation != voiceGeneration || !voiceWorking || !searchSurfaceVisible || !isInputViewShown) return
+            cancelVoiceSearch()
+            openSearchResults(query)
+        }
+        voiceFallback = Runnable { deliver(transcript) }.also { handler.postDelayed(it, 5000) }
+        // Do not queue unlimited AI calls when an endpoint is slow.
+        if (voiceCorrectionRunning.compareAndSet(false, true)) {
+            voiceExecutor.execute {
+                val result = try { AiClient.correctVoiceSearch(settings, transcript).getOrNull()?.text }
+                    catch (_: Exception) { null }
+                    finally { voiceCorrectionRunning.set(false) }
+                handler.post { deliver(PrivateVoiceQuery.choose(transcript, result)) }
+            }
+        }
+    }
+    private val voiceCorrectionRunning = java.util.concurrent.atomic.AtomicBoolean(false)
+
     private fun showEmbeddedCameraPanel(resetCandidate: Boolean) {
+        cancelVoiceSearch()
         searchWebBigMode = false
         internalGalleryPanel?.release()
         internalGalleryPanel = null
@@ -2422,6 +2506,8 @@ class RiyanKeyboardService : InputMethodService() {
     visibility = View.GONE
 }
 header.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
+        voiceMicButton = premiumIconButton(R.drawable.ic_mic_modern, "Mulai pencarian suara") { toggleVoiceSearch() }
+        header.addView(voiceMicButton, LinearLayout.LayoutParams(dp(38), dp(searchHeaderHeightDp())).apply { rightMargin = dp(2) })
         header.addView(
             premiumIconButton(R.drawable.ic_gallery_modern, "Buka galeri di keyboard") { showInternalGalleryPanel() },
             LinearLayout.LayoutParams(dp(38), dp(searchHeaderHeightDp()))
@@ -2838,6 +2924,7 @@ resultCard.bringToFront()
     }
 
     private fun showInternalGalleryPanel() {
+        cancelVoiceSearch()
         searchWebBigMode = false
         if (!::searchSurfaceContent.isInitialized) return
 
@@ -3068,6 +3155,7 @@ resultCard.bringToFront()
 
     @androidx.camera.core.ExperimentalGetImage
     private fun analyzeScannerFrame(imageProxy: ImageProxy) {
+        if (voiceCapture != null || voiceWorking) { imageProxy.close(); return }
         // OCR + image labeling + object detection are CPU/GPU heavy. While the user is
         // pinching or dragging the camera, drop analyzer frames so touch stays responsive.
         if (scannerGestureActive) {
@@ -3465,6 +3553,7 @@ resultCard.bringToFront()
     }
 
     private fun showSearchWebPanel() {
+        cancelVoiceSearch()
         internalGalleryPanel?.release()
         internalGalleryPanel = null
         stopEmbeddedScanner()

@@ -56,6 +56,14 @@ object AiClient {
     private const val VISION_CONNECT_TIMEOUT_MS = 6_000
     private const val VISION_READ_TIMEOUT_MS = 16_000
 
+    fun correctVoiceSearch(settings: AiSettings, transcript: String): Result<AiResponse> = execute(
+        settings,
+        PrivateVoiceQuery.INSTRUCTION,
+        transcript.take(2000),
+        temperature = 0.0,
+        maxTokens = 768
+    )
+
     fun transform(settings: AiSettings, action: String, text: String): Result<AiResponse> {
         if (text.isBlank()) {
             return Result.failure(IllegalArgumentException("Pilih, tempel, atau impor teks terlebih dahulu."))

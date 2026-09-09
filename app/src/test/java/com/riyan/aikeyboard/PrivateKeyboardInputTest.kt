@@ -97,6 +97,24 @@ class PrivateKeyboardInputTest {
         assertEquals(80, a.width)
         assertEquals(0.7f, a.scaleX, 0f)
     }
+    @Test fun entireWideSpaceAndAdjacentGapsBelongToSpace() {
+        val context = RuntimeEnvironment.getApplication()
+        val row = PrivateKeyRow(context).apply { orientation = LinearLayout.HORIZONTAL }
+        for ((label, width) in listOf("," to 60, "space" to 300, "." to 60)) {
+            val key = View(context).apply { isClickable = true }
+            key.setOnTouchListener { _, e -> if (e.actionMasked == MotionEvent.ACTION_UP) events += label; true }
+            row.addView(key, LinearLayout.LayoutParams(width, 60).apply { setMargins(5, 0, 5, 0) })
+        }
+        row.measure(View.MeasureSpec.makeMeasureSpec(450, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(60, View.MeasureSpec.EXACTLY))
+        row.layout(0, 0, 450, 60)
+        for (x in listOf(6f, 64f, 71f, 76f, 100f, 224f, 340f, 374f, 378f, 386f, 444f)) {
+            for (action in listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP)) {
+                val e = MotionEvent.obtain(0, 0, action, x, 30f, 0)
+                row.dispatchTouchEvent(e); e.recycle()
+            }
+        }
+        assertEquals(listOf(",", ",", "space", "space", "space", "space", "space", "space", "space", ".", "."), events)
+    }
     @Test fun emojiMatchesSentenceAndTrailingSpaceWithoutSubstringFalsePositive() {
         assertEquals(listOf("🔑", "🔧", "🔐"), PrivateEmojiSuggestions.suggest("Aku mencari KUNCI "))
         assertEquals(listOf("🔑", "🔧", "🔐"), PrivateEmojiSuggestions.suggest("kunci ada di meja"))
