@@ -19,11 +19,15 @@ else:
 settings = Path("app/src/main/java/com/riyan/aikeyboard/KeyboardSettingsOverlay.kt")
 settings_text = settings.read_text(encoding="utf-8")
 dynamic = '            text = "v${BuildConfig.VERSION_NAME.substringBefore("-")}"'
-fixed = '            text = "v0.21.22"'
+old_fixed = '            text = "v0.21.22"'
+fixed = '            text = "v0.21.35"'
 if dynamic in settings_text:
     settings.write_text(settings_text.replace(dynamic, fixed, 1), encoding="utf-8")
-    print("Pinned settings version label to v0.21.22")
+    print("Pinned settings version label to v0.21.35")
+elif old_fixed in settings_text:
+    settings.write_text(settings_text.replace(old_fixed, fixed, 1), encoding="utf-8")
+    print("Updated settings version label to v0.21.35")
 elif fixed in settings_text:
-    print("Settings version label already v0.21.22")
+    print("Settings version label already v0.21.35")
 else:
     raise SystemExit("Settings version label anchor not found")
