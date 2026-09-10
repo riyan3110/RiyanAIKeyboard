@@ -65,7 +65,7 @@ jobs:
             sudo apt-get install -y --no-install-recommends webp
           fi
 
-      - name: Apply PRIVATE provider, browser, photo color, safe key scale, auto-caps, brand, haptic, Shift, popup, gap, reference URL, AI freshness, focus, and settings patches
+      - name: Apply PRIVATE provider, browser, photo color, safe key scale, auto-caps, brand, haptic, Shift, popup, gap, reference URL, AI freshness, and focus patches
         shell: bash
         run: |
           python3 tools/apply_bluesminds_provider_patch.py
@@ -80,8 +80,6 @@ jobs:
           python3 tools/apply_private_tighter_gap_patch.py
           python3 tools/apply_private_ai_fresh_focus_shift_patch.py
           python3 tools/apply_private_touch_emoji_patch.py
-          python3 tools/run_private_shift_patch_idempotent.py
-          python3 tools/apply_private_settings_launcher_v035_patch.py
 
       - name: Build test APK
         run: RIYAN_KEYSTORE_PATH="$HOME/.riyan-ai-keyboard/debug.keystore" gradle :app:testDebugUnitTest :app:assembleDebug -x :app:patchBluesMindsProvider
