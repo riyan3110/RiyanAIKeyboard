@@ -165,11 +165,31 @@ overlay = replace_once(
 
 overlay_path.write_text(overlay, encoding="utf-8")
 
-# AI conversation footer: show the selected model, not the provider label, and refresh it
-# immediately when settings change.
+# AI runtime: the selected PRIVATE profile is the source of truth. The XKIRO enum is
+# only used as the generic OpenAI-compatible transport internally; requests themselves
+# must use the exact Base URL, API key, and model selected in the new provider panel.
 service_path = SRC / "RiyanKeyboardService.kt"
 service = service_path.read_text(encoding="utf-8")
 
+runtime_old = '''    private fun aiSettings() = getSharedPreferences(PREFS, MODE_PRIVATE).let { prefs ->
+        AiSettings(
+            primaryProvider = AiProvider.fromId(prefs.getString("provider", null)),'''
+runtime_new = '''    private fun aiSettings() = getSharedPreferences(PREFS, MODE_PRIVATE).let { prefs ->
+        val privateProfile = PrivateProviderStore.selected(prefs, PrivateProviderStore.load(prefs))
+        AiSettings(
+            primaryProvider = if (privateProfile != null) AiProvider.XKIRO else AiProvider.fromId(prefs.getString("provider", null)),'''
+service = replace_once(service, runtime_old, runtime_new, "runtime selected provider")
+
+runtime_xkiro_old = '''            xKiroApiKey = prefs.getString("xkiro_api_key", "").orEmpty(),
+            xKiroBaseUrl = prefs.getString("xkiro_base_url", "https://api.xkiro.com/v1").orEmpty(),
+            xKiroModel = prefs.getString("xkiro_model", "openai/gpt-5.6-sol").orEmpty(),'''
+runtime_xkiro_new = '''            xKiroApiKey = privateProfile?.apiKey ?: prefs.getString("xkiro_api_key", "").orEmpty(),
+            xKiroBaseUrl = privateProfile?.baseUrl ?: prefs.getString("xkiro_base_url", "https://api.xkiro.com/v1").orEmpty(),
+            xKiroModel = privateProfile?.model ?: prefs.getString("xkiro_model", "openai/gpt-5.6-sol").orEmpty(),'''
+service = replace_once(service, runtime_xkiro_old, runtime_xkiro_new, "runtime Base URL API key model binding")
+
+# AI conversation footer: show the selected model, not the provider label, and refresh it
+# immediately when settings change.
 old_label = '''    private fun activeProviderLabel(): String {
         val provider = AiProvider.fromId(getSharedPreferences(PREFS, MODE_PRIVATE).getString("provider", null))
         return "Provider: ${provider.label}"
@@ -221,4 +241,4 @@ service = replace_once(
 )
 service_path.write_text(service, encoding="utf-8")
 
-print("Applied PRIVATE v0.21.35 settings order, fallback, model label, and launcher-related settings")
+print("Applied PRIVATE v0.21.36 settings + exact runtime provider Base URL/API key/model binding")
