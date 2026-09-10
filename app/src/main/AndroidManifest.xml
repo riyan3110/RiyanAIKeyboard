@@ -69,7 +69,13 @@
             android:taskAffinity="com.riyan.aikeyboard.settings"
             android:label="Pengaturan AI Ads Keyboard"
             android:theme="@style/SettingsPanelTheme" />
-        <activity android:name=".MainActivity" android:exported="true">
+        <activity
+            android:name=".KeyboardLauncherActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:windowSoftInputMode="stateAlwaysVisible|adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
