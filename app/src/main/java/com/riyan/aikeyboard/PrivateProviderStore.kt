@@ -35,10 +35,26 @@ internal object PrivateProviderStore {
         val host = runCatching { URL(clean).host }.getOrNull().orEmpty()
             .removePrefix("www.")
         if (host.isBlank()) return "Provider"
-        val stem = host.substringBefore('.').ifBlank { host }
-        return stem.split('-', '_').joinToString(" ") { part ->
-            part.replaceFirstChar { c -> if (c.isLowerCase()) c.titlecase() else c.toString() }
-        }.ifBlank { host }
+        val parts = host.split('.').filter(String::isNotBlank)
+        val commonPrefixes = setOf("api", "gateway", "chat", "openai")
+        val stem = when {
+            parts.size >= 2 && parts.first().lowercase() in commonPrefixes -> parts[1]
+            parts.isNotEmpty() -> parts.first()
+            else -> host
+        }.lowercase()
+        return when (stem) {
+            "openrouter" -> "OpenRouter"
+            "bluesminds" -> "BluesMinds"
+            "xkiro" -> "xKiro"
+            "orcarouter" -> "OrcaRouter"
+            "agentrouter" -> "AgentRouter"
+            "seekai" -> "SeekAI"
+            "vyceai" -> "VyceAI"
+            "b" -> "B.AI"
+            else -> stem.split('-', '_').joinToString(" ") { part ->
+                part.replaceFirstChar { c -> if (c.isLowerCase()) c.titlecase() else c.toString() }
+            }.ifBlank { host }
+        }
     }
 
     fun modelEndpoints(baseUrl: String): List<String> {
@@ -158,58 +174,49 @@ internal object PrivateProviderStore {
         data class Legacy(
             val providerId: String,
             val name: String,
-            val baseUrl: String,
-            val key: String,
-            val model: String
+            val defaultBaseUrl: String,
+            val keyPref: String,
+            val basePref: String?,
+            val modelPref: String,
+            val defaultModel: String = ""
         )
 
         val selectedLegacy = prefs.getString("provider", "openrouter").orEmpty()
         val legacy = listOf(
-            Legacy(
-                "openrouter", "OpenRouter", "https://openrouter.ai/api/v1",
-                prefs.getString("openrouter_api_key", prefs.getString("api_key", "")).orEmpty(),
-                prefs.getString("openrouter_model", "openrouter/free").orEmpty()
-            ),
-            Legacy(
-                "tabiai", "TabiAI", prefs.getString("tabi_base_url", "https://tabitoken.com").orEmpty(),
-                prefs.getString("tabi_api_key", "").orEmpty(), prefs.getString("tabi_model", "").orEmpty()
-            ),
-            Legacy(
-                "9router", "9Router", prefs.getString("9router_base_url", "http://43.159.50.231:20130/v1").orEmpty(),
-                prefs.getString("9router_api_key", "").orEmpty(), prefs.getString("9router_model", "").orEmpty()
-            ),
-            Legacy(
-                "bluesminds", "BluesMinds", prefs.getString("bluesminds_base_url", "https://api.bluesminds.com/v1").orEmpty(),
-                prefs.getString("bluesminds_api_key", "").orEmpty(), prefs.getString("bluesminds_model", "").orEmpty()
-            ),
-            Legacy(
-                "xkiro", "xKiro", prefs.getString("xkiro_base_url", "https://api.xkiro.com/v1").orEmpty(),
-                prefs.getString("xkiro_api_key", "").orEmpty(), prefs.getString("xkiro_model", "").orEmpty()
-            ),
-            Legacy(
-                "orcarouter", "OrcaRouter", prefs.getString("orcarouter_base_url", "https://api.orcarouter.ai/v1").orEmpty(),
-                prefs.getString("orcarouter_api_key", "").orEmpty(), prefs.getString("orcarouter_model", "").orEmpty()
-            )
+            Legacy("openrouter", "OpenRouter", "https://openrouter.ai/api/v1", "openrouter_api_key", null, "openrouter_model", "openrouter/free"),
+            Legacy("tabiai", "TabiAI", "https://tabitoken.com", "tabi_api_key", "tabi_base_url", "tabi_model"),
+            Legacy("9router", "9Router", "http://43.159.50.231:20130/v1", "9router_api_key", "9router_base_url", "9router_model", "cc/claude-sonnet-4-20250514"),
+            Legacy("bluesminds", "BluesMinds", "https://api.bluesminds.com/v1", "bluesminds_api_key", "bluesminds_base_url", "bluesminds_model", "deepseek-ai/deepseek-v4-flash"),
+            Legacy("bai", "B.AI", "https://api.b.ai/v1", "bai_api_key", "bai_base_url", "bai_model", "gpt-5.2"),
+            Legacy("vyceai", "VyceAI", "https://vyceai.com/v1", "vyceai_api_key", "vyceai_base_url", "vyceai_model", "gpt-5.6-luna"),
+            Legacy("agentrouter", "AgentRouter", "https://co.agentrouter.org/v1", "agentrouter_api_key", "agentrouter_base_url", "agentrouter_model", "glm-5.3"),
+            Legacy("seekai", "SeekAI", "https://seekai.cc/v1", "seekai_api_key", "seekai_base_url", "seekai_model", "gpt-5.6-sol"),
+            Legacy("xkiro", "xKiro", "https://api.xkiro.com/v1", "xkiro_api_key", "xkiro_base_url", "xkiro_model", "openai/gpt-5.6-sol"),
+            Legacy("orcarouter", "OrcaRouter", "https://api.orcarouter.ai/v1", "orcarouter_api_key", "orcarouter_base_url", "orcarouter_model", "orcarouter/free")
         )
 
-        val imported = legacy
-            .filter { it.baseUrl.isNotBlank() && (it.key.isNotBlank() || it.providerId == selectedLegacy) }
-            .map {
-                PrivateProviderProfile(
-                    id = providerId(it.baseUrl),
-                    name = it.name,
-                    baseUrl = normalizeBaseUrl(it.baseUrl),
-                    apiKey = it.key,
-                    model = it.model,
-                    models = listOf(it.model).filter(String::isNotBlank)
-                )
-            }
-            .distinctBy { it.id }
+        val imported = legacy.mapNotNull { old ->
+            val key = prefs.getString(old.keyPref, "").orEmpty()
+            val baseUrl = old.basePref?.let { prefs.getString(it, old.defaultBaseUrl).orEmpty() } ?: old.defaultBaseUrl
+            val model = prefs.getString(old.modelPref, old.defaultModel).orEmpty()
+            if (baseUrl.isBlank() || (key.isBlank() && old.providerId != selectedLegacy)) return@mapNotNull null
+            PrivateProviderProfile(
+                id = providerId(baseUrl),
+                name = old.name,
+                baseUrl = normalizeBaseUrl(baseUrl),
+                apiKey = key,
+                model = model,
+                models = listOf(model).filter(String::isNotBlank)
+            )
+        }.distinctBy { it.id }
 
         if (imported.isNotEmpty()) {
             persist(prefs, imported)
             val selected = legacy.firstOrNull { it.providerId == selectedLegacy }
-                ?.let { old -> imported.firstOrNull { it.baseUrl == normalizeBaseUrl(old.baseUrl) } }
+                ?.let { old ->
+                    val base = old.basePref?.let { prefs.getString(it, old.defaultBaseUrl).orEmpty() } ?: old.defaultBaseUrl
+                    imported.firstOrNull { it.baseUrl == normalizeBaseUrl(base) }
+                }
                 ?: imported.first()
             select(prefs, selected.id)
         }
