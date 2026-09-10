@@ -55,6 +55,5 @@ class PrivateFastCaseUiTest {
             ReflectionHelpers.callInstanceMethod<Unit>(service, "refreshPrivateCaseLabels")
             rows.forEachIndexed { index, row -> assertSame(row, panel.getChildAt(index)) }
         }
-        controller.destroy()
     }
 }
