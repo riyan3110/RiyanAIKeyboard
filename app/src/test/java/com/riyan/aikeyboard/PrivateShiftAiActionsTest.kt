@@ -94,6 +94,16 @@ class PrivateShiftAiActionsTest {
         update()
         assertTrue(state.locked)
         assertTrue(state.uppercase)
+        ReflectionHelpers.callInstanceMethod<Unit>(service, "handleShiftTap")
+        input.setText("a")
+        input.setSelection(1)
+        ReflectionHelpers.callInstanceMethod<Unit>(service, "deleteOne")
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(500))
+        assertEquals("", input.text.toString())
+        assertTrue(state.uppercase) // existing auto-capitalization at the start survives
+        ReflectionHelpers.callInstanceMethod<Unit>(service, "handleShiftTap")
+        update()
+        assertFalse(state.uppercase)
     }
 
     @Test fun answerCanBeChainedWhileNewDraftTakesPriority() {

@@ -32,6 +32,11 @@ if MARKER not in s:
                  '        private const val SHIFT_ACTION_DEBOUNCE_MS = 25L\n',
                  '        private const val DOUBLE_TAP_SHIFT_MS = 560L\n'):
         s = replace(s, line, '')
+    # A deliberate edit releases the stale-letter guard, preserving existing auto-caps
+    # after deleting back to the beginning. A later manual Shift still wins callbacks.
+    for name in ('deleteOne', 'deleteWord'):
+        s = replace(s, '    private fun ' + name + '() {',
+                    '    private fun ' + name + '() {\n        privateShift.manual = false\n        autoCapsForceUntilMs = 0L')
     s = replace(s, 'weight = 1.72f, action = { handleShiftTap() })',
                 'weight = 1.72f, action = { handleShiftTap() }, longAction = { handleShiftHold() })')
     s = function(s, 'handleShiftTap', '''    private fun handleShiftTap() {
