@@ -276,3 +276,9 @@ val patchPrivateAiQuality by tasks.registering(Exec::class) {
     commandLine("python3", rootProject.file("tools/apply_private_ai_quality_patch.py").absolutePath)
 }
 tasks.named("preBuild").configure { dependsOn(patchPrivateAiQuality) }
+
+val patchPrivateShiftAiActions by tasks.registering(Exec::class) {
+    dependsOn(patchPrivateAiQuality)
+    commandLine("python3", rootProject.file("tools/apply_private_shift_ai_actions_patch.py").absolutePath)
+}
+tasks.named("preBuild").configure { dependsOn(patchPrivateShiftAiActions) }
