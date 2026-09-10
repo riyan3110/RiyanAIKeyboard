@@ -71,7 +71,7 @@ class KeyboardLauncherActivity : AppCompatActivity() {
         // current default, show the system keyboard chooser once instead of appearing to do nothing.
         val defaultIme = Settings.Secure.getString(contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD).orEmpty()
         if (!defaultIme.startsWith("$packageName/")) {
-            if (!pickerShown && hasWindowFocus()) {
+            if (!pickerShown && window.decorView.hasWindowFocus()) {
                 pickerShown = true
                 imm.showInputMethodPicker()
             }
