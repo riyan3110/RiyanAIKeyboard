@@ -120,10 +120,28 @@ memory_tail_new = '''        val phraseCard = cardContainer()
         urls.addView(description("Masukkan hingga 6 URL HTTPS, satu per baris. {query} boleh dipakai untuk URL pencarian."))
         urls.addView(textInput("https://sumber.com/search?q={query}", draft.referenceUrls, multiline = true) { draft.referenceUrls = it })
         body.addView(urls, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
+    }'''
+overlay = replace_once(overlay, memory_tail, memory_tail_new, "URL reference in memory")
+
+overlay = replace_once(
+    overlay,
+    '''        keyCard.addView(sliderRow("Skala Kotak Tombol (Maks. 150%)", 65, 150, draft.keyBoxScale, "%") { draft.keyBoxScale = it })
+        keyCard.addView(sliderRow("Durasi Tekan Lama", 200, 900, draft.longPressMs, " ms") { draft.longPressMs = it })''',
+    '''        keyCard.addView(sliderRow("Skala Kotak Tombol (Maks. 150%)", 65, 150, draft.keyBoxScale, "%") { draft.keyBoxScale = it })
+        keyCard.addView(sliderRow("Sensitivitas dan Kecepatan Tombol", 20, 400, draft.touchSensitivity, "%") { draft.touchSensitivity = it })
+        keyCard.addView(sliderRow("Durasi Tekan Lama", 200, 900, draft.longPressMs, " ms") { draft.longPressMs = it })''',
+    "theme touch sensitivity slider",
+)
+
+# Keep backup compact and place it on Tema & Tampilan, not Memori Gaya.
+theme_end = '''        body.addView(toggleCard("Tampilkan Baris Angka (1–0)", "Menyematkan baris angka di atas QWERTY.", draft.numberRow) { draft.numberRow = it }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
+    }
+
+    private fun renderTypingTab() {'''
+theme_end_new = '''        body.addView(toggleCard("Tampilkan Baris Angka (1–0)", "Menyematkan baris angka di atas QWERTY.", draft.numberRow) { draft.numberRow = it }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
 
         val backupCard = cardContainer()
         backupCard.addView(section("Backup & Pulihkan Pengaturan", compact = true))
-        backupCard.addView(description("Menyimpan tema (termasuk foto tema bila tersedia), memori gaya, URL referensi, kalimat tersimpan, setelan keyboard, dan clipboard yang dipin. API Key, Base URL, serta profil koneksi provider tidak pernah dimasukkan ke file backup."))
         val backupButtons = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -142,20 +160,12 @@ memory_tail_new = '''        val phraseCard = cardContainer()
             context.startActivity(intent)
             hidePanel()
         }, LinearLayout.LayoutParams(0, dp(42), 1f))
-        backupCard.addView(backupButtons, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
+        backupCard.addView(backupButtons, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
         body.addView(backupCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
-    }'''
-overlay = replace_once(overlay, memory_tail, memory_tail_new, "URL reference + safe backup in memory")
+    }
 
-overlay = replace_once(
-    overlay,
-    '''        keyCard.addView(sliderRow("Skala Kotak Tombol (Maks. 150%)", 65, 150, draft.keyBoxScale, "%") { draft.keyBoxScale = it })
-        keyCard.addView(sliderRow("Durasi Tekan Lama", 200, 900, draft.longPressMs, " ms") { draft.longPressMs = it })''',
-    '''        keyCard.addView(sliderRow("Skala Kotak Tombol (Maks. 150%)", 65, 150, draft.keyBoxScale, "%") { draft.keyBoxScale = it })
-        keyCard.addView(sliderRow("Sensitivitas dan Kecepatan Tombol", 20, 400, draft.touchSensitivity, "%") { draft.touchSensitivity = it })
-        keyCard.addView(sliderRow("Durasi Tekan Lama", 200, 900, draft.longPressMs, " ms") { draft.longPressMs = it })''',
-    "theme touch sensitivity slider",
-)
+    private fun renderTypingTab() {'''
+overlay = replace_once(overlay, theme_end, theme_end_new, "compact backup in theme")
 
 # Insert immediately after the function signature instead of depending on whichever
 # first typing setting an earlier PRIVATE patch happens to generate.
@@ -290,4 +300,4 @@ service = replace_once(
 )
 service_path.write_text(service, encoding="utf-8")
 
-print("Applied PRIVATE v0.21.37 settings + exact provider binding + safe settings backup")
+print("Applied PRIVATE v0.21.38 settings + reliable launcher + compact backup in Theme")
