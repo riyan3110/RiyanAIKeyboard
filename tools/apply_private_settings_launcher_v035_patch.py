@@ -14,7 +14,7 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
 
 
 # Settings overlay: requested tab order, fallback toggle, URL move, keyboard setup buttons,
-# and touch sensitivity in Theme & Tampilan.
+# touch sensitivity in Theme & Tampilan, and portable non-credential backup/restore.
 overlay_path = SRC / "KeyboardSettingsOverlay.kt"
 overlay = overlay_path.read_text(encoding="utf-8")
 
@@ -39,6 +39,31 @@ overlay = overlay.replace(
     1,
 )
 overlay = overlay.replace("private var currentTab = Tab.MODEL", "private var currentTab = Tab.THEME", 1)
+
+# Every fresh opening reloads SharedPreferences. This is important after restoring a backup:
+# stale unsaved Draft values must never overwrite the just-restored settings.
+overlay = replace_once(
+    overlay,
+    '''    fun show(tab: Tab = currentTab) {
+        currentTab = tab
+        visibility = View.VISIBLE
+        renderTabs()
+        renderBody()
+    }''',
+    '''    fun show(tab: Tab = currentTab) {
+        draft = loadDraft()
+        privateProviderLoadedId = null
+        privateProviderMenu = null
+        privateProviderModels = emptyList()
+        privateProviderStatus = ""
+        privateProviderBusy = false
+        currentTab = tab
+        visibility = View.VISIBLE
+        renderTabs()
+        renderBody()
+    }''',
+    "reload settings after backup restore",
+)
 
 overlay = replace_once(
     overlay,
@@ -95,8 +120,32 @@ memory_tail_new = '''        val phraseCard = cardContainer()
         urls.addView(description("Masukkan hingga 6 URL HTTPS, satu per baris. {query} boleh dipakai untuk URL pencarian."))
         urls.addView(textInput("https://sumber.com/search?q={query}", draft.referenceUrls, multiline = true) { draft.referenceUrls = it })
         body.addView(urls, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
+
+        val backupCard = cardContainer()
+        backupCard.addView(section("Backup & Pulihkan Pengaturan", compact = true))
+        backupCard.addView(description("Menyimpan tema (termasuk foto tema bila tersedia), memori gaya, URL referensi, kalimat tersimpan, setelan keyboard, dan clipboard yang dipin. API Key, Base URL, serta profil koneksi provider tidak pernah dimasukkan ke file backup."))
+        val backupButtons = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        backupButtons.addView(actionButton("Buat Backup") {
+            val intent = Intent(context, SettingsBackupTransferActivity::class.java)
+                .putExtra(SettingsBackupTransferActivity.EXTRA_MODE, SettingsBackupTransferActivity.MODE_EXPORT)
+            if (context !is android.app.Activity) intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+            hidePanel()
+        }, LinearLayout.LayoutParams(0, dp(42), 1f).apply { rightMargin = dp(6) })
+        backupButtons.addView(actionButton("Pulihkan Backup") {
+            val intent = Intent(context, SettingsBackupTransferActivity::class.java)
+                .putExtra(SettingsBackupTransferActivity.EXTRA_MODE, SettingsBackupTransferActivity.MODE_IMPORT)
+            if (context !is android.app.Activity) intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+            hidePanel()
+        }, LinearLayout.LayoutParams(0, dp(42), 1f))
+        backupCard.addView(backupButtons, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
+        body.addView(backupCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
     }'''
-overlay = replace_once(overlay, memory_tail, memory_tail_new, "URL reference move to memory")
+overlay = replace_once(overlay, memory_tail, memory_tail_new, "URL reference + safe backup in memory")
 
 overlay = replace_once(
     overlay,
@@ -241,4 +290,4 @@ service = replace_once(
 )
 service_path.write_text(service, encoding="utf-8")
 
-print("Applied PRIVATE v0.21.36 settings + exact runtime provider Base URL/API key/model binding")
+print("Applied PRIVATE v0.21.37 settings + exact provider binding + safe settings backup")
