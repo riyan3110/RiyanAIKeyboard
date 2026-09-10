@@ -80,7 +80,7 @@ jobs:
           python3 tools/apply_private_tighter_gap_patch.py
           python3 tools/apply_private_ai_fresh_focus_shift_patch.py
           python3 tools/apply_private_touch_emoji_patch.py
-          python3 tools/apply_private_shift_ai_actions_patch.py
+          python3 tools/run_private_shift_patch_idempotent.py
           python3 tools/apply_private_settings_launcher_v035_patch.py
 
       - name: Build test APK
