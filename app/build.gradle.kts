@@ -282,3 +282,11 @@ val patchPrivateShiftAiActions by tasks.registering(Exec::class) {
     commandLine("python3", rootProject.file("tools/apply_private_shift_ai_actions_patch.py").absolutePath)
 }
 tasks.named("preBuild").configure { dependsOn(patchPrivateShiftAiActions) }
+
+// PRIVATE v0.21.35 final settings/launcher patch must run after the v0.21.34
+// provider/Shift generator so the requested layout is not overwritten during preBuild.
+val patchPrivateSettingsLauncher by tasks.registering(Exec::class) {
+    dependsOn(patchPrivateShiftAiActions)
+    commandLine("python3", rootProject.file("tools/apply_private_settings_launcher_v035_patch.py").absolutePath)
+}
+tasks.named("preBuild").configure { dependsOn(patchPrivateSettingsLauncher) }
