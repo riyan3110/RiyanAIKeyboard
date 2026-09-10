@@ -9,7 +9,7 @@ import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.FrameLayout
-import androidx.appcompat.app.AppCompatActivity
+import androidx.activity.ComponentActivity
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 
@@ -17,7 +17,7 @@ import androidx.core.view.WindowInsetsCompat
  * PRIVATE launcher surface. Tapping the app icon opens the selected keyboard directly instead
  * of showing a separate app page. The full AI Ads Keyboard UI remains owned by the IME service.
  */
-class KeyboardLauncherActivity : AppCompatActivity() {
+class KeyboardLauncherActivity : ComponentActivity() {
     private lateinit var focusTarget: EditText
     private var pickerShown = false
 
