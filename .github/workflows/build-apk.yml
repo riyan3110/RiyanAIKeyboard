@@ -65,21 +65,33 @@ jobs:
             sudo apt-get install -y --no-install-recommends webp
           fi
 
-      - name: Apply PRIVATE provider, browser, photo color, safe key scale, auto-caps, brand, haptic, Shift, popup, gap, reference URL, AI freshness, and focus patches
-        shell: bash
-        run: |
-          python3 tools/apply_bluesminds_provider_patch.py
-          python3 tools/apply_browser_chrome_patch.py
-          python3 tools/apply_photo_colors_safe_scale_patch.py
-          python3 tools/apply_bai_provider_patch.py
-          python3 tools/apply_private_extra_providers_patch.py
-          python3 tools/apply_private_reference_urls_patch.py
-          python3 tools/apply_autocaps_brand_patch.py
-          python3 tools/allow_brand_only_visible_label.py
-          python3 tools/apply_private_haptic_shift_popup_gap_patch.py
-          python3 tools/apply_private_tighter_gap_patch.py
-          python3 tools/apply_private_ai_fresh_focus_shift_patch.py
-          python3 tools/apply_private_touch_emoji_patch.py
+      - name: Apply BluesMinds provider patch
+        run: python3 tools/apply_bluesminds_provider_patch.py
+      - name: Apply browser chrome patch
+        run: python3 tools/apply_browser_chrome_patch.py
+      - name: Apply photo colors and safe key scale patch
+        run: python3 tools/apply_photo_colors_safe_scale_patch.py
+      - name: Apply B.AI provider patch
+        run: python3 tools/apply_bai_provider_patch.py
+      - name: Apply PRIVATE extra providers patch
+        run: python3 tools/apply_private_extra_providers_patch.py
+      - name: Apply PRIVATE reference URLs patch
+        run: python3 tools/apply_private_reference_urls_patch.py
+      - name: Apply auto caps and brand patch
+        run: python3 tools/apply_autocaps_brand_patch.py
+      - name: Apply visible brand label patch
+        run: python3 tools/allow_brand_only_visible_label.py
+      - name: Apply PRIVATE haptic shift popup gap patch
+        run: python3 tools/apply_private_haptic_shift_popup_gap_patch.py
+      - name: Apply PRIVATE tighter gap patch
+        run: python3 tools/apply_private_tighter_gap_patch.py
+      - name: Apply PRIVATE AI freshness focus shift patch
+        run: python3 tools/apply_private_ai_fresh_focus_shift_patch.py
+      - name: Apply PRIVATE touch emoji patch
+        run: python3 tools/apply_private_touch_emoji_patch.py
+
+      - name: Verify PRIVATE security baseline
+        run: python3 tools/check_private_security.py
 
       - name: Build test APK
         run: RIYAN_KEYSTORE_PATH="$HOME/.riyan-ai-keyboard/debug.keystore" gradle :app:testDebugUnitTest :app:assembleDebug -x :app:patchBluesMindsProvider

@@ -141,11 +141,19 @@ if not converted or not COMPAT_ICON.exists():
     raise RuntimeError("Could not convert launcher WebP to compatibility PNG")
 
 manifest = MANIFEST.read_text()
+# Replace each attribute independently so this remains idempotent even when the
+# manifest is reformatted (single-line or multi-line attributes).
 manifest = replace_once(
     manifest,
-    'android:icon="@drawable/app_icon" android:roundIcon="@drawable/app_icon"',
-    'android:icon="@drawable/app_icon_compat" android:roundIcon="@drawable/app_icon_compat"',
+    'android:icon="@drawable/app_icon"',
+    'android:icon="@drawable/app_icon_compat"',
     "compatibility PNG launcher icon",
+)
+manifest = replace_once(
+    manifest,
+    'android:roundIcon="@drawable/app_icon"',
+    'android:roundIcon="@drawable/app_icon_compat"',
+    "compatibility PNG round launcher icon",
 )
 MANIFEST.write_text(manifest)
 
