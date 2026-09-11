@@ -207,6 +207,8 @@ if AI_MARKER not in ai:
 # ---------------------------------------------------------------------------
 # Keyboard runtime: all PUBLIC AI actions use only the selected saved profile.
 # Fallback, when enabled, may use only other profiles still in PublicProviderStore.
+# The PUBLIC mic patch is a later Gradle preBuild generator; it calls the voice
+# helper installed here after this shell-time patch has already completed.
 # ---------------------------------------------------------------------------
 service_path = SRC / "RiyanKeyboardService.kt"
 service = service_path.read_text(encoding="utf-8")
@@ -284,7 +286,7 @@ if SERVICE_MARKER not in service:
     )
 
     required = [
-        "runPublicVoiceCorrection(cleanTranscript)",
+        "private fun runPublicVoiceCorrection",
         "runPublicVision(encoded, localHint)",
         "runPublicTransform(action, input)",
         "runPublicChat(prompt, \"\", history)",
