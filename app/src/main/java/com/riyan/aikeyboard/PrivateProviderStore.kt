@@ -20,6 +20,45 @@ internal data class PrivateProviderProfile(
 internal object PrivateProviderStore {
     private const val PROFILES_KEY = "private_provider_profiles_v1"
     private const val SELECTED_KEY = "private_provider_selected_v1"
+    private const val MIGRATION_DONE_KEY = "private_provider_migration_done_v2"
+
+    // These keys belong to the old hard-coded provider system. Once the PRIVATE dynamic
+    // provider store has been initialized, they must never be used as a second source of truth.
+    private val LEGACY_PROVIDER_KEYS = arrayOf(
+        "provider",
+        "api_key",
+        "openrouter_api_key",
+        "openrouter_model",
+        "tabi_api_key",
+        "tabi_base_url",
+        "tabi_model",
+        "9router_api_key",
+        "9router_base_url",
+        "9router_model",
+        "bluesminds_api_key",
+        "bluesminds_base_url",
+        "bluesminds_model",
+        "bai_api_key",
+        "bai_base_url",
+        "bai_model",
+        "vyceai_api_key",
+        "vyceai_base_url",
+        "vyceai_model",
+        "agentrouter_api_key",
+        "agentrouter_base_url",
+        "agentrouter_model",
+        "seekai_api_key",
+        "seekai_base_url",
+        "seekai_model",
+        "xkiro_api_key",
+        "xkiro_base_url",
+        "xkiro_model",
+        "orcarouter_api_key",
+        "orcarouter_base_url",
+        "orcarouter_model",
+        "aihorde_api_key",
+        "aihorde_model"
+    )
 
     fun normalizeBaseUrl(raw: String): String {
         var clean = raw.trim().trimEnd('/')
@@ -169,7 +208,15 @@ internal object PrivateProviderStore {
     }
 
     fun ensureMigrated(prefs: SharedPreferences): List<PrivateProviderProfile> {
-        load(prefs).takeIf { it.isNotEmpty() }?.let { return it }
+        val current = load(prefs)
+        if (current.isNotEmpty()) {
+            prefs.edit().putBoolean(MIGRATION_DONE_KEY, true).commit()
+            purgeLegacyProviderState(prefs)
+            return current
+        }
+        // Migration is one-shot. An empty dynamic list after this flag is set means the user
+        // intentionally deleted every provider; old credentials must never resurrect them.
+        if (prefs.getBoolean(MIGRATION_DONE_KEY, false)) return emptyList()
 
         data class Legacy(
             val providerId: String,
@@ -220,6 +267,8 @@ internal object PrivateProviderStore {
                 ?: imported.first()
             select(prefs, selected.id)
         }
+        prefs.edit().putBoolean(MIGRATION_DONE_KEY, true).commit()
+        purgeLegacyProviderState(prefs)
         return imported
     }
 
@@ -229,7 +278,8 @@ internal object PrivateProviderStore {
     }
 
     fun select(prefs: SharedPreferences, id: String) {
-        prefs.edit().putString(SELECTED_KEY, id).apply()
+        if (load(prefs).none { it.id == id }) return
+        prefs.edit().putString(SELECTED_KEY, id).commit()
     }
 
     fun save(
@@ -256,6 +306,8 @@ internal object PrivateProviderStore {
         val all = load(prefs).filterNot { it.id == id } + profile
         persist(prefs, all)
         select(prefs, id)
+        prefs.edit().putBoolean(MIGRATION_DONE_KEY, true).commit()
+        purgeLegacyProviderState(prefs)
         return profile
     }
 
@@ -264,9 +316,20 @@ internal object PrivateProviderStore {
         persist(prefs, remaining)
         val selected = prefs.getString(SELECTED_KEY, null)
         if (selected == id) {
-            prefs.edit().putString(SELECTED_KEY, remaining.firstOrNull()?.id).apply()
+            val editor = prefs.edit()
+            remaining.firstOrNull()?.let { editor.putString(SELECTED_KEY, it.id) }
+                ?: editor.remove(SELECTED_KEY)
+            editor.commit()
         }
+        prefs.edit().putBoolean(MIGRATION_DONE_KEY, true).commit()
+        purgeLegacyProviderState(prefs)
         return remaining
+    }
+
+    fun purgeLegacyProviderState(prefs: SharedPreferences) {
+        val editor = prefs.edit()
+        LEGACY_PROVIDER_KEYS.forEach(editor::remove)
+        editor.commit()
     }
 
     private fun persist(prefs: SharedPreferences, profiles: List<PrivateProviderProfile>) {
@@ -282,6 +345,6 @@ internal object PrivateProviderStore {
                     .put("models", JSONArray(profile.models))
             )
         }
-        prefs.edit().putString(PROFILES_KEY, array.toString()).apply()
+        prefs.edit().putString(PROFILES_KEY, array.toString()).commit()
     }
 }
