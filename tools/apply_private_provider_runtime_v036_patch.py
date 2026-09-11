@@ -176,7 +176,7 @@ if AI_MARKER not in ai:
     if insert_before not in ai:
         raise RuntimeError("PRIVATE v036 patch marker not found: AiClient execute")
     helper = '''    // PRIVATE exact compatible vision v036
-    fun compatibleVision(
+    internal fun compatibleVision(
         profile: PrivateProviderProfile,
         jpegBase64: String,
         localTextHint: String = ""
@@ -252,19 +252,17 @@ if SERVICE_MARKER not in service:
             AiClient.correctVoiceSearch(privateSettingsFor(profile), transcript).map { it.text }
         }.map { PrivateProviderAiResponse(it.value, it.profile) }
 
-    private fun runPrivateVision(jpegBase64: String, localTextHint: String): Result<PrivateProviderAiResponse> =
+    private fun runPrivateVision(jpegBase64: String, localTextHint: String): Result<AiResponse> =
         runPrivateProviderRequest { profile ->
             AiClient.compatibleVision(profile, jpegBase64, localTextHint)
-        }.map { PrivateProviderAiResponse(it.value, it.profile) }
+        }.map { AiResponse(it.value, AiProvider.XKIRO) }
 
 '''
     service = service.replace(ai_settings_marker, helpers + ai_settings_marker, 1)
 
     replacements = [
         ("AiClient.correctVoiceSearch(settings, cleanTranscript).getOrNull()?.text", "runPrivateVoiceCorrection(cleanTranscript).getOrNull()?.text"),
-        ("Result.failure<AiResponse>(IllegalStateException(\"Foto kamera gagal disiapkan.\"))", "Result.failure<PrivateProviderAiResponse>(IllegalStateException(\"Foto kamera gagal disiapkan.\"))"),
         ("AiClient.visionProduct(aiSettings(), encoded, localHint)", "runPrivateVision(encoded, localHint)"),
-        ("Result.failure<AiResponse>(IllegalStateException(\"Gambar galeri gagal disiapkan.\"))", "Result.failure<PrivateProviderAiResponse>(IllegalStateException(\"Gambar galeri gagal disiapkan.\"))"),
         ("AiClient.visionProduct(aiSettings(), encoded, \"\")", "runPrivateVision(encoded, \"\")"),
         ("AiClient.transform(settings, action, input)", "runPrivateTransform(action, input)"),
         ("AiClient.transform(aiSettings(), action, input)", "runPrivateTransform(action, input)"),
@@ -273,6 +271,13 @@ if SERVICE_MARKER not in service:
     for old, new in replacements:
         if old in service:
             service = service.replace(old, new)
+
+    # Make fallback success reporting show the provider/model that actually answered,
+    # rather than the selected provider when a fallback profile handled the request.
+    service = service.replace(
+        'aiStatus.text = "Model: ${activeModelName()} · ketuk jawaban atau Pakai"',
+        'aiStatus.text = "Model: ${response.profile.model} · ${response.profile.name} · ketuk jawaban atau Pakai"'
+    )
 
     # At least the four user-facing AI routes must have been redirected.
     required = [
