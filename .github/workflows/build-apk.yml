@@ -81,6 +81,9 @@ jobs:
           python3 tools/apply_public_ai_shift_patch.py
           python3 tools/apply_public_private_feature_parity_patch.py
 
+      - name: Verify PUBLIC security baseline
+        run: python3 tools/check_public_security.py
+
       - name: Build test APK
         run: RIYAN_KEYSTORE_PATH="$HOME/.riyan-ai-keyboard/debug.keystore" gradle :app:testDebugUnitTest :app:assembleDebug -x :app:patchBluesMindsProvider
 
