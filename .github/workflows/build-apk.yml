@@ -81,6 +81,9 @@ jobs:
           python3 tools/apply_private_ai_fresh_focus_shift_patch.py
           python3 tools/apply_private_touch_emoji_patch.py
 
+      - name: Verify PRIVATE security baseline
+        run: python3 tools/check_private_security.py
+
       - name: Build test APK
         run: RIYAN_KEYSTORE_PATH="$HOME/.riyan-ai-keyboard/debug.keystore" gradle :app:testDebugUnitTest :app:assembleDebug -x :app:patchBluesMindsProvider
 
