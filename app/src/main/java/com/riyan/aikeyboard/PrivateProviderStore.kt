@@ -328,7 +328,7 @@ internal object PrivateProviderStore {
 
     fun purgeLegacyProviderState(prefs: SharedPreferences) {
         val editor = prefs.edit()
-        LEGACY_PROVIDER_KEYS.forEach(editor::remove)
+        LEGACY_PROVIDER_KEYS.forEach { key -> editor.remove(key) }
         editor.commit()
     }
 
