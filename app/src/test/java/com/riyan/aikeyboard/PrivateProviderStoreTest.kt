@@ -2,6 +2,7 @@ package com.riyan.aikeyboard
 
 import android.content.Context
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -50,9 +51,9 @@ class PrivateProviderStoreTest {
         assertEquals("OpenRouter", PrivateProviderStore.inferName("https://openrouter.ai/api/v1"))
     }
 
-    @Test fun migratesExistingPrivateProviderSettingsWithoutErasingLegacyPrefs() {
+    @Test fun migrationMovesLegacyProvidersThenErasesLegacyCredentials() {
         val context = RuntimeEnvironment.getApplication() as Context
-        val prefs = context.getSharedPreferences("private-provider-migration-test", Context.MODE_PRIVATE)
+        val prefs = context.getSharedPreferences("private-provider-migration-v2-test", Context.MODE_PRIVATE)
         prefs.edit().clear()
             .putString("provider", "bai")
             .putString("bai_api_key", "old-secret")
@@ -69,6 +70,83 @@ class PrivateProviderStoreTest {
         assertTrue(migrated.any { it.name == "B.AI" && it.apiKey == "old-secret" && it.model == "MiMo-V2.5" })
         assertTrue(migrated.any { it.name == "AgentRouter" && it.apiKey == "agent-key" && it.model == "glm-test" })
         assertEquals("B.AI", selected?.name)
-        assertEquals("old-secret", prefs.getString("bai_api_key", ""))
+        assertFalse(prefs.contains("provider"))
+        assertFalse(prefs.contains("bai_api_key"))
+        assertFalse(prefs.contains("agentrouter_api_key"))
     }
+
+    @Test fun deletingEveryProviderCannotResurrectLegacyProvider() {
+        val context = RuntimeEnvironment.getApplication() as Context
+        val prefs = context.getSharedPreferences("private-provider-delete-root-test", Context.MODE_PRIVATE)
+        prefs.edit().clear()
+            .putString("provider", "xkiro")
+            .putString("xkiro_api_key", "old-xkiro-key")
+            .putString("xkiro_base_url", "https://api.xkiro.com/v1")
+            .putString("xkiro_model", "old-model")
+            .commit()
+
+        val migrated = PrivateProviderStore.ensureMigrated(prefs)
+        assertEquals(1, migrated.size)
+        val removed = PrivateProviderStore.delete(prefs, migrated.single().id)
+
+        assertTrue(removed.isEmpty())
+        assertTrue(PrivateProviderStore.load(prefs).isEmpty())
+        assertTrue(PrivateProviderStore.ensureMigrated(prefs).isEmpty())
+        assertFalse(prefs.contains("xkiro_api_key"))
+        assertFalse(prefs.contains("xkiro_base_url"))
+        assertFalse(prefs.contains("xkiro_model"))
+        assertFalse(prefs.contains("provider"))
+    }
+
+    @Test fun fallbackOffUsesOnlySelectedDynamicProvider() {
+        val one = profile("one")
+        val two = profile("two")
+        val three = profile("three")
+        assertEquals(
+            listOf(two),
+            PrivateProviderRuntime.candidates(listOf(one, two, three), two.id, fallbackEnabled = false)
+        )
+    }
+
+    @Test fun fallbackOnUsesSelectedThenOnlyRemainingSavedProviders() {
+        val one = profile("one")
+        val two = profile("two")
+        val three = profile("three")
+        assertEquals(
+            listOf(two, one, three),
+            PrivateProviderRuntime.candidates(listOf(one, two, three), two.id, fallbackEnabled = true)
+        )
+    }
+
+    @Test fun fallbackExecutionNeverTouchesProviderThatIsNotInSavedList() {
+        val selected = profile("selected")
+        val fallback = profile("fallback")
+        val attempts = mutableListOf<String>()
+
+        val result = PrivateProviderRuntime.execute(
+            profiles = listOf(selected, fallback),
+            selectedId = selected.id,
+            fallbackEnabled = true
+        ) { profile ->
+            attempts += profile.name
+            if (profile.id == selected.id) {
+                Result.failure(IllegalStateException("xKiro mengembalikan respons tanpa teks."))
+            } else {
+                Result.success("ok")
+            }
+        }
+
+        assertEquals(listOf("selected", "fallback"), attempts)
+        assertEquals("ok", result.getOrNull()?.value)
+        assertEquals("fallback", result.getOrNull()?.profile?.name)
+    }
+
+    private fun profile(name: String) = PrivateProviderProfile(
+        id = name,
+        name = name,
+        baseUrl = "https://$name.example/v1",
+        apiKey = "key-$name",
+        model = "model-$name",
+        models = listOf("model-$name")
+    )
 }
