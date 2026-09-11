@@ -290,3 +290,11 @@ val patchPrivateSettingsLauncher by tasks.registering(Exec::class) {
     commandLine("python3", rootProject.file("tools/apply_private_settings_launcher_v035_patch.py").absolutePath)
 }
 tasks.named("preBuild").configure { dependsOn(patchPrivateSettingsLauncher) }
+
+// PRIVATE v0.21.39: dynamic profiles are the only provider runtime. This final patch
+// runs after every older PRIVATE generator so legacy provider/fallback code cannot win.
+val patchPrivateProviderRuntimeV036 by tasks.registering(Exec::class) {
+    dependsOn(patchPrivateSettingsLauncher)
+    commandLine("python3", rootProject.file("tools/apply_private_provider_runtime_v036_patch.py").absolutePath)
+}
+tasks.named("preBuild").configure { dependsOn(patchPrivateProviderRuntimeV036) }
