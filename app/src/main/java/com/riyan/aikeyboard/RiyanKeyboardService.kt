@@ -88,7 +88,7 @@ import kotlin.math.hypot
 
 @OptIn(androidx.camera.camera2.interop.ExperimentalCamera2Interop::class)
 class RiyanKeyboardService : InputMethodService() {
-    private enum class KeyboardMode { LETTERS, SYMBOLS, CURSOR, EMOJI, CLIPBOARD }
+    private enum class KeyboardMode { LETTERS, NUMBERS, SYMBOLS, CURSOR, EMOJI, CLIPBOARD }
 
     private class CameraSessionLifecycleOwner : LifecycleOwner {
         private val registry = LifecycleRegistry(this)
@@ -889,11 +889,8 @@ class RiyanKeyboardService : InputMethodService() {
             mode = KeyboardMode.CLIPBOARD
             renderKeyboard()
         })
-        utilityBar.addView(toolbarButton("Kursor", dp(50)) {
-            aiComposeActive = false
-            mode = KeyboardMode.CURSOR
-            renderKeyboard()
-        })
+        // The cursor pad is reached via the ?123 → 123 → Kursor cycle; removing the bar
+        // button shifts the camera/resize controls left and gives suggestions more room.
         utilityBar.addView(
             toolbarIconButton(R.drawable.ic_camera_modern, "Kamera penelusuran", dp(36)) { launchScanner() }
         )
@@ -1219,6 +1216,7 @@ class RiyanKeyboardService : InputMethodService() {
         keyboardPanel.removeAllViews()
         when (mode) {
             KeyboardMode.LETTERS -> renderLetters()
+            KeyboardMode.NUMBERS -> renderNumbers()
             KeyboardMode.SYMBOLS -> renderSymbols()
             KeyboardMode.CURSOR -> renderCursorPad()
             KeyboardMode.EMOJI -> renderEmoji()
@@ -1404,12 +1402,31 @@ class RiyanKeyboardService : InputMethodService() {
         addRow(last)
         addRow(
             listOf(
-                KeySpec("ABC", weight = 1.58f, action = { mode = KeyboardMode.LETTERS; renderKeyboard() }),
-                KeySpec("\\", action = { commit("\\") }),
+                KeySpec("123", weight = 1.58f, action = { mode = KeyboardMode.NUMBERS; renderKeyboard() }),
+                KeySpec("ABC", weight = 1.15f, action = { mode = KeyboardMode.LETTERS; renderKeyboard() }),
                 KeySpec("/", action = { commit("/") }),
                 KeySpec(":", action = { commitPunctuation(":") }),
                 KeySpec("spasi", weight = 2.2f, action = { commitSpace() }),
                 KeySpec("?", action = { commitPunctuation("?") }),
+                KeySpec(enterKeyLabel(), weight = 1.62f, action = { pressEnter() })
+            )
+        )
+    }
+
+    private fun renderNumbers() {
+        addSimpleSymbolRow(listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0"))
+        addSimpleSymbolRow(listOf("@", "#", "Rp", "_", "&", "-", "+", "(", ")", "/"))
+        addSimpleSymbolRow(listOf("*", "\"", "'", ":", ";", "!", "?", "%", "×", "÷"))
+        val last = listOf("=", "<", ">", "[", "]", "{", "}", "°", "%").map { symbolSpec(it) }.toMutableList()
+        last += KeySpec("⌫", weight = 1.72f, action = { deleteOne() }, longAction = { deleteWord() })
+        addRow(last)
+        addRow(
+            listOf(
+                KeySpec("Kursor", weight = 1.58f, action = { mode = KeyboardMode.CURSOR; renderKeyboard() }),
+                KeySpec("ABC", weight = 1.15f, action = { mode = KeyboardMode.LETTERS; renderKeyboard() }),
+                KeySpec(",", action = { commitPunctuation(",") }),
+                KeySpec("spasi", weight = 2.2f, action = { commitSpace() }),
+                KeySpec(".", action = { commitPunctuation(".") }),
                 KeySpec(enterKeyLabel(), weight = 1.62f, action = { pressEnter() })
             )
         )
@@ -1460,7 +1477,7 @@ class RiyanKeyboardService : InputMethodService() {
         }
         listOf(
             KeySpec("ABC", weight = 1.58f, action = { mode = KeyboardMode.LETTERS; renderKeyboard() }),
-            KeySpec("1/2", weight = 1.15f, action = { mode = KeyboardMode.SYMBOLS; renderKeyboard() }),
+            KeySpec("123", weight = 1.15f, action = { mode = KeyboardMode.SYMBOLS; renderKeyboard() }),
             KeySpec("spasi", weight = 3.3f, action = { commitSpace() }),
             KeySpec("⌫", weight = 1.72f, action = { deleteOne() }, longAction = { deleteWord() }),
             KeySpec(enterKeyLabel(), weight = 1.62f, action = { pressEnter() })
