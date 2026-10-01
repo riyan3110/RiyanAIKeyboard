@@ -28,6 +28,7 @@ data class KeyboardThemePalette(
 )
 
 object KeyboardTheme {
+    const val MODE_TRANSPARENT = "transparent"
     const val MODE_DARK = "dark"
     const val MODE_PURPLE = "purple"
     const val MODE_BLUE = "blue"
@@ -38,6 +39,7 @@ object KeyboardTheme {
     const val MODE_AMOLED = "amoled"
 
     val modes = listOf(
+        MODE_TRANSPARENT to "Transparan",
         MODE_DARK to "Gelap",
         MODE_PURPLE to "Ungu",
         MODE_BLUE to "Biru",
@@ -52,7 +54,7 @@ object KeyboardTheme {
     private var cachedPhotoBitmap: Bitmap? = null
 
     fun palette(prefs: SharedPreferences): KeyboardThemePalette {
-        val mode = prefs.getString("keyboard_theme_mode", MODE_DARK).orEmpty()
+        val mode = prefs.getString("keyboard_theme_mode", MODE_TRANSPARENT).orEmpty()
         val custom = parseColor(prefs.getString("keyboard_theme_color", "#5D4AC4"), Color.rgb(93, 74, 196))
         val customBorder = parseColor(prefs.getString("keyboard_custom_border_color", "#B556F9"), Color.rgb(181, 86, 249))
         val customKey = parseColor(prefs.getString("keyboard_custom_key_color", "#32323C"), Color.rgb(50, 50, 60))
@@ -65,6 +67,19 @@ object KeyboardTheme {
             MODE_ROSE -> Color.rgb(194, 64, 115)
             MODE_CUSTOM -> custom
             else -> Color.rgb(89, 68, 196)
+        }
+        // The default glass look: the keyboard block blends into the dark canvas behind
+        // it; the translucent key faces come from the service's glass override.
+        if (mode == MODE_TRANSPARENT) {
+            return KeyboardThemePalette(
+                background = Color.rgb(14, 14, 18),
+                key = Color.argb(74, 255, 255, 255),
+                specialKey = Color.argb(116, 12, 12, 16),
+                pressedKey = Color.rgb(96, 72, 214),
+                accent = Color.rgb(89, 68, 196),
+                text = Color.WHITE,
+                usesPhoto = false
+            )
         }
         val usesPhoto = mode == MODE_PHOTO && !prefs.getString("keyboard_theme_image_uri", "").isNullOrBlank()
         if (usesPhoto) {

@@ -650,7 +650,7 @@ class RiyanKeyboardService : InputMethodService() {
     private fun addAiConversationPanel() {
         aiPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(5), dp(4), dp(5), dp(4))
+            setPadding(dp(7), dp(6), dp(7), dp(7))
             // Glass kartu obrolan hitam; clipToOutline memotong semua isi mengikuti sudut
             // kartu sehingga background tidak lagi bocor keluar bingkai obrolan.
             background = roundedStrokedBackground(Color.argb(122, 8, 8, 14), 14f, purple, 2)
@@ -678,23 +678,23 @@ class RiyanKeyboardService : InputMethodService() {
         header.addView(aiPanelButton("Batal") {
             AiClient.cancelActiveRequest()
             aiStatus.text = "Permintaan AI dibatalkan."
-        }, LinearLayout.LayoutParams(dp(58), headerControlHeight))
+        }, LinearLayout.LayoutParams(dp(52), headerControlHeight))
         header.addView(aiPanelButton("Hapus") {
             conversationHistory.clear()
             pendingText = null
             aiAnswer.text = "Jawaban AI akan muncul di sini."
             aiStatus.text = activeProviderLabel()
-        }, LinearLayout.LayoutParams(dp(58), headerControlHeight))
+        }, LinearLayout.LayoutParams(dp(52), headerControlHeight))
         aiFullscreenButton = premiumIconButton(
             R.drawable.ic_fullscreen_modern,
             "Buka obrolan AI layar penuh"
         ) { toggleAiFullscreen() }
-        header.addView(aiFullscreenButton, LinearLayout.LayoutParams(dp(40), headerControlHeight).apply {
+        header.addView(aiFullscreenButton, LinearLayout.LayoutParams(dp(36), headerControlHeight).apply {
             leftMargin = dp(2)
         })
         header.addView(
             premiumIconButton(R.drawable.ic_close_modern, "Tutup obrolan AI") { toggleAiPanel(false) },
-            LinearLayout.LayoutParams(dp(40), headerControlHeight).apply { leftMargin = dp(2) }
+            LinearLayout.LayoutParams(dp(36), headerControlHeight).apply { leftMargin = dp(2) }
         )
         aiPanel.addView(header, LinearLayout.LayoutParams(-1, dp(aiHeaderHeightDp())))
 
@@ -716,7 +716,7 @@ class RiyanKeyboardService : InputMethodService() {
 
         val composeCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(4), dp(2), dp(4), dp(2))
+            setPadding(dp(5), dp(3), dp(5), dp(3))
             background = roundedStrokedBackground(Color.argb(96, 0, 0, 0), 15f, purple, 2)
         }
         aiInput = EditText(this).apply {
@@ -738,7 +738,7 @@ class RiyanKeyboardService : InputMethodService() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        composeFooter.addView(aiPanelButton("＋") { pasteClipboardIntoAiInput() }, LinearLayout.LayoutParams(dp(38), dp(aiComposeFooterHeightDp())))
+        composeFooter.addView(aiPanelButton("＋") { pasteClipboardIntoAiInput() }, LinearLayout.LayoutParams(dp(34), dp(aiComposeFooterHeightDp())))
         aiStatus = TextView(this).apply {
             text = activeProviderLabel()
             textSize = if (isLandscape()) 9f else 11f
@@ -748,8 +748,8 @@ class RiyanKeyboardService : InputMethodService() {
             setPadding(dp(5), 0, dp(3), 0)
         }
         composeFooter.addView(aiStatus, LinearLayout.LayoutParams(0, dp(aiComposeFooterHeightDp()), 1f))
-        composeFooter.addView(aiPanelButton("Pakai", primary = true) { insertPendingResult() }, LinearLayout.LayoutParams(dp(58), dp(aiComposeFooterHeightDp())))
-        composeFooter.addView(aiPanelButton("↑", primary = true) { runAiConversation() }, LinearLayout.LayoutParams(dp(42), dp(aiComposeFooterHeightDp())).apply { leftMargin = dp(4) })
+        composeFooter.addView(aiPanelButton("Pakai", primary = true) { insertPendingResult() }, LinearLayout.LayoutParams(dp(52), dp(aiComposeFooterHeightDp())))
+        composeFooter.addView(aiPanelButton("↑", primary = true) { runAiConversation() }, LinearLayout.LayoutParams(dp(38), dp(aiComposeFooterHeightDp())).apply { leftMargin = dp(4) })
         composeCard.addView(composeFooter)
         aiPanel.addView(composeCard, LinearLayout.LayoutParams(-1, dp(aiComposeHeightDp())).apply { topMargin = dp(3) })
 
@@ -759,11 +759,11 @@ class RiyanKeyboardService : InputMethodService() {
         }
         listOf("Perbaiki", "Balas", "Terjemah", "Ringkas", "Santai", "Sopan").forEach { action ->
             quickActions.addView(aiPanelButton(action) { runAi(action) }, LinearLayout.LayoutParams(0, -1, 1f).apply {
-                setMargins(dp(1), 0, dp(1), 0)
+                setMargins(dp(2), 0, dp(2), 0)
             })
         }
         aiPanel.addView(quickActions, LinearLayout.LayoutParams(-1, dp(aiQuickActionHeightDp())).apply {
-            topMargin = dp(3)
+            topMargin = dp(5)
         })
         root.addView(aiPanel, LinearLayout.LayoutParams(-1, dp(currentAiPanelHeightDp())).apply {
             leftMargin = dp(3)
@@ -2256,19 +2256,19 @@ class RiyanKeyboardService : InputMethodService() {
         }
     }
 
-    private fun aiHeaderHeightDp(): Int = if (isLandscape()) 30 else 38
+    private fun aiHeaderHeightDp(): Int = if (isLandscape()) 28 else 34
 
-    private fun aiHeaderControlHeightDp(): Int = if (isLandscape()) 26 else 34
+    private fun aiHeaderControlHeightDp(): Int = if (isLandscape()) 24 else 30
 
     private fun aiAnswerHeightDp(): Int = if (isLandscape()) 47 else 70
 
     private fun aiInputHeightDp(): Int = if (isLandscape()) 28 else 36
 
-    private fun aiComposeFooterHeightDp(): Int = if (isLandscape()) 27 else 31
+    private fun aiComposeFooterHeightDp(): Int = if (isLandscape()) 25 else 28
 
     private fun aiComposeHeightDp(): Int = if (isLandscape()) 59 else 71
 
-    private fun aiQuickActionHeightDp(): Int = if (isLandscape()) 28 else 34
+    private fun aiQuickActionHeightDp(): Int = if (isLandscape()) 26 else 30
 
     private fun currentAiPanelHeightDp(): Int = if (isLandscape()) 184 else 232
 
