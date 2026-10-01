@@ -441,8 +441,8 @@ class RiyanKeyboardService : InputMethodService() {
         consumePendingScanResult()
     }
 
-    override fun onFinishInputView(finishingInput: Boolean, discardedText: Parcelable?) {
-        super.onFinishInputView(finishingInput, discardedText)
+    override fun onFinishInputView(finishingInput: Boolean) {
+        super.onFinishInputView(finishingInput)
         aiComposeActive = false
         searchComposeActive = false
         searchWebComposeActive = false
