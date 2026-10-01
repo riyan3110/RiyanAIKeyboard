@@ -18,25 +18,25 @@ internal data class SettingsBackupSummary(
 )
 
 /**
- * PRIVATE-only portable settings backup.
+ * PRIVATE portable FULL settings backup.
  *
- * Provider credentials are intentionally never exported. This includes API keys, Base URLs,
- * the editable provider profile store, and the selected provider connection. Restore only
- * overlays safe preferences so credentials already present on the device are left untouched.
+ * Exports every appearance and behavior preference, including provider configuration
+ * (Base URL, model, API key, and the dynamic provider profile store) so a restore is
+ * complete without re-typing credentials. The resulting file contains secrets — users
+ * are warned in the UI not to share it. Only transient session state stays out:
+ * unpinned clipboard history, shared-screen context, and picker in-flight markers.
+ * Restore overlays the same preference set wholesale.
  */
 internal object SettingsBackupStore {
     const val MIME_TYPE = "application/json"
     const val FILE_EXTENSION = ".aikbackup"
 
     private const val FORMAT = "AI_ADS_KEYBOARD_SETTINGS_BACKUP"
-    private const val VERSION = 1
+    private const val VERSION = 2
     private const val MAX_THEME_PHOTO_BYTES = 12 * 1024 * 1024
     private const val MAX_BACKUP_TEXT_BYTES = 24 * 1024 * 1024
 
     private val exactExcludedKeys = setOf(
-        "provider",
-        "private_provider_profiles_v1",
-        "private_provider_selected_v1",
         "keyboard_theme_image_uri",
         "clipboard_items",
         "shared_context",
@@ -61,7 +61,7 @@ internal object SettingsBackupStore {
             .put("createdAt", System.currentTimeMillis())
             .put("preferences", preferenceJson)
             .put("pinnedClipboard", JSONArray(pinned))
-            .put("credentialsIncluded", false)
+            .put("credentialsIncluded", true)
 
         val photo = readThemePhoto(context, prefs)
         if (photo != null) {
@@ -131,10 +131,8 @@ internal object SettingsBackupStore {
     private fun shouldExcludePreference(key: String): Boolean {
         if (key in exactExcludedKeys) return true
         val normalized = key.lowercase(Locale.ROOT).replace('-', '_')
-        if (normalized.contains("api_key") || normalized.contains("apikey")) return true
-        if (normalized.contains("base_url") || normalized.contains("baseurl")) return true
-        if (normalized.contains("access_token") || normalized.contains("auth_token")) return true
-        if (normalized == "token" || normalized.endsWith("_token")) return true
+        // Provider credentials are deliberately INCLUDED (full backup), so no key/token
+        // filtering here. Only transient picker/session state stays out.
         if (normalized.startsWith("camera_search_")) return true
         if (normalized.startsWith("theme_picker_")) return true
         if (normalized.startsWith("web_image_picker_")) return true

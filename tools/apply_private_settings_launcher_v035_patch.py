@@ -147,18 +147,23 @@ theme_end_new = '''        body.addView(toggleCard("Tampilkan Baris Angka (1–0
             gravity = Gravity.CENTER_VERTICAL
         }
         backupButtons.addView(actionButton("Buat Backup") {
-            val intent = Intent(context, SettingsBackupTransferActivity::class.java)
-                .putExtra(SettingsBackupTransferActivity.EXTRA_MODE, SettingsBackupTransferActivity.MODE_EXPORT)
-            if (context !is android.app.Activity) intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(intent)
-            hidePanel()
+            // Backup runs from the hosting Activity's result launchers. The host must stay
+            // open so the SAF result is delivered; the old translucent bridge activity was
+            // destroyed by aggressive OEM ROMs before the picker ever opened.
+            val handler = onBackupExport
+            if (handler != null) {
+                handler()
+            } else {
+                Toast.makeText(context, "Buka Pengaturan dari aplikasi untuk membuat backup.", Toast.LENGTH_SHORT).show()
+            }
         }, LinearLayout.LayoutParams(0, dp(42), 1f).apply { rightMargin = dp(6) })
         backupButtons.addView(actionButton("Pulihkan Backup") {
-            val intent = Intent(context, SettingsBackupTransferActivity::class.java)
-                .putExtra(SettingsBackupTransferActivity.EXTRA_MODE, SettingsBackupTransferActivity.MODE_IMPORT)
-            if (context !is android.app.Activity) intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(intent)
-            hidePanel()
+            val handler = onBackupImport
+            if (handler != null) {
+                handler()
+            } else {
+                Toast.makeText(context, "Buka Pengaturan dari aplikasi untuk memulihkan backup.", Toast.LENGTH_SHORT).show()
+            }
         }, LinearLayout.LayoutParams(0, dp(42), 1f))
         backupCard.addView(backupButtons, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
         body.addView(backupCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })

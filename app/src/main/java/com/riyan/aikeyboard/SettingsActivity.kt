@@ -16,6 +16,9 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlin.math.roundToInt
 
 class SettingsActivity : AppCompatActivity() {
@@ -46,6 +49,57 @@ class SettingsActivity : AppCompatActivity() {
             settingsView.refreshExternalChanges()
         }
         Toast.makeText(this, "Foto tema tersimpan.", Toast.LENGTH_SHORT).show()
+    }
+
+    // Backup/restore lives HERE, in a fully visible activity with stable result launchers.
+    // The old translucent bridge activity was destroyed by aggressive OEM ROMs (Vivo/iQOO)
+    // before the SAF picker ever opened, which made backup/restore look dead.
+    private val backupExportLauncher = registerForActivityResult(
+        ActivityResultContracts.CreateDocument(SettingsBackupStore.MIME_TYPE)
+    ) { uri ->
+        if (uri == null) return@registerForActivityResult
+        runCatching {
+            val (json, summary) = SettingsBackupStore.export(this, prefs)
+            contentResolver.openOutputStream(uri, "wt")?.bufferedWriter(Charsets.UTF_8)?.use { writer ->
+                writer.write(json)
+            } ?: error("Tidak bisa membuka lokasi penyimpanan backup.")
+            summary
+        }.onSuccess { summary ->
+            val photo = if (summary.themePhotoIncluded) " · foto tema ikut" else ""
+            Toast.makeText(
+                this,
+                "Backup tersimpan: ${summary.settingsCount} pengaturan · ${summary.pinnedClipboardCount} clipboard pin$photo. File berisi kredensial — jangan dibagikan.",
+                Toast.LENGTH_LONG
+            ).show()
+        }.onFailure { error ->
+            Toast.makeText(this, error.message ?: "Backup gagal dibuat.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private val backupImportLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri == null) return@registerForActivityResult
+        runCatching {
+            val raw = contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
+                ?: error("File backup tidak bisa dibaca.")
+            SettingsBackupStore.import(this, prefs, raw)
+        }.onSuccess { summary ->
+            val photo = if (summary.themePhotoIncluded) " · foto tema dipulihkan" else ""
+            if (::settingsView.isInitialized) settingsView.refreshExternalChanges()
+            Toast.makeText(
+                this,
+                "Backup dipulihkan: ${summary.settingsCount} pengaturan · ${summary.pinnedClipboardCount} clipboard pin$photo. Provider & API Key ikut dipulihkan.",
+                Toast.LENGTH_LONG
+            ).show()
+        }.onFailure { error ->
+            Toast.makeText(this, error.message ?: "Backup gagal dipulihkan.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun defaultBackupFileName(): String {
+        val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
+        return "AI-Ads-Keyboard-backup-$stamp${SettingsBackupStore.FILE_EXTENSION}"
     }
 
     override fun attachBaseContext(newBase: Context) {
@@ -84,6 +138,12 @@ class SettingsActivity : AppCompatActivity() {
                 // Settings are persisted by KeyboardSettingsOverlay itself.
             },
             onClose = { closeSettingsTask() },
+            onBackupExport = { backupExportLauncher.launch(defaultBackupFileName()) },
+            onBackupImport = {
+                backupImportLauncher.launch(
+                    arrayOf(SettingsBackupStore.MIME_TYPE, "application/octet-stream", "text/plain")
+                )
+            },
             onInputFocusChanged = { hasFocus ->
                 if (hasFocus && ::settingsView.isInitialized) {
                     settingsView.activeInput?.let { field ->

@@ -47,7 +47,7 @@ class SettingsBackupTransferActivity : AppCompatActivity() {
             val photo = if (summary.themePhotoIncluded) " · foto tema dipulihkan" else ""
             Toast.makeText(
                 this,
-                "Backup dipulihkan: ${summary.settingsCount} pengaturan · ${summary.pinnedClipboardCount} clipboard pin$photo. API Key dan Base URL tetap tidak diubah.",
+                "Backup dipulihkan: ${summary.settingsCount} pengaturan · ${summary.pinnedClipboardCount} clipboard pin$photo. Provider & API Key ikut dipulihkan.",
                 Toast.LENGTH_LONG
             ).show()
         }.onFailure { error ->

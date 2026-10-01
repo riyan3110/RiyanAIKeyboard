@@ -30,7 +30,12 @@ class KeyboardSettingsOverlay(
     private val prefs: SharedPreferences,
     private val onApply: () -> Unit,
     private val onClose: () -> Unit,
-    private val onInputFocusChanged: (Boolean) -> Unit = {}
+    private val onInputFocusChanged: (Boolean) -> Unit = {},
+    // Backup/restore is executed by the hosting Activity's result launchers; the overlay
+    // itself never starts the old translucent bridge activity, which OEM ROMs (Vivo/iQOO)
+    // can destroy before the SAF picker ever opens.
+    private val onBackupExport: (() -> Unit)? = null,
+    private val onBackupImport: (() -> Unit)? = null
 ) : FrameLayout(context) {
 
     enum class Tab { MODEL, MEMORY, THEME, TYPING }
