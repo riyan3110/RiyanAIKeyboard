@@ -40,8 +40,20 @@ internal object PrivateProviderRuntime {
             )
         }
 
+        // Bound the whole chain so "sedang diproses…" can never hang for minutes, and
+        // honor the panel's Batal button (AiClient.requestCancelled) between attempts.
+        val chainDeadline = System.currentTimeMillis() + 90_000L
         var lastError: Throwable? = null
         for (profile in ordered) {
+            if (AiClient.requestCancelled) {
+                return Result.failure(IllegalStateException("Permintaan AI dibatalkan."))
+            }
+            if (System.currentTimeMillis() > chainDeadline) {
+                return Result.failure(
+                    lastError
+                        ?: IllegalStateException("Waktu tunggu AI habis (90 detik). Coba lagi atau matikan fallback.")
+                )
+            }
             val result = runCatching { request(profile) }
                 .getOrElse { Result.failure(it) }
             result.getOrNull()?.let { value ->

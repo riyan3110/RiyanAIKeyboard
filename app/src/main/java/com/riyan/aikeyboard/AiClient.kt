@@ -53,6 +53,23 @@ data class AiSettings(
 data class AiResponse(val text: String, val provider: AiProvider)
 
 object AiClient {
+
+    /**
+     * Set true (via [cancelActiveRequest]) from the AI panel's Batal button. The fallback
+     * chain, the AI Horde poll, and the private provider runtime all check this between
+     * attempts so a hung provider cannot keep the user waiting.
+     */
+    @Volatile
+    var requestCancelled: Boolean = false
+        private set
+
+    fun cancelActiveRequest() {
+        requestCancelled = true
+    }
+
+    fun clearCancellation() {
+        requestCancelled = false
+    }
     private const val VISION_CONNECT_TIMEOUT_MS = 6_000
     private const val VISION_READ_TIMEOUT_MS = 16_000
 
@@ -202,10 +219,26 @@ object AiClient {
                     .filter { it != settings.primaryProvider }
                     .forEach(::add)
             }
+        }.filter { provider ->
+            // Providers without key/model can never succeed; trying them only burns their
+            // connect/read timeouts inside the fallback chain. AI Horde caps answers at
+            // 480 tokens, so it is skipped for long requests instead of silently truncating.
+            isVisionProviderConfigured(settings, provider) &&
+                !(provider == AiProvider.AIHORDE && maxTokens > 480)
         }
 
+        val chainDeadline = System.currentTimeMillis() + 90_000L
         var lastError: Throwable? = null
         providers.forEach { provider ->
+            if (requestCancelled) {
+                return Result.failure(lastError ?: IllegalStateException("Permintaan AI dibatalkan."))
+            }
+            if (System.currentTimeMillis() > chainDeadline) {
+                return Result.failure(
+                    lastError
+                        ?: IllegalStateException("Waktu tunggu AI habis (90 detik). Coba lagi atau matikan fallback.")
+                )
+            }
             val attempt = runCatching {
                 val output = when (provider) {
                     AiProvider.OPENROUTER -> requestOpenRouter(settings, personalizedInstruction, text, temperature, maxTokens)
@@ -400,6 +433,9 @@ object AiClient {
         val deadline = System.currentTimeMillis() + 120_000L
         while (System.currentTimeMillis() < deadline) {
             Thread.sleep(1_500L)
+            if (requestCancelled) {
+                throw IllegalStateException("Permintaan AI dibatalkan.")
+            }
             val status = getJson(
                 "https://aihorde.net/api/v2/generate/text/status/$requestId",
                 headers
@@ -744,9 +780,17 @@ object AiClient {
     }
 
     private fun nineRouterChatUrl(baseUrl: String): String {
-        // 9Router dashboard commonly runs on :20128 while authenticated OpenAI-compatible
-        // API traffic is exposed by the gateway on :20130. This mirrors AI Ads Lab.
-        var clean = baseUrl.trim().ifBlank { "http://43.159.50.231:20130/v1" }.trimEnd('/')
+        // The historical gateway default was plain HTTP on a raw IP, which Android blocks
+        // outright (cleartextTrafficPermitted="false") — every request failed before
+        // connecting. There is no HTTPS listener on that host, so the caller must supply
+        // an HTTPS base URL explicitly instead of a default that can never work.
+        var clean = baseUrl.trim().trimEnd('/')
+        require(clean.startsWith("https://", ignoreCase = true)) {
+            "Base URL 9Router wajib HTTPS (HTTP polos diblokir Android). Isi di Pengaturan › Model AI."
+        }
+        require(URL(clean).protocol.equals("https", ignoreCase = true)) {
+            "Base URL 9Router harus memakai HTTPS."
+        }
         clean = clean.replace(Regex(":20128(?=/|$)"), ":20130")
         return when {
             clean.endsWith("/chat/completions", ignoreCase = true) -> clean

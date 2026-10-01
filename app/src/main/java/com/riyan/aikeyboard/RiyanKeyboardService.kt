@@ -20,7 +20,9 @@ import android.media.AudioManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.Parcelable
 import android.os.SystemClock
+import android.view.ViewOutlineProvider
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.text.InputType
@@ -266,10 +268,16 @@ class RiyanKeyboardService : InputMethodService() {
             suggestionBar.visibility = View.VISIBLE
         }
     }
+    // Glass UI: translucent key faces so the theme/photo shows through the keyboard.
+    private val glassKeyAlpha = 74
+    private val glassSpecialAlpha = 116
+    private val glassDeleteAlpha = 148
+
     private var bg = Color.rgb(18, 18, 23)
-    private var keyBg = Color.rgb(50, 50, 60)
-    private var specialKeyBg = Color.rgb(43, 68, 80)
-    private var pressedKeyBg = Color.rgb(93, 74, 196)
+    private var keyBg = Color.argb(glassKeyAlpha, 255, 255, 255)
+    private var specialKeyBg = Color.argb(glassSpecialAlpha, 12, 12, 16)
+    private var deleteKeyBg = Color.argb(glassDeleteAlpha, 205, 42, 42)
+    private var pressedKeyBg = Color.argb(168, 96, 72, 214)
     private var purple = Color.rgb(89, 68, 196)
     private var keyTextColor = Color.WHITE
     private var keyNumberColor = Color.WHITE
@@ -392,7 +400,11 @@ class RiyanKeyboardService : InputMethodService() {
 
         keyboardPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(0, 0, 0, 0)
+            // Glass kartu papan ketik hitam: satu kartu transparan membungkus semua baris
+            // tombol, dipotong rapi mengikuti sudut kartu.
+            setPadding(dp(3), dp(2), dp(3), dp(2))
+            background = roundedBackground(Color.argb(96, 8, 8, 14), 16f)
+            clipToOutline = true
         }
         root.addView(keyboardPanel, LinearLayout.LayoutParams(-1, 0, 1f))
         addBottomBrandBar()
@@ -405,8 +417,21 @@ class RiyanKeyboardService : InputMethodService() {
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
+        // A stale compose flag from the AI/browser panel used to silently route host-app
+        // keystrokes into an invisible internal editor; every input session starts clean.
+        aiComposeActive = false
+        searchComposeActive = false
+        searchWebComposeActive = false
         loadPreferences()
         if (automaticCapitalizationEnabled) updateAutomaticShift()
+        if (!restarting) {
+            // New editor: never carry the previous app's emoji/clipboard/symbols page,
+            // caps lock, or manual shift into it.
+            mode = KeyboardMode.LETTERS
+            emojiPage = 0
+            capsLock = false
+            shift = false
+        }
         if (clipboardHistoryEnabled) addCurrentClipboardToHistory()
         if (::root.isInitialized) {
             applyRootHeight()
@@ -414,6 +439,13 @@ class RiyanKeyboardService : InputMethodService() {
             refreshSuggestionsSoon()
         }
         consumePendingScanResult()
+    }
+
+    override fun onFinishInputView(finishingInput: Boolean, discardedText: Parcelable?) {
+        super.onFinishInputView(finishingInput, discardedText)
+        aiComposeActive = false
+        searchComposeActive = false
+        searchWebComposeActive = false
     }
 
     override fun onWindowShown() {
@@ -542,9 +574,12 @@ class RiyanKeyboardService : InputMethodService() {
         enterActionEnabled = prefs.getBoolean("enter_action_enabled", false)
         val palette = KeyboardTheme.palette(prefs)
         bg = palette.background
-        keyBg = palette.key
-        specialKeyBg = palette.specialKey
-        pressedKeyBg = palette.pressedKey
+        // Glass UI: the requested look overrides the palette's opaque key colors so every
+        // theme renders translucent faces; accents/pressed keep the theme's hue.
+        keyBg = Color.argb(glassKeyAlpha, 255, 255, 255)
+        specialKeyBg = Color.argb(glassSpecialAlpha, 12, 12, 16)
+        deleteKeyBg = Color.argb(glassDeleteAlpha, 205, 42, 42)
+        pressedKeyBg = Color.argb(168, Color.red(palette.pressedKey), Color.green(palette.pressedKey), Color.blue(palette.pressedKey))
         purple = palette.accent
         keyTextColor = palette.text
         keyNumberColor = palette.numberText
@@ -562,14 +597,15 @@ class RiyanKeyboardService : InputMethodService() {
         val palette = KeyboardTheme.palette(prefs)
         root.background = KeyboardTheme.background(this, prefs, palette)
         if (::utilityBar.isInitialized) {
-            utilityBar.setBackgroundColor(keyBg)
+            // Glass kartu hitam: bar utilitas & saran transparan di atas tema.
+            utilityBar.background = roundedBackground(Color.argb(104, 8, 8, 14), 12f)
             for (index in 0 until utilityBar.childCount) {
                 val child = utilityBar.getChildAt(index)
-                if (child !== suggestionBar) child.setBackgroundColor(keyBg)
+                if (child !== suggestionBar) child.background = roundedBackground(Color.argb(104, 8, 8, 14), 12f)
             }
         }
         if (::suggestionBar.isInitialized) {
-            suggestionBar.setBackgroundColor(keyBg)
+            suggestionBar.background = roundedBackground(Color.argb(104, 8, 8, 14), 10f)
         }
         if (::bottomBrandBar.isInitialized) {
             bottomBrandBar.setBackgroundColor(if (themeUsesPhoto) Color.TRANSPARENT else bg)
@@ -600,7 +636,11 @@ class RiyanKeyboardService : InputMethodService() {
         aiPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(5), dp(4), dp(5), dp(4))
-            background = roundedStrokedBackground(Color.BLACK, 12f, purple, 2)
+            // Glass kartu obrolan hitam; clipToOutline memotong semua isi mengikuti sudut
+            // kartu sehingga background tidak lagi bocor keluar bingkai obrolan.
+            background = roundedStrokedBackground(Color.argb(122, 8, 8, 14), 14f, purple, 2)
+            outlineProvider = ViewOutlineProvider.BACKGROUND
+            clipToOutline = true
             visibility = View.GONE
             clipChildren = true
             clipToPadding = true
@@ -620,6 +660,10 @@ class RiyanKeyboardService : InputMethodService() {
         }, LinearLayout.LayoutParams(0, headerControlHeight, 1f).apply {
             rightMargin = dp(4)
         })
+        header.addView(aiPanelButton("Batal") {
+            AiClient.cancelActiveRequest()
+            aiStatus.text = "Permintaan AI dibatalkan."
+        }, LinearLayout.LayoutParams(dp(58), headerControlHeight))
         header.addView(aiPanelButton("Hapus") {
             conversationHistory.clear()
             pendingText = null
@@ -642,13 +686,15 @@ class RiyanKeyboardService : InputMethodService() {
         aiAnswer = TextView(this).apply {
             text = "Jawaban AI akan muncul di sini."
             textSize = if (isLandscape()) 12f else 14f
-            setTextColor(Color.rgb(224, 222, 231))
-            setPadding(dp(7), dp(5), dp(7), dp(4))
-            typeface = aiRegularTypeface
+            setTextColor(Color.rgb(246, 245, 252))
+            setPadding(dp(9), dp(7), dp(9), dp(7))
             setOnClickListener { insertPendingResult() }
         }
         aiAnswerScroll = ScrollView(this).apply {
-            setBackgroundColor(Color.BLACK)
+            // Glass hitam dengan sudut bulat + clip: kotak jawaban tidak lagi persegi
+            // yang menyembul keluar bingkai kartu obrolan.
+            background = roundedBackground(Color.argb(112, 0, 0, 0), 12f)
+            clipToOutline = true
             addView(aiAnswer, ViewGroup.LayoutParams(-1, -2))
         }
         aiPanel.addView(aiAnswerScroll, LinearLayout.LayoutParams(-1, dp(aiAnswerHeightDp())).apply { topMargin = dp(3) })
@@ -656,7 +702,7 @@ class RiyanKeyboardService : InputMethodService() {
         val composeCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(4), dp(2), dp(4), dp(2))
-            background = roundedStrokedBackground(Color.rgb(14, 14, 16), 15f, purple, 2)
+            background = roundedStrokedBackground(Color.argb(96, 0, 0, 0), 15f, purple, 2)
         }
         aiInput = EditText(this).apply {
             hint = "Ketik pesan untuk AI…"
@@ -664,11 +710,10 @@ class RiyanKeyboardService : InputMethodService() {
             maxLines = 3
             minLines = 1
             setTextColor(Color.WHITE)
-            setHintTextColor(Color.rgb(137, 134, 146))
+            setHintTextColor(Color.rgb(178, 176, 188))
             showSoftInputOnFocus = false
             setPadding(dp(8), 0, dp(8), 0)
             background = null
-            typeface = aiRegularTypeface
             setOnClickListener { aiComposeActive = true }
             setOnFocusChangeListener { _, hasFocus -> aiComposeActive = hasFocus }
         }
@@ -683,10 +728,9 @@ class RiyanKeyboardService : InputMethodService() {
             text = activeProviderLabel()
             textSize = if (isLandscape()) 9f else 11f
             maxLines = 1
-            setTextColor(Color.LTGRAY)
+            setTextColor(Color.rgb(228, 227, 238))
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(5), 0, dp(3), 0)
-            typeface = aiRegularTypeface
         }
         composeFooter.addView(aiStatus, LinearLayout.LayoutParams(0, dp(aiComposeFooterHeightDp()), 1f))
         composeFooter.addView(aiPanelButton("Pakai", primary = true) { insertPendingResult() }, LinearLayout.LayoutParams(dp(58), dp(aiComposeFooterHeightDp())))
@@ -1754,7 +1798,12 @@ class RiyanKeyboardService : InputMethodService() {
 
     private fun keyView(spec: KeySpec): View {
         val isSpecial = spec.label.length > 2 || spec.label in listOf("⇧", "⇪", "⌫", "↵", "🔍", "➤", "→", "←", "✓", "◀", "▶")
-        val normalColor = if (isSpecial) specialKeyBg else keyBg
+        // Glass scheme: backspace gets its own translucent red; the rest follow the
+        // white-glass (letters) / black-glass (special) faces.
+        val normalColor = when (spec.label) {
+            "⌫" -> deleteKeyBg
+            else -> if (isSpecial) specialKeyBg else keyBg
+        }
         val referenceLargeKey = spec.label in listOf(
             "⇧", "⇪", "⌫", "?123", "↵", "✓", "➤", "→", "←", "🔍"
         )
@@ -1771,9 +1820,10 @@ class RiyanKeyboardService : InputMethodService() {
             setBackgroundColor(Color.TRANSPARENT)
         }
 
-        // Deep lower shadow makes the cap visibly float above the photo/theme.
+        // Softer under-shadow: with translucent glass faces, an opaque dark slab would
+        // read as a black box behind the key instead of a floating edge.
         frame.addView(View(this).apply {
-            background = roundedBackground(Color.argb(190, 4, 4, 7), 22f)
+            background = roundedBackground(Color.argb(96, 0, 0, 0), 22f)
         }, FrameLayout.LayoutParams(-1, -1).apply {
             setMargins(dp(2), dp(4), dp(1), 0)
         })
@@ -1944,14 +1994,18 @@ class RiyanKeyboardService : InputMethodService() {
         )
         return GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, colors).apply {
             cornerRadius = dpFloat(11f)
-            setStroke(dp(if (pressed) 3 else 2), keyBorderColor)
+            // Translucent white rim keeps the glass look; the opaque purple border made
+            // translucent faces read like solid keys again.
+            setStroke(dp(if (pressed) 3 else 2), Color.argb(150, 255, 255, 255))
         }
     }
 
     private fun mixColor(first: Int, second: Int, secondRatio: Float): Int {
         val ratio = secondRatio.coerceIn(0f, 1f)
         val inverse = 1f - ratio
-        return Color.rgb(
+        // Preserve the face's alpha so translucent glass gradients stay translucent.
+        return Color.argb(
+            Color.alpha(first),
             (Color.red(first) * inverse + Color.red(second) * ratio).toInt(),
             (Color.green(first) * inverse + Color.green(second) * ratio).toInt(),
             (Color.blue(first) * inverse + Color.blue(second) * ratio).toInt()
@@ -2051,7 +2105,12 @@ class RiyanKeyboardService : InputMethodService() {
         minimumHeight = 0
         setPadding(dp(3), 0, dp(3), 0)
         setTextColor(Color.WHITE)
-        background = roundedBackground(if (label in listOf("➤", "↑", "Pakai")) purple else Color.rgb(50, 50, 60), 8f)
+        background = roundedStrokedBackground(
+            if (label in listOf("➤", "↑", "Pakai")) purple else Color.argb(52, 255, 255, 255),
+            8f,
+            if (label in listOf("➤", "↑", "Pakai")) Color.rgb(137, 105, 243) else Color.argb(165, 255, 255, 255),
+            1
+        )
         setOnClickListener {
             keyFeedback(this, longPress = false)
             action()
@@ -2072,11 +2131,10 @@ class RiyanKeyboardService : InputMethodService() {
         minimumHeight = 0
         setPadding(dp(3), 0, dp(3), 0)
         setTextColor(Color.WHITE)
-        typeface = aiBoldTypeface
         background = roundedStrokedBackground(
-            if (primary) purple else Color.rgb(49, 48, 58),
+            if (primary) purple else Color.argb(52, 255, 255, 255),
             10f,
-            if (primary) Color.rgb(137, 105, 243) else Color.rgb(70, 68, 82),
+            if (primary) Color.rgb(137, 105, 243) else Color.argb(165, 255, 255, 255),
             1
         )
         setOnClickListener {
@@ -2524,6 +2582,7 @@ class RiyanKeyboardService : InputMethodService() {
         voiceFallback = Runnable { completeVoiceQuery(cleanTranscript, generation) }
             .also { handler.postDelayed(it, 5000) }
         if (voiceCorrectionRunning.compareAndSet(false, true)) {
+            AiClient.clearCancellation()
             voiceExecutor.execute {
                 val result = try { AiClient.correctVoiceSearch(settings, cleanTranscript).getOrNull()?.text }
                     catch (_: Exception) { null }
@@ -4090,6 +4149,7 @@ resultCard.bringToFront()
                 }.getOrNull()
 
                 val visualUrl: String? = null // Brave Search remains the embedded search surface.
+                AiClient.clearCancellation()
                 val result = if (encoded.isNullOrBlank()) {
                     Result.failure<AiResponse>(IllegalStateException("Foto kamera gagal disiapkan."))
                 } else {
@@ -4166,6 +4226,7 @@ resultCard.bringToFront()
                 check(prepared.compress(Bitmap.CompressFormat.JPEG, 88, output))
                 android.util.Base64.encodeToString(output.toByteArray(), android.util.Base64.NO_WRAP)
             }.getOrNull()
+            AiClient.clearCancellation()
             val visualUrl: String? = null // Brave Search remains the embedded search surface.
             val result = if (encoded.isNullOrBlank()) {
                 Result.failure<AiResponse>(IllegalStateException("Gambar galeri gagal disiapkan."))
@@ -4879,7 +4940,7 @@ private fun selectedImageSearchUrl(query: String): String {
             tabiBaseUrl = prefs.getString("tabi_base_url", "https://tabitoken.com").orEmpty(),
             tabiModel = prefs.getString("tabi_model", "claude-opus-5").orEmpty(),
             nineRouterApiKey = prefs.getString("9router_api_key", "").orEmpty(),
-            nineRouterBaseUrl = prefs.getString("9router_base_url", "http://43.159.50.231:20130/v1").orEmpty(),
+            nineRouterBaseUrl = prefs.getString("9router_base_url", "").orEmpty(),
             nineRouterModel = prefs.getString("9router_model", "cc/claude-sonnet-4-20250514").orEmpty(),
             bluesMindsApiKey = prefs.getString("bluesminds_api_key", "").orEmpty(),
             bluesMindsBaseUrl = prefs.getString("bluesminds_base_url", "https://api.bluesminds.com/v1").orEmpty(),
@@ -4933,6 +4994,7 @@ private fun selectedImageSearchUrl(query: String): String {
         aiAnswer.text = "Menunggu jawaban…"
 
         thread {
+            AiClient.clearCancellation()
             val result = AiClient.transform(aiSettings(), action, input)
             aiStatus.post {
                 result.onSuccess { response ->
@@ -4967,6 +5029,7 @@ private fun selectedImageSearchUrl(query: String): String {
         aiComposeActive = false
         aiInput.clearFocus()
         thread {
+            AiClient.clearCancellation()
             val result = AiClient.chat(aiSettings(), prompt, appContext, history)
             aiStatus.post {
                 result.onSuccess { response ->

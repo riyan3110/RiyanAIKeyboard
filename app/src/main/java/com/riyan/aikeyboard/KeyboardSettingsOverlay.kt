@@ -503,7 +503,7 @@ class KeyboardSettingsOverlay(
             .putString("tabi_base_url", draft.tabiBaseUrl.trim().ifBlank { "https://tabitoken.com" })
             .putString("tabi_model", draft.tabiModel.trim().ifBlank { "claude-opus-5" })
             .putString("9router_api_key", draft.nineRouterKey.trim())
-            .putString("9router_base_url", draft.nineRouterBaseUrl.trim().ifBlank { "http://43.159.50.231:20130/v1" })
+            .putString("9router_base_url", draft.nineRouterBaseUrl.trim())
             .putString("9router_model", draft.nineRouterModel.trim().ifBlank { "cc/claude-sonnet-4-20250514" })
             .putString("bluesminds_api_key", draft.bluesMindsKey.trim())
             .putString("bluesminds_base_url", draft.bluesMindsBaseUrl.trim().ifBlank { "https://api.bluesminds.com/v1" })
@@ -566,7 +566,7 @@ class KeyboardSettingsOverlay(
         tabiBaseUrl = prefs.getString("tabi_base_url", "https://tabitoken.com").orEmpty(),
         tabiModel = prefs.getString("tabi_model", "claude-opus-5").orEmpty(),
         nineRouterKey = prefs.getString("9router_api_key", "").orEmpty(),
-        nineRouterBaseUrl = prefs.getString("9router_base_url", "http://43.159.50.231:20130/v1").orEmpty(),
+        nineRouterBaseUrl = prefs.getString("9router_base_url", "").orEmpty(),
         nineRouterModel = prefs.getString("9router_model", "cc/claude-sonnet-4-20250514").orEmpty(),
         bluesMindsKey = prefs.getString("bluesminds_api_key", "").orEmpty(),
         bluesMindsBaseUrl = prefs.getString("bluesminds_base_url", "https://api.bluesminds.com/v1").orEmpty(),
@@ -616,7 +616,7 @@ class KeyboardSettingsOverlay(
         tabiBaseUrl = "https://tabitoken.com",
         tabiModel = "claude-opus-5",
         nineRouterKey = draft.nineRouterKey,
-        nineRouterBaseUrl = "http://43.159.50.231:20130/v1",
+        nineRouterBaseUrl = "",
         nineRouterModel = "cc/claude-sonnet-4-20250514",
         bluesMindsKey = draft.bluesMindsKey,
         bluesMindsBaseUrl = "https://api.bluesminds.com/v1",

@@ -232,7 +232,10 @@ internal object PrivateProviderStore {
         val legacy = listOf(
             Legacy("openrouter", "OpenRouter", "https://openrouter.ai/api/v1", "openrouter_api_key", null, "openrouter_model", "openrouter/free"),
             Legacy("tabiai", "TabiAI", "https://tabitoken.com", "tabi_api_key", "tabi_base_url", "tabi_model"),
-            Legacy("9router", "9Router", "http://43.159.50.231:20130/v1", "9router_api_key", "9router_base_url", "9router_model", "cc/claude-sonnet-4-20250514"),
+            // No HTTP default: the old raw-IP gateway is cleartext-only and Android blocks
+            // it, so importing it produced a profile that could never connect. Blank means
+            // the migration filter drops it unless the user stored their own URL.
+            Legacy("9router", "9Router", "", "9router_api_key", "9router_base_url", "9router_model", "cc/claude-sonnet-4-20250514"),
             Legacy("bluesminds", "BluesMinds", "https://api.bluesminds.com/v1", "bluesminds_api_key", "bluesminds_base_url", "bluesminds_model", "deepseek-ai/deepseek-v4-flash"),
             Legacy("bai", "B.AI", "https://api.b.ai/v1", "bai_api_key", "bai_base_url", "bai_model", "gpt-5.2"),
             Legacy("vyceai", "VyceAI", "https://vyceai.com/v1", "vyceai_api_key", "vyceai_base_url", "vyceai_model", "gpt-5.6-luna"),
