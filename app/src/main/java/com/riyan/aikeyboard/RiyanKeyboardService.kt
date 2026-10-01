@@ -462,6 +462,10 @@ class RiyanKeyboardService : InputMethodService() {
     override fun onWindowHidden() {
         cancelVoiceSearch()
         stopEmbeddedScanner(keepRequested = true)
+        // Keyboard closed: the next open must start from the letters page, never from
+        // wherever the user happened to be (clipboard/symbols/emoji).
+        mode = KeyboardMode.LETTERS
+        emojiPage = 0
         super.onWindowHidden()
     }
 
@@ -2221,9 +2225,12 @@ class RiyanKeyboardService : InputMethodService() {
         val text = clipboardManager.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString()?.trim().orEmpty()
         if (text.isBlank()) return
         val clips = loadClips().toMutableList()
-        val existing = clips.firstOrNull { it.text == text }
-        clips.removeAll { it.text == text }
-        clips.add(0, ClipEntry(text.take(MAX_CLIP_LENGTH), existing?.pinned == true))
+        val clipped = text.take(MAX_CLIP_LENGTH)
+        // Compare on the clipped form: a previously stored (older, shorter-cap) entry of
+        // the same copy must be replaced, not kept alongside the fresh full-length one.
+        val existing = clips.firstOrNull { it.text == clipped }
+        clips.removeAll { it.text == clipped }
+        clips.add(0, ClipEntry(clipped, existing?.pinned == true))
         val kept = clips.filter { it.pinned } + clips.filterNot { it.pinned }.take(MAX_CLIPS)
         saveClips(kept.distinctBy { it.text }.take(MAX_CLIPS + 5))
     }
@@ -5080,7 +5087,9 @@ private fun selectedImageSearchUrl(query: String): String {
         private const val MAX_REPLY_CONTEXT_CHARS = 28_000
         private const val MAX_REFERENCE_URLS = 6
         private const val MAX_CLIPS = 12
-        private const val MAX_CLIP_LENGTH = 1200
+        // 1200 chopped long copies (articles, addresses, code) mid-sentence; 20k chars
+        // keeps full long texts while 12 entries stay a few hundred KB at worst.
+        private const val MAX_CLIP_LENGTH = 20000
         private const val MAX_LEARNED_SUGGESTIONS = 180
         private const val SCAN_READY_KEY = "camera_search_ready"
         private const val SCAN_NONCE_KEY = "camera_search_nonce"
