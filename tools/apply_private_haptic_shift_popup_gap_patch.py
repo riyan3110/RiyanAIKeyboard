@@ -184,6 +184,16 @@ s = replace_once(
 
         val previewWidth = dp(if (isLandscape()) 48 else 58)
         val previewHeight = dp(if (isLandscape()) 58 else 72)
+        // Popup follows the pressed key's own glass color: white for letters, black for
+        // specials, red for delete.
+        val faceColor = when (spec.label) {
+            "⌫" -> deleteKeyBg
+            else -> if (spec.label.length > 2 || spec.label in listOf("⇧", "⇪", "↵", "🔍", "➤", "→", "←", "✓", "◀", "▶")) {
+                specialKeyBg
+            } else {
+                keyBg
+            }
+        }
         val previewLabel = TextView(this).apply {
             text = spec.label
             textSize = if (spec.label.length > 2) 25f else 31f
@@ -191,15 +201,8 @@ s = replace_once(
             setTextColor(keyTextColor)
             setTypeface(typeface, Typeface.BOLD)
             setShadowLayer(dpFloat(1.5f), 0f, dpFloat(1f), Color.BLACK)
-            background = GradientDrawable(
-                GradientDrawable.Orientation.TOP_BOTTOM,
-                intArrayOf(
-                    Color.rgb(79, 76, 90),
-                    Color.rgb(41, 39, 49)
-                )
-            ).apply {
+            background = referenceBubbleKeyBackground(pressed = true, baseColor = faceColor).apply {
                 cornerRadius = dpFloat(18f)
-                setStroke(dp(2), keyBorderColor)
             }
         }
         val popup = PopupWindow(previewLabel, previewWidth, previewHeight, false).apply {

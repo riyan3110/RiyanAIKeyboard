@@ -602,20 +602,28 @@ class RiyanKeyboardService : InputMethodService() {
         if (!::root.isInitialized) return
         val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
         val palette = KeyboardTheme.palette(prefs)
-        root.background = KeyboardTheme.background(this, prefs, palette)
+        // The wallpaper stops at the keyboard block: the AI chat and browser surface sit
+        // on a neutral dark canvas, and the theme itself only paints the key rows below
+        // the utility bar.
+        root.setBackgroundColor(Color.rgb(14, 14, 18))
+        if (::keyboardPanel.isInitialized) {
+            keyboardPanel.background = KeyboardTheme.background(this, prefs, palette)
+        }
+        if (::utilityBarFrame.isInitialized) utilityBarFrame.setBackgroundColor(Color.TRANSPARENT)
         if (::utilityBar.isInitialized) {
-            // Glass kartu hitam: bar utilitas & saran transparan di atas tema.
-            utilityBar.background = roundedBackground(Color.argb(104, 8, 8, 14), 12f)
+            // Full-width flat glass strip — no rounded pill shapes in the bar.
+            val barColor = Color.argb(118, 8, 8, 14)
+            utilityBar.setBackgroundColor(barColor)
             for (index in 0 until utilityBar.childCount) {
                 val child = utilityBar.getChildAt(index)
-                if (child !== suggestionBar) child.background = roundedBackground(Color.argb(104, 8, 8, 14), 12f)
+                if (child !== suggestionBar) child.setBackgroundColor(barColor)
             }
         }
         if (::suggestionBar.isInitialized) {
-            suggestionBar.background = roundedBackground(Color.argb(104, 8, 8, 14), 10f)
+            suggestionBar.setBackgroundColor(Color.argb(118, 8, 8, 14))
         }
         if (::bottomBrandBar.isInitialized) {
-            bottomBrandBar.setBackgroundColor(if (themeUsesPhoto) Color.TRANSPARENT else bg)
+            bottomBrandBar.setBackgroundColor(Color.rgb(14, 14, 18))
         }
     }
 
@@ -859,7 +867,7 @@ class RiyanKeyboardService : InputMethodService() {
     private fun addUtilityBar() {
         val barHeight = dp(utilityHeightDp())
         utilityBarFrame = FrameLayout(this).apply {
-            setBackgroundColor(keyBg)
+            setBackgroundColor(Color.TRANSPARENT)
             clipChildren = false
             clipToPadding = false
         }
@@ -868,7 +876,8 @@ class RiyanKeyboardService : InputMethodService() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(2), dp(2), dp(2), 0)
-            setBackgroundColor(keyBg)
+            // Flat full-width glass strip, not rounded button-shaped pills.
+            setBackgroundColor(Color.argb(118, 8, 8, 14))
         }
 
         utilityBar.addView(toolbarButton("✦ AI", dp(50)) { toggleAiPanel() })
@@ -900,7 +909,7 @@ class RiyanKeyboardService : InputMethodService() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(1), 0, dp(1), 0)
-            setBackgroundColor(keyBg)
+            setBackgroundColor(Color.argb(118, 8, 8, 14))
             visibility = View.VISIBLE
         }
         utilityBar.addView(suggestionBar, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
@@ -1414,18 +1423,32 @@ class RiyanKeyboardService : InputMethodService() {
     }
 
     private fun renderNumbers() {
-        addSimpleSymbolRow(listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0"))
-        addSimpleSymbolRow(listOf("@", "#", "Rp", "_", "&", "-", "+", "(", ")", "/"))
-        addSimpleSymbolRow(listOf("*", "\"", "'", ":", ";", "!", "?", "%", "×", "÷"))
-        val last = listOf("=", "<", ">", "[", "]", "{", "}", "°", "%").map { symbolSpec(it) }.toMutableList()
-        last += KeySpec("⌫", weight = 1.72f, action = { deleteOne() }, longAction = { deleteWord() })
-        addRow(last)
+        // Phone-style alphanumeric keypad: a big digit with its letter group on each key.
+        val padRows = listOf(
+            listOf("1" to "", "2" to "ABC", "3" to "DEF"),
+            listOf("4" to "GHI", "5" to "JKL", "6" to "MNO"),
+            listOf("7" to "PQRS", "8" to "TUV", "9" to "WXYZ")
+        )
+        val sideWeight = 1.45f
+        padRows.forEach { row ->
+            val specs = mutableListOf(KeySpec("", weight = sideWeight, action = {}))
+            row.forEach { (digit, letters) ->
+                specs += KeySpec(
+                    label = digit,
+                    alternate = letters.ifBlank { null },
+                    action = { commit(digit) }
+                )
+            }
+            specs += KeySpec("", weight = sideWeight, action = {})
+            addRow(specs)
+        }
+
         addRow(
             listOf(
                 KeySpec("Kursor", weight = 1.58f, action = { mode = KeyboardMode.CURSOR; renderKeyboard() }),
                 KeySpec("ABC", weight = 1.15f, action = { mode = KeyboardMode.LETTERS; renderKeyboard() }),
-                KeySpec(",", action = { commitPunctuation(",") }),
-                KeySpec("spasi", weight = 2.2f, action = { commitSpace() }),
+                KeySpec("⌫", weight = 1.4f, action = { deleteOne() }, longAction = { deleteWord() }),
+                KeySpec("0", action = { commit("0") }),
                 KeySpec(".", action = { commitPunctuation(".") }),
                 KeySpec(enterKeyLabel(), weight = 1.62f, action = { pressEnter() })
             )
@@ -2010,7 +2033,20 @@ class RiyanKeyboardService : InputMethodService() {
     }
 
     private fun referenceBubbleKeyBackground(pressed: Boolean, baseColor: Int): GradientDrawable {
-        val face = if (pressed) pressedKeyBg else baseColor
+        // Pressed keeps the key's own hue (lifted brighter + more opaque) so glass-white
+        // letters, glass-black specials, and glass-red delete all read correctly while
+        // held — no shared purple pressed color.
+        val face = if (pressed) {
+            val lifted = mixColor(baseColor, Color.WHITE, 0.14f)
+            Color.argb(
+                minOf(236, Color.alpha(baseColor) + 84),
+                Color.red(lifted),
+                Color.green(lifted),
+                Color.blue(lifted)
+            )
+        } else {
+            baseColor
+        }
         val colors = intArrayOf(
             mixColor(face, Color.WHITE, if (pressed) 0.16f else 0.10f),
             face,
