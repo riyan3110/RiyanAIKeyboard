@@ -28,6 +28,22 @@ jobs:
           path: ~/.riyan-ai-keyboard/debug.keystore
           key: ${{ runner.os }}-riyan-ai-debug-keystore-v2
 
+      - name: Prefer pinned signing key from repository secret
+        shell: bash
+        env:
+          PINNED_KEYSTORE: ${{ secrets.RIYAN_DEBUG_KEYSTORE_BASE64 }}
+        run: |
+          # The Actions cache can be evicted, which silently minted a new signing key and
+          # locked installed users out of updates. The repo secret is the source of truth;
+          # cache/generation only applies when the secret is absent.
+          if [ -n "$PINNED_KEYSTORE" ]; then
+            mkdir -p "$HOME/.riyan-ai-keyboard"
+            printf '%s' "$PINNED_KEYSTORE" | base64 -d > "$HOME/.riyan-ai-keyboard/debug.keystore"
+            echo "Pinned keystore restored from RIYAN_DEBUG_KEYSTORE_BASE64."
+          else
+            echo "RIYAN_DEBUG_KEYSTORE_BASE64 is not set; keeping cache/generated key."
+          fi
+
       - name: Create stable debug signing key when missing
         shell: bash
         run: |

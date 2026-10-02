@@ -97,11 +97,11 @@ jobs:
           t = t.replace('if (detailGroups < 2) return false', 'if (detailGroups < 4) return false')
           t = t.replace('''        if (!hasClothing) return false
 
-        var detailGroups = 0''', '''        if (!hasClothing) return false
-        val hasView = has("\\b(front view|rear view|back view|side view|from behind|facing camera|facing away)\\b")
-        if (!hasView) return false
+          var detailGroups = 0''', '''        if (!hasClothing) return false
+          val hasView = has("\\b(front view|rear view|back view|side view|from behind|facing camera|facing away)\\b")
+          if (!hasView) return false
 
-        var detailGroups = 0''')
+          var detailGroups = 0''')
           v.write_text(t)
 
           e = Path('app/src/main/java/com/riyan/aikeyboard/VisionSearchEvidence.kt')
