@@ -91,7 +91,7 @@ class KeyboardSettingsOverlay(
     )
 
     private val accent = Color.rgb(96, 72, 214)
-    private val panel = Color.argb(236, 250, 250, 253)
+    private val panel = Color.argb(247, 250, 250, 253)
     private val card = Color.argb(150, 255, 255, 255)
     private val field = Color.argb(215, 255, 255, 255)
     private val muted = Color.rgb(96, 92, 112)

@@ -653,7 +653,7 @@ class RiyanKeyboardService : InputMethodService() {
             setPadding(dp(7), dp(6), dp(7), dp(7))
             // Glass kartu obrolan hitam; clipToOutline memotong semua isi mengikuti sudut
             // kartu sehingga background tidak lagi bocor keluar bingkai obrolan.
-            background = roundedStrokedBackground(Color.argb(122, 8, 8, 14), 14f, purple, 2)
+            background = roundedStrokedBackground(Color.argb(198, 10, 10, 16), 14f, purple, 2)
             outlineProvider = ViewOutlineProvider.BACKGROUND
             clipToOutline = true
             visibility = View.GONE
@@ -708,7 +708,7 @@ class RiyanKeyboardService : InputMethodService() {
         aiAnswerScroll = ScrollView(this).apply {
             // Glass hitam dengan sudut bulat + clip: kotak jawaban tidak lagi persegi
             // yang menyembul keluar bingkai kartu obrolan.
-            background = roundedBackground(Color.argb(112, 0, 0, 0), 12f)
+            background = roundedBackground(Color.argb(150, 0, 0, 0), 12f)
             clipToOutline = true
             addView(aiAnswer, ViewGroup.LayoutParams(-1, -2))
         }
@@ -717,7 +717,7 @@ class RiyanKeyboardService : InputMethodService() {
         val composeCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(5), dp(3), dp(5), dp(3))
-            background = roundedStrokedBackground(Color.argb(96, 0, 0, 0), 15f, purple, 2)
+            background = roundedStrokedBackground(Color.argb(140, 0, 0, 0), 12f, purple, 2)
         }
         aiInput = EditText(this).apply {
             hint = "Ketik pesan untuk AI…"
@@ -880,30 +880,36 @@ class RiyanKeyboardService : InputMethodService() {
             setBackgroundColor(Color.argb(118, 8, 8, 14))
         }
 
-        utilityBar.addView(toolbarButton("✦ AI", dp(50)) { toggleAiPanel() })
-        utilityBar.addView(toolbarButton("⌨", dp(36)) {
+        utilityBar.addView(toolbarButton("✦ AI", dp(42)) { toggleAiPanel() })
+        utilityBar.addView(toolbarButton("⌨", dp(30)) {
             aiComposeActive = false
             mode = KeyboardMode.LETTERS
             renderKeyboard()
         })
-        utilityBar.addView(toolbarButton("😊", dp(36)) {
+        utilityBar.addView(toolbarButton("😊", dp(30)) {
             aiComposeActive = false
             emojiPage = 0
             mode = KeyboardMode.EMOJI
             renderKeyboard()
         })
-        utilityBar.addView(toolbarButton("📋", dp(36)) {
+        utilityBar.addView(toolbarButton("📋", dp(30)) {
             aiComposeActive = false
             addCurrentClipboardToHistory()
             mode = KeyboardMode.CLIPBOARD
             renderKeyboard()
         })
-        // The cursor pad is reached via the ?123 → 123 → Kursor cycle; removing the bar
-        // button shifts the camera/resize controls left and gives suggestions more room.
+        // The cursor pad is back in the bar as an icon; the ?123 cycle stays keypad/symbols only.
         utilityBar.addView(
-            toolbarIconButton(R.drawable.ic_camera_modern, "Kamera penelusuran", dp(36)) { launchScanner() }
+            toolbarIconButton(R.drawable.ic_cursor_modern, "Pad kursor", dp(30)) {
+                aiComposeActive = false
+                mode = KeyboardMode.CURSOR
+                renderKeyboard()
+            }
         )
-        utilityBar.addView(toolbarButton("↕", dp(34)) { toggleResizePanel() })
+        utilityBar.addView(
+            toolbarIconButton(R.drawable.ic_camera_modern, "Kamera penelusuran", dp(30)) { launchScanner() }
+        )
+        utilityBar.addView(toolbarButton("↕", dp(28)) { toggleResizePanel() })
 
         suggestionBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -914,7 +920,7 @@ class RiyanKeyboardService : InputMethodService() {
         }
         utilityBar.addView(suggestionBar, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
         utilityBar.addView(
-            toolbarIconButton(R.drawable.ic_settings_modern, "Pengaturan", dp(38)) {
+            toolbarIconButton(R.drawable.ic_settings_modern, "Pengaturan", dp(32)) {
                 startActivity(
                     Intent(this@RiyanKeyboardService, SettingsActivity::class.java)
                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -1348,7 +1354,7 @@ class RiyanKeyboardService : InputMethodService() {
 
         addRow(
             listOf(
-                KeySpec("?123", weight = 1.62f, action = { mode = KeyboardMode.SYMBOLS; renderKeyboard() }),
+                KeySpec("?123", weight = 1.62f, action = { mode = KeyboardMode.NUMBERS; renderKeyboard() }),
                 KeySpec(",", action = { commitPunctuation(",") }),
                 KeySpec("spasi", weight = 4.45f, action = { commitSpace() }),
                 KeySpec(".", action = { commitPunctuation(".") }),
@@ -1445,7 +1451,7 @@ class RiyanKeyboardService : InputMethodService() {
 
         addRow(
             listOf(
-                KeySpec("Kursor", weight = 1.58f, action = { mode = KeyboardMode.CURSOR; renderKeyboard() }),
+                KeySpec("Simbol", weight = 1.58f, action = { mode = KeyboardMode.SYMBOLS; renderKeyboard() }),
                 KeySpec("ABC", weight = 1.15f, action = { mode = KeyboardMode.LETTERS; renderKeyboard() }),
                 KeySpec("⌫", weight = 1.4f, action = { deleteOne() }, longAction = { deleteWord() }),
                 KeySpec("0", action = { commit("0") }),
@@ -2133,15 +2139,15 @@ class RiyanKeyboardService : InputMethodService() {
         widthPx: Int,
         action: () -> Unit
     ) = premiumIconButton(iconRes, description, action).apply {
-        setPadding(dp(10), dp(8), dp(10), dp(8))
+        setPadding(dp(5), dp(5), dp(5), dp(5))
         layoutParams = LinearLayout.LayoutParams(widthPx, dp(utilityHeightDp())).apply {
-            setMargins(dp(2), dp(3), dp(2), dp(3))
+            setMargins(dp(1), dp(2), dp(1), dp(2))
         }
     }
 
     private fun toolbarButton(label: String, widthPx: Int, action: () -> Unit) = Button(this).apply {
         text = label
-        textSize = if (label.length > 2) 12f else 18f
+        textSize = if (label.length > 2) 11f else 17f
         isAllCaps = false
         minWidth = 0
         minimumWidth = 0
