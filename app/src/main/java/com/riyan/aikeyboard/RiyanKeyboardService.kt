@@ -1343,7 +1343,10 @@ class RiyanKeyboardService : InputMethodService() {
     private fun renderLetters() {
         if (numberRowEnabled) {
             val numbers = "1234567890"
-            val numberAlt = "!@#$%^&*()"
+            // Digit alternates must not repeat the letters' long-press symbols, so the
+            // keyboard as a whole covers more characters (superscripts, currencies,
+            // fractions, degree).
+            val numberAlt = "\u00b9\u00b2\u00b3\u20ac\u00a5\u00a2\u00bc\u00bd\u00be\u00b0"
             addRow(numbers.mapIndexed { index, c ->
                 KeySpec(
                     c.toString(),
@@ -1441,34 +1444,51 @@ class RiyanKeyboardService : InputMethodService() {
     }
 
     private fun renderNumbers() {
-        // Phone-style alphanumeric keypad: a big digit with its letter group on each key.
+        // Phone-style alphanumeric keypad. Grid: digits 1-9, then [Simbol|0|⌫] with the 0
+        // directly under the 8 and the delete directly above the enter, then [ABC|spasi|↵].
+        // Long-pressing digits inserts the unique symbols shared with the QWERTY number row.
+        val digitSymbols = mapOf(
+            "1" to "¹", "2" to "²", "3" to "³",
+            "4" to "€", "5" to "¥", "6" to "¢",
+            "7" to "¼", "8" to "½", "9" to "¾",
+            "0" to "°"
+        )
         val padRows = listOf(
             listOf("1" to "", "2" to "ABC", "3" to "DEF"),
             listOf("4" to "GHI", "5" to "JKL", "6" to "MNO"),
             listOf("7" to "PQRS", "8" to "TUV", "9" to "WXYZ")
         )
         val sideWeight = 1.45f
+        fun padSpec(digit: String, caption: String?): KeySpec = KeySpec(
+            label = digit,
+            alternate = caption ?: digitSymbols[digit],
+            action = { commit(digit) },
+            longAction = { digitSymbols[digit]?.let(::commit) }
+        )
         padRows.forEach { row ->
             val specs = mutableListOf(KeySpec("", weight = sideWeight, action = {}))
-            row.forEach { (digit, letters) ->
-                specs += KeySpec(
-                    label = digit,
-                    alternate = letters.ifBlank { null },
-                    action = { commit(digit) }
-                )
-            }
+            row.forEach { (digit, letters) -> specs += padSpec(digit, letters.ifBlank { null }) }
             specs += KeySpec("", weight = sideWeight, action = {})
             addRow(specs)
         }
 
+        // 0 directly below the 8; backspace directly above the enter key.
         addRow(
             listOf(
-                KeySpec("Simbol", weight = 1.58f, action = { mode = KeyboardMode.SYMBOLS; renderKeyboard() }),
-                KeySpec("ABC", weight = 1.15f, action = { mode = KeyboardMode.LETTERS; renderKeyboard() }),
-                KeySpec("⌫", weight = 1.4f, action = { deleteOne() }, longAction = { deleteWord() }),
-                KeySpec("0", action = { commit("0") }),
-                KeySpec(".", action = { commitPunctuation(".") }),
-                KeySpec(enterKeyLabel(), weight = 1.62f, action = { pressEnter() })
+                KeySpec("", weight = sideWeight, action = {}),
+                KeySpec("Simbol", action = { mode = KeyboardMode.SYMBOLS; renderKeyboard() }),
+                padSpec("0", null),
+                KeySpec("⌫", action = { deleteOne() }, longAction = { deleteWord() }),
+                KeySpec("", weight = sideWeight, action = {})
+            )
+        )
+        addRow(
+            listOf(
+                KeySpec("", weight = sideWeight, action = {}),
+                KeySpec("ABC", action = { mode = KeyboardMode.LETTERS; renderKeyboard() }),
+                KeySpec("spasi", action = { commitSpace() }),
+                KeySpec(enterKeyLabel(), action = { pressEnter() }),
+                KeySpec("", weight = sideWeight, action = {})
             )
         )
     }
