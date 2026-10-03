@@ -414,7 +414,7 @@ class KeyboardSettingsOverlay(
             val colorCard = cardContainer()
             colorCard.addView(section("Warna Manual", compact = true))
             colorCard.addView(description("Atur setiap bagian secara terpisah. Ketuk tombol untuk membuka pemilih warna manual."))
-            colorCard.addView(colorSettingButton("Bingkai", draft.themeBorderColor) { anchor ->
+            colorCard.addView(colorSettingButton("Bingkai", draft.themeBorderColor, "Garis tepi (bingkai) pada setiap tombol keyboard.") { anchor ->
                 ManualColorPickerDialog.show(anchor, "Bingkai", parseDraftColor(draft.themeBorderColor, accent)) { picked ->
                     val hex = colorToHex(picked)
                     draft.themeMode = KeyboardTheme.MODE_CUSTOM
@@ -423,21 +423,21 @@ class KeyboardSettingsOverlay(
                     renderBody()
                 }
             })
-            colorCard.addView(colorSettingButton("Warna tombol", draft.themeKeyColor) { anchor ->
+            colorCard.addView(colorSettingButton("Warna tombol", draft.themeKeyColor, "Latar tombol huruf, angka, dan simbol.") { anchor ->
                 ManualColorPickerDialog.show(anchor, "Warna tombol", parseDraftColor(draft.themeKeyColor, Color.rgb(50, 50, 60))) { picked ->
                     draft.themeMode = KeyboardTheme.MODE_CUSTOM
                     draft.themeKeyColor = colorToHex(picked)
                     renderBody()
                 }
             })
-            colorCard.addView(colorSettingButton("Warna huruf", draft.themeLetterColor) { anchor ->
+            colorCard.addView(colorSettingButton("Warna huruf", draft.themeLetterColor, "Tulisan huruf pada tombol keyboard.") { anchor ->
                 ManualColorPickerDialog.show(anchor, "Warna huruf", parseDraftColor(draft.themeLetterColor, Color.WHITE)) { picked ->
                     draft.themeMode = KeyboardTheme.MODE_CUSTOM
                     draft.themeLetterColor = colorToHex(picked)
                     renderBody()
                 }
             })
-            colorCard.addView(colorSettingButton("Warna angka", draft.themeNumberColor) { anchor ->
+            colorCard.addView(colorSettingButton("Warna angka", draft.themeNumberColor, "Angka di baris angka dan halaman keypad.") { anchor ->
                 ManualColorPickerDialog.show(anchor, "Warna angka", parseDraftColor(draft.themeNumberColor, Color.WHITE)) { picked ->
                     draft.themeMode = KeyboardTheme.MODE_CUSTOM
                     draft.themeNumberColor = colorToHex(picked)
@@ -808,22 +808,23 @@ class KeyboardSettingsOverlay(
             String.format("#%06X", 0xFFFFFF and color)
         }
 
-    private fun colorSettingButton(label: String, colorValue: String, onPick: (View) -> Unit): LinearLayout {
+    private fun colorSettingButton(label: String, colorValue: String, description: String, onPick: (View) -> Unit): LinearLayout {
         val selectedColor = parseDraftColor(colorValue, accent)
         val row = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(10), dp(7), dp(10), dp(7))
-            background = rounded(field, 9f, selectedColor, 2)
+            // Neutral visible frame on every manual color row; the swatch carries the hue.
+            background = rounded(field, 10f, Color.argb(120, 30, 24, 62), 2)
             setOnClickListener { onPick(this) }
         }
         row.addView(View(context).apply {
             background = rounded(selectedColor, 7f, Color.argb(120, 30, 24, 62), 1)
         }, LinearLayout.LayoutParams(dp(30), dp(30)).apply { rightMargin = dp(10) })
         row.addView(TextView(context).apply {
-            text = "$label\n${colorToHex(selectedColor)}"
+            text = "$label  ·  ${colorToHex(selectedColor)}\n$description"
             textSize = 11.5f
-            setTextColor(Color.WHITE)
+            setTextColor(Color.rgb(26, 25, 34))
             setTypeface(typeface, Typeface.BOLD)
         }, LinearLayout.LayoutParams(0, dp(42), 1f))
         row.addView(TextView(context).apply {

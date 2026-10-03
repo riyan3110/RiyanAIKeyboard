@@ -1851,7 +1851,23 @@ class RiyanKeyboardService : InputMethodService() {
             maxLines = 2
             setTextColor(Color.WHITE)
             setPadding(dp(9), 0, dp(9), 0)
-            background = roundedBackground(Color.rgb(43, 43, 52), 8f)
+            // Every pinned text gets its own cycling tint + soft frame so pins are easy
+            // to spot at a glance; unpinned items stay on the neutral dark chip.
+            val pinPalette = intArrayOf(
+                Color.argb(150, 255, 179, 0),
+                Color.argb(140, 124, 77, 255),
+                Color.argb(140, 0, 200, 120),
+                Color.argb(140, 41, 182, 246),
+                Color.argb(140, 240, 98, 146),
+                Color.argb(140, 0, 172, 155)
+            )
+            val tint = if (clip.pinned) pinPalette[index % pinPalette.size] else Color.rgb(43, 43, 52)
+            background = roundedStrokedBackground(
+                tint,
+                8f,
+                if (clip.pinned) Color.argb(110, 255, 255, 255) else Color.argb(50, 255, 255, 255),
+                1
+            )
             setOnClickListener { commitToTarget(clip.text) }
         }, LinearLayout.LayoutParams(0, dp(44), 1f))
         row.addView(compactButton("🗑") {
