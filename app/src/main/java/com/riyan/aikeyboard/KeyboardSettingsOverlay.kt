@@ -76,6 +76,7 @@ class KeyboardSettingsOverlay(
         var keyTextSize: Int,
         var keyBoxScale: Int,
         var longPressMs: Int,
+        var keyBoxScaleVertical: Int,
         var numberRow: Boolean,
         var longPressSymbols: Boolean,
         var sound: Boolean,
@@ -477,6 +478,7 @@ class KeyboardSettingsOverlay(
 
         val keyCard = cardContainer()
         keyCard.addView(sliderRow("Ukuran Teks Tombol", 16, 28, draft.keyTextSize, " sp") { draft.keyTextSize = it })
+        keyCard.addView(sliderRow("Skala Kotak Vertikal (Maks. 150%)", 65, 150, draft.keyBoxScaleVertical, "%") { draft.keyBoxScaleVertical = it })
         keyCard.addView(sliderRow("Skala Kotak Tombol (Maks. 150%)", 65, 150, draft.keyBoxScale, "%") { draft.keyBoxScale = it })
         keyCard.addView(sliderRow("Durasi Tekan Lama", 200, 900, draft.longPressMs, " ms") { draft.longPressMs = it })
         body.addView(keyCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
@@ -538,6 +540,7 @@ class KeyboardSettingsOverlay(
             .putInt("key_text_size_sp", draft.keyTextSize)
             .putInt("key_box_scale_percent", draft.keyBoxScale)
             .putInt("long_press_ms", draft.longPressMs)
+            .putInt("key_box_scale_vertical_percent", draft.keyBoxScaleVertical)
             .putBoolean("number_row_enabled", draft.numberRow)
             .putBoolean("long_press_symbols_enabled", draft.longPressSymbols)
             .putBoolean("sound_enabled", draft.sound)
@@ -600,6 +603,7 @@ class KeyboardSettingsOverlay(
         keyTextSize = prefs.getInt("key_text_size_sp", 21),
         keyBoxScale = prefs.getInt("key_box_scale_percent", 100),
         longPressMs = prefs.getInt("long_press_ms", 450),
+        keyBoxScaleVertical = prefs.getInt("key_box_scale_vertical_percent", 100),
         numberRow = prefs.getBoolean("number_row_enabled", true),
         longPressSymbols = prefs.getBoolean("long_press_symbols_enabled", true),
         sound = prefs.getBoolean("sound_enabled", false),
@@ -650,6 +654,7 @@ class KeyboardSettingsOverlay(
         keyTextSize = 21,
         keyBoxScale = 100,
         longPressMs = 450,
+        keyBoxScaleVertical = 100,
         numberRow = true,
         longPressSymbols = true,
         sound = false,

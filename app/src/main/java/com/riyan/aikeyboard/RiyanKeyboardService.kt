@@ -232,6 +232,7 @@ class RiyanKeyboardService : InputMethodService() {
     private var heightPreferenceKey = HEIGHT_PORTRAIT_KEY
     private var keyTextSizeSp = 21f
     private var keyBoxScale = 1f
+    private var keyBoxScaleVertical = 1f
     private var touchTolerancePx = 0f
     private var instantKeyResponse = false
     private var fastTypingMode = false
@@ -565,6 +566,7 @@ class RiyanKeyboardService : InputMethodService() {
             .coerceIn(minKeyboardHeightDp, maxKeyboardHeightDp)
         keyTextSizeSp = prefs.getInt("key_text_size_sp", 21).coerceIn(16, 28).toFloat()
         keyBoxScale = prefs.getInt("key_box_scale_percent", 100).coerceIn(65, 150) / 100f
+        keyBoxScaleVertical = prefs.getInt("key_box_scale_vertical_percent", 100).coerceIn(65, 150) / 100f
         val sensitivity = prefs.getInt("touch_sensitivity", 100).coerceIn(20, 400)
         touchTolerancePx = dpFloat(12f + sensitivity * 0.18f)
         instantKeyResponse = true
@@ -1572,7 +1574,7 @@ class RiyanKeyboardService : InputMethodService() {
     private fun cursorDirectionButton(label: String, keyCode: Int): View {
         val frame = FrameLayout(this).apply {
             scaleX = keyBoxScale
-            scaleY = keyBoxScale
+            scaleY = keyBoxScaleVertical
             isClickable = true
             isFocusable = false
             background = roundedStrokedBackground(specialKeyBg, 11f, Color.rgb(181, 86, 249), 2)
@@ -4110,7 +4112,7 @@ resultCard.bringToFront()
         val prepared = scaleBitmapForLens(source, 1280)
         val jpeg = runCatching {
             val output = ByteArrayOutputStream()
-            check(prepared.compress(Bitmap.CompressFormat.JPEG, 88, output))
+            check(prepared.compress(Bitmap.CompressFormat.JPEG, 92, output))
             output.toByteArray()
         }.getOrNull()
         if (prepared !== source && !prepared.isRecycled) prepared.recycle()
@@ -4249,7 +4251,7 @@ resultCard.bringToFront()
             // Search exactly what the user is aiming at. PreviewView already reflects CameraX zoom,
             // then we crop to the scanner target so background outside the aimed area cannot dominate.
             val targetFrame = cropScannerVisualTarget(frame)
-            val prepared = scaleBitmapForAiVision(targetFrame, 1440)
+            val prepared = scaleBitmapForAiVision(targetFrame, 1600)
             val localHint = buildString {
                 if (scannerCameraZoomRatio > 1.05f) {
                     append("Pengguna sedang memperbesar area target sekitar %.1fx. ".format(scannerCameraZoomRatio))
@@ -4264,7 +4266,7 @@ resultCard.bringToFront()
             thread {
                 val encoded = runCatching {
                     val output = java.io.ByteArrayOutputStream()
-                    check(prepared.compress(Bitmap.CompressFormat.JPEG, 88, output))
+                    check(prepared.compress(Bitmap.CompressFormat.JPEG, 92, output))
                     android.util.Base64.encodeToString(output.toByteArray(), android.util.Base64.NO_WRAP)
                 }.getOrNull()
 
@@ -4340,10 +4342,10 @@ resultCard.bringToFront()
 
             val frame = cropGalleryForCurrentZoom(decodedFrame)
             if (frame !== decodedFrame && !decodedFrame.isRecycled) decodedFrame.recycle()
-            val prepared = scaleBitmapForAiVision(frame, 1440)
+            val prepared = scaleBitmapForAiVision(frame, 1600)
             val encoded = runCatching {
                 val output = ByteArrayOutputStream()
-                check(prepared.compress(Bitmap.CompressFormat.JPEG, 88, output))
+                check(prepared.compress(Bitmap.CompressFormat.JPEG, 92, output))
                 android.util.Base64.encodeToString(output.toByteArray(), android.util.Base64.NO_WRAP)
             }.getOrNull()
             AiClient.clearCancellation()

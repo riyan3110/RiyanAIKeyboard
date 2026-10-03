@@ -100,7 +100,7 @@ new_frame_scale = '''            val horizontalScale = when {
                 else -> (keyBoxScale * 0.94f).coerceAtMost(1.18f)
             }
             scaleX = horizontalScale
-            scaleY = (keyBoxScale * if (referenceLargeKey) 0.96f else 0.90f).coerceAtMost(1.22f)
+            scaleY = (keyBoxScaleVertical * if (referenceLargeKey) 0.96f else 0.90f).coerceAtMost(1.22f)
 '''
 text = replace_once(text, old_frame_scale, new_frame_scale, "narrow space key at high scale")
 SERVICE.write_text(text)
