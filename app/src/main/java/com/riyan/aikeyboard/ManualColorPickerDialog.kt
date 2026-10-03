@@ -21,10 +21,11 @@ object ManualColorPickerDialog {
     fun show(anchor: View, title: String, initialColor: Int, onSelected: (Int) -> Unit) {
         val context = anchor.context
         val hsv = FloatArray(3)
-        Color.colorToHSV(initialColor, hsv)
+        Color.colorToHSV(initialColor or -0x1000000, hsv)
         var hue = hsv[0]
         var saturation = hsv[1]
         var value = hsv[2]
+        var alpha = (Color.alpha(initialColor) / 255f).coerceIn(0f, 1f)
 
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -65,6 +66,33 @@ object ManualColorPickerDialog {
         }
         root.addView(sv, LinearLayout.LayoutParams(-1, dp(context, 220)))
 
+        // Manual transparency level for this color (glass effect), separate from hue/sat/val.
+        val alphaLabelRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(context, 10), 0, 0)
+        }
+        alphaLabelRow.addView(TextView(context).apply {
+            text = "Transparansi"
+            textSize = 13f
+            setTextColor(Color.WHITE)
+        }, LinearLayout.LayoutParams(0, dp(context, 26), 1f))
+        val alphaPercentText = TextView(context).apply {
+            textSize = 13f
+            gravity = Gravity.RIGHT
+            setTextColor(Color.rgb(200, 196, 214))
+        }
+        alphaLabelRow.addView(alphaPercentText, LinearLayout.LayoutParams(-2, dp(context, 26)))
+        root.addView(alphaLabelRow)
+
+        val alphaBar = AlphaBarView(context).apply {
+            currentAlpha = alpha
+            baseColor = Color.HSVToColor(floatArrayOf(hue, saturation, value))
+        }
+        root.addView(alphaBar, LinearLayout.LayoutParams(-1, dp(context, 38)).apply {
+            bottomMargin = dp(context, 4)
+        })
+
         val previewRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -81,11 +109,19 @@ object ManualColorPickerDialog {
         previewRow.addView(hexText, LinearLayout.LayoutParams(0, dp(context, 40), 1f))
         root.addView(previewRow)
 
-        fun currentColor(): Int = Color.HSVToColor(floatArrayOf(hue, saturation, value))
+        fun currentColor(): Int =
+            Color.HSVToColor((alpha * 255f).roundToInt().coerceIn(0, 255), floatArrayOf(hue, saturation, value))
+
         fun refreshPreview() {
             val color = currentColor()
             swatch.background = rounded(color, 8f, Color.WHITE, 1, context)
-            hexText.text = String.format("#%06X", 0xFFFFFF and color)
+            val percent = (alpha * 100f).roundToInt()
+            hexText.text = if (percent < 100) {
+                String.format("#%08X", color.toLong() and 0xFFFFFFFFL) + " · $percent%"
+            } else {
+                String.format("#%06X", 0xFFFFFF and color)
+            }
+            alphaPercentText.text = "$percent%"
         }
         refreshPreview()
 
@@ -93,11 +129,19 @@ object ManualColorPickerDialog {
             hue = selectedHue
             sv.currentHue = selectedHue
             sv.invalidate()
+            alphaBar.baseColor = Color.HSVToColor(floatArrayOf(hue, saturation, value))
+            alphaBar.invalidate()
             refreshPreview()
         }
         sv.onChanged = { selectedSaturation, selectedValue ->
             saturation = selectedSaturation
             value = selectedValue
+            alphaBar.baseColor = Color.HSVToColor(floatArrayOf(hue, saturation, value))
+            alphaBar.invalidate()
+            refreshPreview()
+        }
+        alphaBar.onChanged = { selectedAlpha ->
+            alpha = selectedAlpha
             refreshPreview()
         }
 
@@ -218,6 +262,70 @@ object ManualColorPickerDialog {
             currentValue = (1f - event.y / height.coerceAtLeast(1)).coerceIn(0f, 1f)
             invalidate()
             onChanged?.invoke(currentSaturation, currentValue)
+            return true
+        }
+    }
+
+    private class AlphaBarView(context: Context) : View(context) {
+        var currentAlpha = 1f
+            set(value) { field = value.coerceIn(0f, 1f); invalidate() }
+        var baseColor = Color.WHITE
+            set(value) { field = value or -0x1000000; invalidate() }
+        var onChanged: ((Float) -> Unit)? = null
+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val check = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = dp(context, 4).toFloat()
+            color = Color.WHITE
+        }
+        private val shadow = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = dp(context, 7).toFloat()
+            color = Color.BLACK
+        }
+
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            if (width <= 0 || height <= 0) return
+            // Checkerboard underneath so translucency is visible on light and dark cells.
+            val cell = (height / 4f).coerceAtLeast(6f)
+            check.color = Color.rgb(70, 70, 76)
+            var y = 0f
+            var row = 0
+            while (y < height) {
+                var x = 0f
+                var col = 0
+                while (x < width) {
+                    if ((row + col) % 2 == 0) {
+                        canvas.drawRect(x, y, x + cell, y + cell, check)
+                    }
+                    x += cell
+                    col++
+                }
+                y += cell
+                row++
+            }
+            paint.shader = LinearGradient(
+                0f, 0f, width.toFloat(), 0f,
+                Color.argb(0, Color.red(baseColor), Color.green(baseColor), Color.blue(baseColor)),
+                baseColor,
+                Shader.TileMode.CLAMP
+            )
+            val cy = height / 2f
+            val radius = height * 0.16f
+            canvas.drawRoundRect(0f, cy - radius, width.toFloat(), cy + radius, radius, radius, paint)
+            paint.shader = null
+            val x = currentAlpha * width
+            canvas.drawCircle(x, cy, height * 0.32f, shadow)
+            canvas.drawCircle(x, cy, height * 0.32f, ring)
+        }
+
+        override fun onTouchEvent(event: MotionEvent): Boolean {
+            if (event.action != MotionEvent.ACTION_DOWN && event.action != MotionEvent.ACTION_MOVE) return true
+            val selected = (event.x.coerceIn(0f, width.toFloat()) / width.coerceAtLeast(1))
+            currentAlpha = selected
+            onChanged?.invoke(selected)
             return true
         }
     }

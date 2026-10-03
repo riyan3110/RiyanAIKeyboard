@@ -800,7 +800,13 @@ class KeyboardSettingsOverlay(
     private fun parseDraftColor(value: String, fallback: Int): Int =
         runCatching { Color.parseColor(KeyboardTheme.normalizeColor(value)) }.getOrDefault(fallback)
 
-    private fun colorToHex(color: Int): String = String.format("#%06X", 0xFFFFFF and color)
+    private fun colorToHex(color: Int): String =
+        if (Color.alpha(color) < 255) {
+            // Keep the user's transparency level: #AARRGGBB survives the prefs round trip.
+            String.format("#%08X", color.toLong() and 0xFFFFFFFFL)
+        } else {
+            String.format("#%06X", 0xFFFFFF and color)
+        }
 
     private fun colorSettingButton(label: String, colorValue: String, onPick: (View) -> Unit): LinearLayout {
         val selectedColor = parseDraftColor(colorValue, accent)

@@ -283,6 +283,10 @@ class RiyanKeyboardService : InputMethodService() {
     private var keyNumberColor = Color.WHITE
     private var keyBorderColor = Color.rgb(181, 86, 249)
     private var themeUsesPhoto = false
+    // The fixed white/black glass faces belong to the default TRANSPARENT theme only.
+    // Any other theme — especially Warna Manual (MODE_CUSTOM) — must render its own
+    // palette colors, including any transparency level picked in the color dialog.
+    private var glassUiActive = true
 
     private val aiRegularTypeface by lazy {
         ResourcesCompat.getFont(this, R.font.kalam_regular)
@@ -581,12 +585,20 @@ class RiyanKeyboardService : InputMethodService() {
         enterActionEnabled = prefs.getBoolean("enter_action_enabled", false)
         val palette = KeyboardTheme.palette(prefs)
         bg = palette.background
-        // Glass UI: the requested look overrides the palette's opaque key colors so every
-        // theme renders translucent faces; accents/pressed keep the theme's hue.
-        keyBg = Color.argb(glassKeyAlpha, 255, 255, 255)
-        specialKeyBg = Color.argb(glassSpecialAlpha, 12, 12, 16)
+        // Glass UI: the requested look applies to the default TRANSPARENT theme only.
+        // Manual colors (Warna Manual / MODE_CUSTOM) and other themes keep their own
+        // palette values — including any alpha picked with the new transparency slider.
+        glassUiActive = prefs.getString("keyboard_theme_mode", KeyboardTheme.MODE_TRANSPARENT) == KeyboardTheme.MODE_TRANSPARENT
+        if (glassUiActive) {
+            keyBg = Color.argb(glassKeyAlpha, 255, 255, 255)
+            specialKeyBg = Color.argb(glassSpecialAlpha, 12, 12, 16)
+            pressedKeyBg = Color.argb(168, Color.red(palette.pressedKey), Color.green(palette.pressedKey), Color.blue(palette.pressedKey))
+        } else {
+            keyBg = palette.key
+            specialKeyBg = palette.specialKey
+            pressedKeyBg = palette.pressedKey
+        }
         deleteKeyBg = Color.argb(glassDeleteAlpha, 205, 42, 42)
-        pressedKeyBg = Color.argb(168, Color.red(palette.pressedKey), Color.green(palette.pressedKey), Color.blue(palette.pressedKey))
         purple = palette.accent
         keyTextColor = palette.text
         keyNumberColor = palette.numberText
@@ -2060,9 +2072,12 @@ class RiyanKeyboardService : InputMethodService() {
         )
         return GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, colors).apply {
             cornerRadius = dpFloat(11f)
-            // Translucent white rim keeps the glass look; the opaque purple border made
-            // translucent faces read like solid keys again.
-            setStroke(dp(if (pressed) 3 else 2), Color.argb(150, 255, 255, 255))
+            // Translucent white rim keeps the glass look on the TRANSPARENT theme; any
+            // other theme shows its own border color so Warna Manual works.
+            setStroke(
+                dp(if (pressed) 3 else 2),
+                if (glassUiActive) Color.argb(150, 255, 255, 255) else keyBorderColor
+            )
         }
     }
 

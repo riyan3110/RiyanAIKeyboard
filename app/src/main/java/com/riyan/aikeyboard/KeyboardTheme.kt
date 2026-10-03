@@ -186,7 +186,10 @@ object KeyboardTheme {
     private fun blend(first: Int, second: Int, secondRatio: Float): Int {
         val ratio = secondRatio.coerceIn(0f, 1f)
         val inverse = 1f - ratio
-        return Color.rgb(
+        // Preserve the first color's alpha so manual colors picked with the
+        // transparency slider stay translucent through custom-theme blending.
+        return Color.argb(
+            Color.alpha(first),
             (Color.red(first) * inverse + Color.red(second) * ratio).toInt(),
             (Color.green(first) * inverse + Color.green(second) * ratio).toInt(),
             (Color.blue(first) * inverse + Color.blue(second) * ratio).toInt()
