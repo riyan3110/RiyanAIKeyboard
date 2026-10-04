@@ -223,6 +223,10 @@ class RiyanKeyboardService : InputMethodService() {
     private var lastShiftTapAt = 0L
     private var pendingText: String? = null
     private var emojiPage = 0
+    // Cursor-page selection mode: ON means the arrow pad extends a text selection
+    // (underline the picked text) instead of just moving the caret.
+    private var cursorSelectionMode = false
+    private var cursorSelectionAnchor = -1
     private var searchQuery = ""
     private var searchUrl = ""
     private var lastConsumedScanNonce = 0L
@@ -1348,7 +1352,7 @@ class RiyanKeyboardService : InputMethodService() {
             // Digit alternates must not repeat the letters' long-press symbols, so the
             // keyboard as a whole covers more characters (superscripts, currencies,
             // fractions, degree).
-            val numberAlt = "\u00b9\u00b2\u00b3\u20ac\u00a5\u00a2\u00bc\u00bd\u00be\u00b0"
+            val numberAlt = "/$\u00b3\u20ac\u00a5\u00a2\u00bc\u00bd\u00be\u00b0"
             addRow(numbers.mapIndexed { index, c ->
                 KeySpec(
                     c.toString(),
@@ -1450,7 +1454,7 @@ class RiyanKeyboardService : InputMethodService() {
         // directly under the 8 and the delete directly above the enter, then [ABC|spasi|↵].
         // Long-pressing digits inserts the unique symbols shared with the QWERTY number row.
         val digitSymbols = mapOf(
-            "1" to "¹", "2" to "²", "3" to "³",
+            "1" to "/", "2" to "$", "3" to "³",
             "4" to "€", "5" to "¥", "6" to "¢",
             "7" to "¼", "8" to "½", "9" to "¾",
             "0" to "°"
@@ -1474,23 +1478,22 @@ class RiyanKeyboardService : InputMethodService() {
             addRow(specs)
         }
 
-        // 0 directly below the 8; backspace directly above the enter key.
+        // 0 stays centered directly under the 8; Simbol sits left of ABC and the
+        // backspace right of the enter key on the action row.
         addRow(
             listOf(
                 KeySpec("", weight = sideWeight, action = {}),
-                KeySpec("Simbol", action = { mode = KeyboardMode.SYMBOLS; renderKeyboard() }),
                 padSpec("0", null),
-                KeySpec("⌫", action = { deleteOne() }, longAction = { deleteWord() }),
                 KeySpec("", weight = sideWeight, action = {})
             )
         )
         addRow(
             listOf(
-                KeySpec("", weight = sideWeight, action = {}),
-                KeySpec("ABC", action = { mode = KeyboardMode.LETTERS; renderKeyboard() }),
-                KeySpec("spasi", action = { commitSpace() }),
-                KeySpec(enterKeyLabel(), action = { pressEnter() }),
-                KeySpec("", weight = sideWeight, action = {})
+                KeySpec("Simbol", weight = 1.15f, action = { mode = KeyboardMode.SYMBOLS; renderKeyboard() }),
+                KeySpec("ABC", weight = 1.15f, action = { mode = KeyboardMode.LETTERS; renderKeyboard() }),
+                KeySpec("spasi", weight = 1.8f, action = { commitSpace() }),
+                KeySpec(enterKeyLabel(), weight = 1.1f, action = { pressEnter() }),
+                KeySpec("⌫", weight = 1.15f, action = { deleteOne() }, longAction = { deleteWord() })
             )
         )
     }
@@ -1533,6 +1536,35 @@ class RiyanKeyboardService : InputMethodService() {
         addCursorDirectionRow(dPad, null, "↓" to KeyEvent.KEYCODE_DPAD_DOWN, null)
         workArea.addView(dPad, LinearLayout.LayoutParams(0, -1, 1f))
         keyboardPanel.addView(workArea, LinearLayout.LayoutParams(-1, 0, 1f))
+
+        // Selection tools: the arrow pad becomes a text selector when Pilih Teks is ON,
+        // then Salin copies the highlighted range and Tempel pastes the clipboard.
+        val selectTools = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(dp(3), dp(2), dp(3), dp(2))
+        }
+        selectTools.addView(
+            compactButton(if (cursorSelectionMode) "Pilih Teks: ON" else "Pilih Teks: OFF") {
+                cursorSelectionMode = !cursorSelectionMode
+                if (cursorSelectionMode) {
+                    cursorSelectionAnchor = runCatching {
+                        currentInputConnection?.getExtractedText(ExtractedTextRequest(), 0)
+                    }.getOrNull()?.selectionStart ?: -1
+                }
+                renderKeyboard()
+            },
+            LinearLayout.LayoutParams(0, dp(40), 1.4f)
+        )
+        selectTools.addView(
+            compactButton("📋 Salin") { copyCursorSelection() },
+            LinearLayout.LayoutParams(0, dp(40), 1f).apply { leftMargin = dp(4) }
+        )
+        selectTools.addView(
+            compactButton("📥 Tempel") { pasteAtCursor() },
+            LinearLayout.LayoutParams(0, dp(40), 1f).apply { leftMargin = dp(4) }
+        )
+        keyboardPanel.addView(selectTools, LinearLayout.LayoutParams(-1, dp(44)))
 
         val bottom = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1686,6 +1718,11 @@ class RiyanKeyboardService : InputMethodService() {
             moveFocusedWebInputCursor(keyCode)
             return
         }
+        if (cursorSelectionMode) {
+            extendCursorSelection(keyCode)
+            refreshSuggestionsSoon()
+            return
+        }
         val internalInput = activeInternalInput()
         if (internalInput != null) {
             val editable = internalInput.text
@@ -1696,6 +1733,65 @@ class RiyanKeyboardService : InputMethodService() {
             moveTargetCursor(keyCode)
         }
         refreshSuggestionsSoon()
+    }
+
+    /** Arrow pad in selection mode: extend the highlighted range from a fixed anchor. */
+    private fun extendCursorSelection(keyCode: Int) {
+        val internalInput = activeInternalInput()
+        if (internalInput != null) {
+            val editable = internalInput.text
+            val selStart = internalInput.selectionStart.coerceIn(0, editable.length)
+            val selEnd = internalInput.selectionEnd.coerceIn(0, editable.length)
+            if (cursorSelectionAnchor < 0) cursorSelectionAnchor = selStart
+            val cursor = if (cursorSelectionAnchor <= selStart) selStart else selEnd
+            val target = cursorTarget(editable.toString(), cursor, cursor, keyCode) ?: cursor
+            internalInput.setSelection(cursorSelectionAnchor.coerceIn(0, editable.length), target)
+        } else {
+            val ic = currentInputConnection ?: return
+            val extracted = runCatching { ic.getExtractedText(ExtractedTextRequest(), 0) }.getOrNull()
+            val text = extracted?.text?.toString() ?: return
+            val selStart = extracted.selectionStart.coerceIn(0, text.length)
+            val selEnd = extracted.selectionEnd.coerceIn(0, text.length)
+            if (cursorSelectionAnchor < 0) cursorSelectionAnchor = selStart
+            val cursor = if (cursorSelectionAnchor <= selStart) selStart else selEnd
+            val target = cursorTarget(text, cursor, cursor, keyCode) ?: cursor
+            ic.setSelection(extracted.startOffset + cursorSelectionAnchor.coerceIn(0, text.length), extracted.startOffset + target)
+        }
+    }
+
+    private fun copyCursorSelection() {
+        val selected = activeInternalInput()?.text
+            ?.substring(
+                minOf(activeInternalInput()!!.selectionStart, activeInternalInput()!!.selectionEnd)
+                    .coerceIn(0, activeInternalInput()!!.text.length),
+                maxOf(activeInternalInput()!!.selectionStart, activeInternalInput()!!.selectionEnd)
+                    .coerceIn(0, activeInternalInput()!!.text.length)
+            )
+            ?: runCatching { currentInputConnection?.getSelectedText(0)?.toString() }.getOrNull()
+        if (selected.isNullOrBlank()) {
+            aiStatusOrToast("Tidak ada teks terseleksi. Nyalakan Pilih Teks lalu geser panah.")
+            return
+        }
+        clipboardManager.setPrimaryClip(android.content.ClipData.newPlainText("teks terseleksi", selected))
+        aiStatusOrToast("Tersalin ${selected.length} karakter.")
+    }
+
+    private fun pasteAtCursor() {
+        val text = clipboardManager.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString().orEmpty()
+        if (text.isBlank()) {
+            aiStatusOrToast("Clipboard kosong.")
+            return
+        }
+        currentInputConnection?.commitText(text, 1)
+        aiStatusOrToast("Teks ditempel.")
+    }
+
+    private fun aiStatusOrToast(message: String) {
+        if (::aiStatus.isInitialized && ::aiPanel.isInitialized && aiPanel.visibility == View.VISIBLE) {
+            aiStatus.text = message
+        } else {
+            android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun moveTargetCursor(keyCode: Int) {
