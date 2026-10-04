@@ -4906,7 +4906,7 @@ private fun selectedWebSearchUrl(query: String): String {
         handler.postDelayed(object : Runnable {
             override fun run() {
                 val pressed = lastKeyPressedViewRef?.get()?.isPressed == true
-                if (token != wordDeleteToken || !pressed) return@postDelayed
+                if (token != wordDeleteToken || !pressed) return
                 deleteWord()
                 handler.postDelayed(this, 170L)
             }
