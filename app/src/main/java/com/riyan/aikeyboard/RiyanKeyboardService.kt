@@ -668,9 +668,6 @@ class RiyanKeyboardService : InputMethodService() {
                 cornerRadius = dpFloat(24f)
             }
         }
-        if (::keyboardPanel.isInitialized) {
-            keyboardPanel.foreground = roundedStrokedBackground(Color.TRANSPARENT, 16f, keyBorderColor, 2)
-        }
     }
 
     private fun updateRootPadding(target: LinearLayout) {
@@ -976,11 +973,6 @@ class RiyanKeyboardService : InputMethodService() {
         }
 
         utilityBar.addView(toolbarButton("✦ AI", dp(50)) { toggleAiPanel() })
-        utilityBar.addView(toolbarButton("⌨", dp(30)) {
-            aiComposeActive = false
-            mode = KeyboardMode.LETTERS
-            renderKeyboard()
-        })
         utilityBar.addView(toolbarButton("😊", dp(30)) {
             aiComposeActive = false
             emojiPage = 0
@@ -1002,7 +994,9 @@ class RiyanKeyboardService : InputMethodService() {
             }
         )
         utilityBar.addView(
-            toolbarIconButton(R.drawable.ic_camera_modern, "Kamera penelusuran", dp(30)) { launchScanner() }
+            toolbarIconButton(R.drawable.ic_camera_modern, "Kamera penelusuran (buka/tutup)", dp(30)) {
+                if (searchSurfaceVisible && scannerActive) closeSearchSurface() else launchScanner()
+            }
         )
         utilityBar.addView(toolbarButton("↕", dp(28)) { toggleResizePanel() })
 
@@ -1022,6 +1016,12 @@ class RiyanKeyboardService : InputMethodService() {
                 )
             }
         )
+        // Keyboard button lives at the far right, right after the settings button.
+        utilityBar.addView(toolbarButton("⌨", dp(30)) {
+            aiComposeActive = false
+            mode = KeyboardMode.LETTERS
+            renderKeyboard()
+        })
 
         utilityBarFrame.addView(utilityBar, FrameLayout.LayoutParams(-1, barHeight))
 
@@ -2942,10 +2942,6 @@ header.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
         )
         header.addView(
             premiumIconButton(R.drawable.ic_flash_modern, "Flash kamera") { toggleScannerTorch() },
-            LinearLayout.LayoutParams(dp(38), dp(searchHeaderHeightDp())).apply { leftMargin = dp(2) }
-        )
-        header.addView(
-            premiumIconButton(R.drawable.ic_close_modern, "Tutup kamera penelusuran") { closeSearchSurface() },
             LinearLayout.LayoutParams(dp(38), dp(searchHeaderHeightDp())).apply { leftMargin = dp(2) }
         )
         content.addView(header, FrameLayout.LayoutParams(-1, dp(searchHeaderHeightDp() + 4), Gravity.TOP).apply {
