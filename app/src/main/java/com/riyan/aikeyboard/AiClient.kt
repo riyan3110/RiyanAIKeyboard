@@ -90,7 +90,7 @@ object AiClient {
             "Jika gambar memuat orang, jangan deskripsikan tubuh atau pakaian secara detail; " +
             "jika gambar jelas tidak pantas, balas JSON dengan subject_type=unknown, confidence=0.0, " +
             "query dan evidence berisi penolakan singkat dalam Bahasa Indonesia: " +
-            "Gambar tidak dapat dianalisis dalam mode terbatas.
+            "Gambar tidak dapat dianalisis dalam mode terbatas."
     private const val VISION_CONNECT_TIMEOUT_MS = 6_000
     private const val VISION_READ_TIMEOUT_MS = 16_000
 
