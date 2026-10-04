@@ -5015,46 +5015,8 @@ private fun selectedImageSearchUrl(query: String): String {
     }
 
 
-    /** View of the key currently pressed, used by the word-delete repeat loop. */
-    private var lastKeyPressedViewRef: java.lang.ref.WeakReference<View>? = null
 
-    private fun startWordDeleteRepeatIfPressed(token: Int) {
-        handler.postDelayed({
-            val pressed = lastKeyPressedViewRef?.get()?.isPressed == true
-            if (token != wordDeleteToken || !pressed) return@postDelayed
-            deleteWord()
-        }, 170L)
-    }
 
-    private fun deleteWord() {
-        if (searchWebComposeActive) {
-            deleteFromFocusedWebInput(word = true)
-            refreshSuggestionsSoon()
-            return
-        }
-        val internalInput = activeInternalInput()
-        if (internalInput != null) {
-            val editable = internalInput.text
-            val start = internalInput.selectionStart.coerceAtLeast(0)
-            val end = internalInput.selectionEnd.coerceAtLeast(0)
-            if (start != end) editable.delete(minOf(start, end), maxOf(start, end))
-            else if (start > 0) {
-                val before = editable.substring(0, start)
-                val trailing = before.takeLastWhile(Char::isWhitespace).length
-                val body = before.dropLast(trailing)
-                val count = (trailing + body.takeLastWhile { !it.isWhitespace() }.length).coerceAtLeast(1)
-                editable.delete((start - count).coerceAtLeast(0), start)
-            }
-            refreshSuggestionsSoon()
-            return
-        }
-        val ic = currentInputConnection ?: return
-        if (deleteSelectedText(ic)) { refreshSuggestionsSoon(); return }
-        val before = runCatching { ic.getTextBeforeCursor(100, 0)?.toString().orEmpty() }.getOrDefault("")
-        val count = before.takeLastWhile { !it.isWhitespace() }.length.coerceAtLeast(1)
-        repeat(count.coerceAtMost(100)) { deletePreviousCharacterCompat(ic) }
-        refreshSuggestionsSoon()
-    }
 
     private fun deletePreviousCharacterCompat(ic: InputConnection): Boolean {
         if (sendDeleteKeyEvent(ic)) return true
