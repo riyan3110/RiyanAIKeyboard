@@ -828,7 +828,7 @@ class RiyanKeyboardService : InputMethodService() {
             clipToPadding = false
             addView(searchSurfaceContent, FrameLayout.LayoutParams(-1, -1))
             // Grip: drag up/down to resize the camera-vision / browser surface.
-            addView(View(this).apply {
+            addView(View(this@RiyanKeyboardService).apply {
                 background = GradientDrawable().apply {
                     setColor(Color.argb(90, 255, 255, 255))
                     cornerRadius = dpFloat(7f)
