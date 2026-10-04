@@ -92,12 +92,12 @@ class KeyboardSettingsOverlay(
         var clipboardHistory: Boolean
     )
 
-    private val accent = Color.rgb(96, 72, 214)
-    private val panel = Color.argb(247, 250, 250, 253)
-    private val card = Color.argb(150, 255, 255, 255)
-    private val field = Color.argb(215, 255, 255, 255)
-    private val muted = Color.rgb(96, 92, 112)
-    private val border = Color.argb(90, 30, 24, 62)
+    private val accent = Color.rgb(124, 96, 255)
+    private val panel = Color.rgb(20, 20, 24)
+    private val card = Color.rgb(29, 28, 36)
+    private val field = Color.rgb(18, 17, 24)
+    private val muted = Color.rgb(155, 151, 170)
+    private val border = Color.rgb(57, 54, 70)
 
     private lateinit var body: LinearLayout
     private lateinit var tabRow: LinearLayout
@@ -150,7 +150,7 @@ class KeyboardSettingsOverlay(
         header.addView(TextView(context).apply {
             text = "⚙  Pengaturan AI Ads Keyboard"
             textSize = 16.5f
-            setTextColor(Color.rgb(86, 64, 210))
+            setTextColor(Color.rgb(140, 126, 255))
             setTypeface(typeface, Typeface.BOLD)
         }, LinearLayout.LayoutParams(0, dp(42), 1f))
         header.addView(TextView(context).apply {
@@ -158,7 +158,7 @@ class KeyboardSettingsOverlay(
             textSize = 11f
             gravity = Gravity.CENTER
             setTextColor(muted)
-            background = rounded(Color.argb(60, 40, 30, 80), 6f)
+            background = rounded(Color.rgb(48, 46, 55), 6f)
         }, LinearLayout.LayoutParams(dp(54), dp(28)).apply { rightMargin = dp(8) })
         header.addView(iconTextButton("×", dp(42)) { hidePanel() })
         column.addView(header, LinearLayout.LayoutParams(-1, dp(48)))
@@ -189,7 +189,7 @@ class KeyboardSettingsOverlay(
         footer.addView(TextView(context).apply {
             text = "Reset Bawaan"
             textSize = 12f
-            setTextColor(Color.rgb(26, 25, 34))
+            setTextColor(Color.rgb(224, 222, 232))
             setPadding(dp(4), 0, dp(4), 0)
             setOnClickListener { resetDraft() }
         }, LinearLayout.LayoutParams(0, dp(42), 1f))
@@ -220,7 +220,7 @@ class KeyboardSettingsOverlay(
                 maxLines = 1
                 ellipsize = android.text.TextUtils.TruncateAt.END
                 setTextColor(if (selected) Color.rgb(86, 64, 210) else Color.rgb(70, 66, 84))
-                background = if (selected) rounded(Color.argb(90, 96, 72, 214), 7f, accent, 1) else null
+                background = if (selected) rounded(Color.rgb(38, 34, 59), 7f, accent, 1) else null
                 setOnClickListener {
                     if (currentTab != tab) {
                         activeInput?.clearFocus()
@@ -260,7 +260,7 @@ class KeyboardSettingsOverlay(
                     gravity = Gravity.CENTER
                     textSize = 13f
                     setTextColor(if (selected) Color.rgb(60, 44, 190) else Color.rgb(26, 25, 34))
-                    background = rounded(if (selected) Color.argb(70, 96, 72, 214) else card, 10f, if (selected) accent else border, 1)
+                    background = rounded(if (selected) Color.rgb(33, 29, 55) else card, 10f, if (selected) accent else border, 1)
                     setOnClickListener {
                         draft.provider = provider
                         renderBody()
@@ -337,9 +337,9 @@ class KeyboardSettingsOverlay(
         memoryStatus = TextView(context).apply {
             text = TypingStyleMemory.summary(prefs)
             textSize = 12.5f
-            setTextColor(Color.rgb(26, 25, 34))
+            setTextColor(Color.rgb(224, 222, 232))
             setPadding(dp(10), dp(9), dp(10), dp(9))
-            background = rounded(Color.argb(215, 255, 255, 255), 8f)
+            background = rounded(Color.rgb(16, 15, 22), 8f)
         }
         statusCard.addView(memoryStatus, LinearLayout.LayoutParams(-1, -2))
         statusCard.addView(actionButton("Hapus Memori Gaya", danger = true) {
@@ -400,8 +400,8 @@ class KeyboardSettingsOverlay(
                     text = themePreviewText(label, previewColor)
                     gravity = Gravity.CENTER
                     textSize = 11.5f
-                    setTextColor(Color.rgb(26, 25, 34))
-                    background = rounded(if (selected) Color.argb(70, 96, 72, 214) else card, 12f, if (selected) accent else border, if (selected) 1 else 1)
+                    setTextColor(Color.rgb(224, 222, 232))
+                    background = rounded(if (selected) Color.rgb(31, 28, 55) else card, 12f, if (selected) accent else border, if (selected) 1 else 1)
                     setOnClickListener {
                         draft.themeMode = mode
                         renderBody()
@@ -694,7 +694,7 @@ class KeyboardSettingsOverlay(
         hint = hintText
         setText(initial)
         textSize = 12.5f
-        setTextColor(Color.rgb(26, 25, 34))
+        setTextColor(Color.rgb(224, 222, 232))
         setHintTextColor(Color.rgb(110, 106, 121))
         setPadding(dp(12), dp(6), dp(12), dp(6))
         minLines = if (multiline) 3 else 1
@@ -762,7 +762,7 @@ class KeyboardSettingsOverlay(
         row.addView(TextView(context).apply {
             text = title
             textSize = 13f
-            setTextColor(Color.rgb(26, 25, 34))
+            setTextColor(Color.rgb(224, 222, 232))
             setTypeface(typeface, Typeface.BOLD)
         }, LinearLayout.LayoutParams(0, -2, 1f))
         row.setOnClickListener { check.isChecked = !check.isChecked }
@@ -776,7 +776,7 @@ class KeyboardSettingsOverlay(
         }
         val value = TextView(context).apply {
             textSize = 12f
-            setTextColor(Color.rgb(86, 64, 210))
+            setTextColor(Color.rgb(197, 189, 255))
         }
         val slider = SeekBar(context).apply {
             this.max = max - min
@@ -817,23 +817,23 @@ class KeyboardSettingsOverlay(
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(10), dp(7), dp(10), dp(7))
             // Neutral visible frame on every manual color row; the swatch carries the hue.
-            background = rounded(field, 10f, Color.argb(120, 30, 24, 62), 2)
+            background = rounded(field, 10f, Color.argb(110, 255, 255, 255), 2)
             setOnClickListener { onPick(this) }
         }
         row.addView(View(context).apply {
-            background = rounded(selectedColor, 7f, Color.argb(120, 30, 24, 62), 1)
+            background = rounded(selectedColor, 7f, Color.argb(180, 255, 255, 255), 1)
         }, LinearLayout.LayoutParams(dp(30), dp(30)).apply { rightMargin = dp(10) })
         row.addView(TextView(context).apply {
             text = "$label  ·  ${colorToHex(selectedColor)}"
             textSize = 11.5f
-            setTextColor(Color.rgb(26, 25, 34))
+            setTextColor(Color.rgb(224, 222, 232))
             setTypeface(typeface, Typeface.BOLD)
         }, LinearLayout.LayoutParams(0, dp(42), 1f))
         row.addView(TextView(context).apply {
             text = "›"
             textSize = 25f
             gravity = Gravity.CENTER
-            setTextColor(Color.rgb(96, 92, 112))
+            setTextColor(Color.rgb(205, 199, 220))
         }, LinearLayout.LayoutParams(dp(34), dp(42)))
         row.layoutParams = LinearLayout.LayoutParams(-1, dp(58)).apply { topMargin = dp(6) }
         return row
@@ -842,7 +842,7 @@ class KeyboardSettingsOverlay(
     private fun themePreviewText(label: String, previewColor: Int): SpannableString {
         val value = SpannableString("Aa 123\n$label")
         value.setSpan(ForegroundColorSpan(previewColor), 0, 6, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-        value.setSpan(ForegroundColorSpan(Color.rgb(96, 72, 214)), 7, value.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        value.setSpan(ForegroundColorSpan(Color.WHITE), 7, value.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         return value
     }
 
@@ -850,8 +850,8 @@ class KeyboardSettingsOverlay(
         text = label
         textSize = 11.5f
         isAllCaps = false
-        setTextColor(if (danger) Color.rgb(176, 32, 52) else Color.WHITE)
-        background = rounded(if (danger) Color.rgb(255, 214, 220) else accent, 8f, if (danger) Color.rgb(214, 90, 110) else accent, 1)
+        setTextColor(if (danger) Color.rgb(255, 110, 145) else Color.WHITE)
+        background = rounded(if (danger) Color.rgb(42, 22, 31) else accent, 8f, if (danger) Color.rgb(105, 35, 55) else accent, 1)
         setOnClickListener { action() }
     }
 
@@ -868,7 +868,7 @@ class KeyboardSettingsOverlay(
         text = label
         textSize = 28f
         gravity = Gravity.CENTER
-        setTextColor(Color.rgb(96, 92, 112))
+        setTextColor(Color.rgb(205, 199, 220))
         setOnClickListener { action() }
         layoutParams = LinearLayout.LayoutParams(size, size)
     }
