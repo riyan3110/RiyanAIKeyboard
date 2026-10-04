@@ -1749,15 +1749,13 @@ class RiyanKeyboardService : InputMethodService() {
             val target = cursorTarget(editable.toString(), cursor, cursor, keyCode) ?: cursor
             internalInput.setSelection(cursorSelectionAnchor.coerceIn(0, editable.length), target)
         } else {
+            // Host apps: SHIFT + arrow KEY EVENTS drive the editor's NATIVE selection,
+            // which always shows the highlight and drag handles. Programmatic
+            // setSelection is visually ignored by many note/browser editors.
             val ic = currentInputConnection ?: return
-            val extracted = runCatching { ic.getExtractedText(ExtractedTextRequest(), 0) }.getOrNull()
-            val text = extracted?.text?.toString() ?: return
-            val selStart = extracted.selectionStart.coerceIn(0, text.length)
-            val selEnd = extracted.selectionEnd.coerceIn(0, text.length)
-            if (cursorSelectionAnchor < 0) cursorSelectionAnchor = selStart
-            val cursor = if (cursorSelectionAnchor <= selStart) selStart else selEnd
-            val target = cursorTarget(text, cursor, cursor, keyCode) ?: cursor
-            ic.setSelection(extracted.startOffset + cursorSelectionAnchor.coerceIn(0, text.length), extracted.startOffset + target)
+            val meta = KeyEvent.META_SHIFT_ON
+            ic.sendKeyEvent(KeyEvent(0, 0, KeyEvent.ACTION_DOWN, keyCode, 0, meta))
+            ic.sendKeyEvent(KeyEvent(0, 0, KeyEvent.ACTION_UP, keyCode, 0, meta))
         }
     }
 
