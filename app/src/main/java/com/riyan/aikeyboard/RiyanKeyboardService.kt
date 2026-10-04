@@ -243,6 +243,7 @@ class RiyanKeyboardService : InputMethodService() {
     private var instantKeyResponse = false
     private var fastTypingMode = false
     private var longPressDurationMs = 450L
+    private var wordDeleteToken = 0
     private var activeKeyPreview: PopupWindow? = null
     private var activeKeyPreviewLabel: TextView? = null
     private var keyPreviewDismissRunnable: Runnable? = null
@@ -1448,7 +1449,7 @@ class RiyanKeyboardService : InputMethodService() {
         third += KeySpec(if (capsLock) "⇪" else "⇧", weight = 1.72f, action = { handleShiftTap() })
         val thirdAlternates = listOf("*", "\"", "'", ":", ";", "!", "?")
         "zxcvbnm".forEachIndexed { index, c -> third += letterSpec(c, thirdAlternates[index]) }
-        third += KeySpec("⌫", weight = 1.72f, action = { deleteOne() }, longAction = { deleteWord() })
+        third += KeySpec("⌫", weight = 1.72f, action = { deleteOne() }, longAction = { startWordDeleteRepeat() })
         addRow(third)
 
         addRow(
@@ -1512,7 +1513,7 @@ class RiyanKeyboardService : InputMethodService() {
         addSimpleSymbolRow(listOf("!", "@", "#", "$", "%", "^", "&", "*", "(", ")"))
         addSimpleSymbolRow(listOf("~", "`", "|", "•", "√", "π", "÷", "×", "§", "∆"))
         val last = listOf("<", ">", "[", "]", "{", "}", "_", "-", "+").map { symbolSpec(it) }.toMutableList()
-        last += KeySpec("⌫", weight = 1.72f, action = { deleteOne() }, longAction = { deleteWord() })
+        last += KeySpec("⌫", weight = 1.72f, action = { deleteOne() }, longAction = { startWordDeleteRepeat() })
         addRow(last)
         addRow(
             listOf(
@@ -1571,7 +1572,7 @@ class RiyanKeyboardService : InputMethodService() {
                 KeySpec("ABC", weight = 1.15f, action = { mode = KeyboardMode.LETTERS; renderKeyboard() }),
                 KeySpec("spasi", weight = 1.8f, action = { commitSpace() }),
                 KeySpec(enterKeyLabel(), weight = 1.1f, action = { pressEnter() }),
-                KeySpec("⌫", weight = 1.15f, action = { deleteOne() }, longAction = { deleteWord() })
+                KeySpec("⌫", weight = 1.15f, action = { deleteOne() }, longAction = { startWordDeleteRepeat() })
             )
         )
     }
@@ -1653,7 +1654,7 @@ class RiyanKeyboardService : InputMethodService() {
             KeySpec("ABC", weight = 1.58f, action = { mode = KeyboardMode.LETTERS; renderKeyboard() }),
             KeySpec("123", weight = 1.15f, action = { mode = KeyboardMode.SYMBOLS; renderKeyboard() }),
             KeySpec("spasi", weight = 3.3f, action = { commitSpace() }),
-            KeySpec("⌫", weight = 1.72f, action = { deleteOne() }, longAction = { deleteWord() }),
+            KeySpec("⌫", weight = 1.72f, action = { deleteOne() }, longAction = { startWordDeleteRepeat() }),
             KeySpec(enterKeyLabel(), weight = 1.62f, action = { pressEnter() })
         ).forEach { spec ->
             bottom.addView(keyView(spec), LinearLayout.LayoutParams(0, -1, spec.weight).apply {
@@ -1990,7 +1991,7 @@ class RiyanKeyboardService : InputMethodService() {
             addRow(emojis.drop(rowIndex * 8).take(8).map { emoji -> KeySpec(emoji, action = { rememberEmoji(emoji); commit(emoji) }) })
         }
         val fourth = emojis.drop(24).take(7).map { emoji -> KeySpec(emoji, action = { rememberEmoji(emoji); commit(emoji) }) }.toMutableList()
-        fourth += KeySpec("⌫", weight = 1.72f, action = { deleteOne() }, longAction = { deleteWord() })
+        fourth += KeySpec("⌫", weight = 1.72f, action = { deleteOne() }, longAction = { startWordDeleteRepeat() })
         addRow(fourth)
         addRow(
             listOf(
@@ -2277,6 +2278,7 @@ class RiyanKeyboardService : InputMethodService() {
     }
 
     private fun keyFeedback(view: View, longPress: Boolean) {
+        lastKeyPressedViewRef = java.lang.ref.WeakReference(view)
         if (soundEnabled) {
             keyboardAudioManager.playSoundEffect(AudioManager.FX_KEY_CLICK, 0.35f)
         }
@@ -4896,6 +4898,20 @@ private fun selectedWebSearchUrl(query: String): String {
     }
 }
 
+    /** ⌫ long-press: hapus kata pertama, lalu ulangi per 170ms selama tombol ditahan. */
+    private fun startWordDeleteRepeat() {
+        deleteWord()
+        val token = ++wordDeleteToken
+        handler.postDelayed(object : Runnable {
+            override fun run() {
+                val pressed = lastKeyPressedViewRef?.get()?.isPressed == true
+                if (token != wordDeleteToken || !pressed) return@postDelayed
+                deleteWord()
+                handler.postDelayed(this, 170L)
+            }
+        }, 170L)
+    }
+
 private fun selectedImageSearchUrl(query: String): String {
     val encoded = Uri.encode(query.trim())
     // MODE TERBATAS: pencarian gambar vision dipaksa Google dengan SafeSearch ketat.
@@ -4966,6 +4982,48 @@ private fun selectedImageSearchUrl(query: String): String {
             if (!deleteSelectedText(ic)) deletePreviousCharacterCompat(ic)
         }
         refreshSuggestionsSoon()
+    }
+
+    private fun deleteWord() {
+        if (searchWebComposeActive) {
+            deleteFromFocusedWebInput(word = true)
+            refreshSuggestionsSoon()
+            return
+        }
+        val internalInput = activeInternalInput()
+        if (internalInput != null) {
+            val editable = internalInput.text
+            val start = internalInput.selectionStart.coerceAtLeast(0)
+            val end = internalInput.selectionEnd.coerceAtLeast(0)
+            if (start != end) editable.delete(minOf(start, end), maxOf(start, end))
+            else if (start > 0) {
+                val before = editable.substring(0, start)
+                val trailing = before.takeLastWhile(Char::isWhitespace).length
+                val body = before.dropLast(trailing)
+                val count = (trailing + body.takeLastWhile { !it.isWhitespace() }.length).coerceAtLeast(1)
+                editable.delete((start - count).coerceAtLeast(0), start)
+            }
+            refreshSuggestionsSoon()
+            return
+        }
+        val ic = currentInputConnection ?: return
+        if (deleteSelectedText(ic)) { refreshSuggestionsSoon(); return }
+        val before = runCatching { ic.getTextBeforeCursor(100, 0)?.toString().orEmpty() }.getOrDefault("")
+        val count = before.takeLastWhile { !it.isWhitespace() }.length.coerceAtLeast(1)
+        repeat(count.coerceAtMost(100)) { deletePreviousCharacterCompat(ic) }
+        refreshSuggestionsSoon()
+    }
+
+
+    /** View of the key currently pressed, used by the word-delete repeat loop. */
+    private var lastKeyPressedViewRef: java.lang.ref.WeakReference<View>? = null
+
+    private fun startWordDeleteRepeatIfPressed(token: Int) {
+        handler.postDelayed({
+            val pressed = lastKeyPressedViewRef?.get()?.isPressed == true
+            if (token != wordDeleteToken || !pressed) return@postDelayed
+            deleteWord()
+        }, 170L)
     }
 
     private fun deleteWord() {
