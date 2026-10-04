@@ -1503,6 +1503,8 @@ class RiyanKeyboardService : InputMethodService() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
             setPadding(dp(4), dp(3), dp(4), dp(3))
+            // The mouse pad + arrow pad must stay visible even on short keyboards.
+            minimumHeight = dp(110)
         }
 
         val touchPad = TextView(this).apply {
@@ -1609,7 +1611,7 @@ class RiyanKeyboardService : InputMethodService() {
             scaleY = keyBoxScaleVertical
             isClickable = true
             isFocusable = false
-            background = roundedStrokedBackground(specialKeyBg, 11f, Color.rgb(181, 86, 249), 2)
+            background = roundedStrokedBackground(Color.argb(225, 30, 30, 40), 11f, Color.rgb(181, 86, 249), 2)
             contentDescription = when (keyCode) {
                 KeyEvent.KEYCODE_DPAD_LEFT -> "Kursor kiri"
                 KeyEvent.KEYCODE_DPAD_RIGHT -> "Kursor kanan"
@@ -1643,7 +1645,7 @@ class RiyanKeyboardService : InputMethodService() {
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     repeatRunnable?.let(handler::removeCallbacks)
                     repeatRunnable = null
-                    view.background = roundedStrokedBackground(specialKeyBg, 11f, Color.rgb(181, 86, 249), 2)
+                    view.background = roundedStrokedBackground(Color.argb(225, 30, 30, 40), 11f, Color.rgb(181, 86, 249), 2)
                     true
                 }
                 else -> true
@@ -1704,9 +1706,9 @@ class RiyanKeyboardService : InputMethodService() {
     private fun cursorPadBackground(pressed: Boolean) = GradientDrawable(
         GradientDrawable.Orientation.TOP_BOTTOM,
         if (pressed) {
-            intArrayOf(pressedKeyBg, Color.rgb(34, 28, 55))
+            intArrayOf(Color.argb(235, 60, 50, 120), Color.rgb(34, 28, 55))
         } else {
-            intArrayOf(Color.rgb(65, 62, 76), Color.rgb(27, 26, 34))
+            intArrayOf(Color.argb(235, 44, 42, 54), Color.rgb(27, 26, 34))
         }
     ).apply {
         cornerRadius = dpFloat(17f)
@@ -2024,7 +2026,9 @@ class RiyanKeyboardService : InputMethodService() {
         frame.addView(View(this).apply {
             background = roundedBackground(Color.argb(96, 0, 0, 0), 22f)
         }, FrameLayout.LayoutParams(-1, -1).apply {
-            setMargins(dp(2), dp(4), dp(1), 0)
+            // Aligned with the key face frame (no downward offset) so the background
+            // matches the outline on every theme.
+            setMargins(dp(1), dp(0), dp(1), dp(2))
         })
 
         // Main charcoal key face. This is the surface changed while pressing.
