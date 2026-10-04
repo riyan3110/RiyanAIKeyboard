@@ -441,6 +441,17 @@ class RiyanKeyboardService : InputMethodService() {
             capsLock = false
             shift = false
         }
+        if (!automaticCapitalizationEnabled && !capsLock) {
+            // Kapital otomatis dasar tetap aktif walau setelan kapital-setelah-tanda-baca
+            // OFF: teks baru selalu mulai kapital; buka-ulang keyboard di tengah teks
+            // hanya kapital bila kursor di awal teks atau setelah newline.
+            shift = if (!restarting) {
+                true
+            } else {
+                val before = currentInputConnection?.getTextBeforeCursor(120, 0)?.toString().orEmpty()
+                before.isBlank() || before.endsWith("\n")
+            }
+        }
         if (clipboardHistoryEnabled) addCurrentClipboardToHistory()
         if (::root.isInitialized) {
             applyRootHeight()
@@ -5020,10 +5031,10 @@ private fun selectedImageSearchUrl(query: String): String {
         } else {
             currentInputConnection?.commitText("\n", 1)
         }
-        if (automaticCapitalizationEnabled) {
-            shift = true
-            if (mode == KeyboardMode.LETTERS) renderKeyboard()
-        }
+        // Enter selalu membuka baris baru: kapital otomatis dasar tetap aktif meski
+        // setelan kapital-setelah-tanda-baca dimatikan.
+        shift = true
+        if (mode == KeyboardMode.LETTERS) renderKeyboard()
         refreshSuggestionsSoon()
     }
 
