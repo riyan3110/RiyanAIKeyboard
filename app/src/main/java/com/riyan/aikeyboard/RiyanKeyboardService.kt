@@ -228,6 +228,7 @@ class RiyanKeyboardService : InputMethodService() {
     // (underline the picked text) instead of just moving the caret.
     private var cursorSelectionMode = false
     private var cursorSelectionAnchor = -1
+    private var cursorSelectionPos = -1
     private var searchQuery = ""
     private var searchUrl = ""
     private var lastConsumedScanNonce = 0L
@@ -1627,9 +1628,8 @@ class RiyanKeyboardService : InputMethodService() {
             compactButton(if (cursorSelectionMode) "Pilih Teks: ON" else "Pilih Teks: OFF") {
                 cursorSelectionMode = !cursorSelectionMode
                 if (cursorSelectionMode) {
-                    cursorSelectionAnchor = runCatching {
-                        currentInputConnection?.getExtractedText(ExtractedTextRequest(), 0)
-                    }.getOrNull()?.selectionStart ?: -1
+                    cursorSelectionAnchor = -1
+                    cursorSelectionPos = -1
                 }
                 renderKeyboard()
             },
@@ -1825,27 +1825,84 @@ class RiyanKeyboardService : InputMethodService() {
             val cursor = if (cursorSelectionAnchor <= selStart) selStart else selEnd
             val target = cursorTarget(editable.toString(), cursor, cursor, keyCode) ?: cursor
             internalInput.setSelection(cursorSelectionAnchor.coerceIn(0, editable.length), target)
-        } else {
-            // Host apps: SHIFT + arrow KEY EVENTS drive the editor's NATIVE selection,
-            // which always shows the highlight and drag handles. Programmatic
-            // setSelection is visually ignored by many note/browser editors.
-            val ic = currentInputConnection ?: return
-            val meta = KeyEvent.META_SHIFT_ON
-            ic.sendKeyEvent(KeyEvent(0, 0, KeyEvent.ACTION_DOWN, keyCode, 0, meta))
-            ic.sendKeyEvent(KeyEvent(0, 0, KeyEvent.ACTION_UP, keyCode, 0, meta))
+            cursorSelectionPos = target
+            return
         }
+        val ic = currentInputConnection ?: return
+
+        // Editors often return null for getExtractedText and ignore synthesized key
+        // events, so the selection is tracked manually: the anchor stays fixed and the
+        // moving end is recomputed from the text before/after the caret on each press,
+        // then applied with setSelection so the highlight is visible in the editor.
+        val before = runCatching { ic.getTextBeforeCursor(4000, 0)?.toString().orEmpty() }.getOrDefault("")
+        val after = runCatching { ic.getTextAfterCursor(4000, 0)?.toString().orEmpty() }.getOrDefault("")
+        val cursorAbs = before.length
+        if (cursorSelectionAnchor < 0) cursorSelectionAnchor = cursorAbs
+        if (cursorSelectionPos < 0) cursorSelectionPos = cursorAbs
+
+        val lastNl = before.lastIndexOf('\n')
+        val lineStartAbs = cursorAbs - before.length + (lastNl + 1)
+        val newEnd = when (keyCode) {
+            KeyEvent.KEYCODE_DPAD_LEFT -> (cursorSelectionPos - 1).coerceAtLeast(0)
+            KeyEvent.KEYCODE_DPAD_RIGHT -> (cursorSelectionPos + 1).coerceAtMost(cursorAbs + after.length)
+            KeyEvent.KEYCODE_DPAD_UP -> {
+                if (lastNl < 0) {
+                    0
+                } else {
+                    val col = (cursorSelectionPos - lineStartAbs).coerceAtLeast(0)
+                    val secondLastNl = before.lastIndexOf('\n', lastNl - 1)
+                    val prevStartAbs = cursorAbs - before.length + (if (secondLastNl >= 0) secondLastNl + 1 else 0)
+                    (prevStartAbs + col).coerceAtMost(lineStartAbs - 1).coerceAtLeast(prevStartAbs)
+                }
+            }
+            else -> {
+                val nl1 = after.indexOf('\n')
+                if (nl1 < 0) {
+                    cursorAbs + after.length
+                } else {
+                    val col = (cursorSelectionPos - lineStartAbs).coerceAtLeast(0)
+                    val nextStartAbs = cursorAbs + nl1 + 1
+                    val nl2 = after.indexOf('\n', nl1 + 1)
+                    val nextLen = if (nl2 >= 0) nl2 - nl1 - 1 else after.length - nl1 - 1
+                    nextStartAbs + col.coerceAtMost(nextLen)
+                }
+            }
+        }
+        cursorSelectionPos = newEnd
+        ic.setSelection(minOf(cursorSelectionAnchor, cursorSelectionPos), maxOf(cursorSelectionAnchor, cursorSelectionPos))
     }
 
     private fun copyCursorSelection() {
-        val selected = activeInternalInput()?.text
-            ?.substring(
-                minOf(activeInternalInput()!!.selectionStart, activeInternalInput()!!.selectionEnd)
-                    .coerceIn(0, activeInternalInput()!!.text.length),
-                maxOf(activeInternalInput()!!.selectionStart, activeInternalInput()!!.selectionEnd)
-                    .coerceIn(0, activeInternalInput()!!.text.length)
-            )
-            ?: runCatching { currentInputConnection?.getSelectedText(0)?.toString() }.getOrNull()
-        if (selected.isNullOrBlank()) {
+        val internal = activeInternalInput()
+        if (internal != null) {
+            val start = minOf(internal.selectionStart, internal.selectionEnd).coerceIn(0, internal.text.length)
+            val end = maxOf(internal.selectionStart, internal.selectionEnd).coerceIn(0, internal.text.length)
+            finishCopy(internal.text.substring(start, end))
+            return
+        }
+        val ic = currentInputConnection
+        val viaIc = ic?.let { runCatching { it.getSelectedText(0)?.toString() }.getOrNull() }
+        if (!viaIc.isNullOrBlank()) {
+            finishCopy(viaIc)
+            return
+        }
+        // Manual slice from the tracked anchor/selection end for editors that do not
+        // expose their selection through the input connection.
+        if (cursorSelectionAnchor < 0 || cursorSelectionPos < 0 || cursorSelectionAnchor == cursorSelectionPos) {
+            aiStatusOrToast("Tidak ada teks terseleksi. Nyalakan Pilih Teks lalu geser panah.")
+            return
+        }
+        val start = minOf(cursorSelectionAnchor, cursorSelectionPos)
+        val end = maxOf(cursorSelectionAnchor, cursorSelectionPos)
+        val before = ic?.getTextBeforeCursor(8000, 0)?.toString().orEmpty()
+        val windowStart = before.length
+        val from = (start - (windowStart - before.length)).coerceIn(0, before.length)
+        val to = (end - (windowStart - before.length)).coerceIn(0, before.length)
+        finishCopy(if (to > from) before.substring(from, to) else "")
+    }
+
+    private fun finishCopy(selected: String) {
+        if (selected.isBlank()) {
             aiStatusOrToast("Tidak ada teks terseleksi. Nyalakan Pilih Teks lalu geser panah.")
             return
         }

@@ -494,7 +494,7 @@ class KeyboardSettingsOverlay(
         vibrationCard.addView(sliderRow("Durasi Getar", 5, 80, draft.vibrationDuration, " ms") { draft.vibrationDuration = it })
         body.addView(vibrationCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
         body.addView(toggleCard("Huruf Kapital Otomatis", "Mengkapitalkan huruf pertama kalimat.", draft.autoCaps) { draft.autoCaps = it }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
-        body.addView(toggleCard("Mode Terbatas (Aman 18-)", "AI vision & obrolan memakai prompt hati-hati berbahasa Indonesia, dan browser otomatis memakai Google dengan SafeSearch ketat.", draft.restrictedMode) { draft.restrictedMode = it }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
+        body.addView(toggleCard("Mode Terbatas Browser", "AI vision & obrolan memakai prompt hati-hati berbahasa Indonesia, dan browser otomatis memakai Google dengan SafeSearch ketat.", draft.restrictedMode) { draft.restrictedMode = it }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
         body.addView(toggleCard("Titik Spasi Ganda", "Ketuk spasi dua kali untuk memasukkan titik dan spasi.", draft.doubleSpacePeriod) { draft.doubleSpacePeriod = it }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
         body.addView(toggleCard("Saran Teks Prediktif & Koreksi Ketik", "Menampilkan rekomendasi kata berikutnya dan koreksi typo.", draft.suggestions) { draft.suggestions = it }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
         body.addView(toggleCard("Riwayat Papan Klip", "Menyimpan teks yang disalin agar dapat ditempel kembali.", draft.clipboardHistory) { draft.clipboardHistory = it }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
@@ -759,19 +759,11 @@ class KeyboardSettingsOverlay(
             setOnCheckedChangeListener { _, value -> onChanged(value) }
         }
         row.addView(check, LinearLayout.LayoutParams(dp(40), dp(44)))
-        row.addView(LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            addView(TextView(context).apply {
-                text = title
-                textSize = 13f
-                setTextColor(Color.rgb(26, 25, 34))
-                setTypeface(typeface, Typeface.BOLD)
-            })
-            addView(TextView(context).apply {
-                text = detail
-                textSize = 10.5f
-                setTextColor(muted)
-            })
+        row.addView(TextView(context).apply {
+            text = title
+            textSize = 13f
+            setTextColor(Color.rgb(26, 25, 34))
+            setTypeface(typeface, Typeface.BOLD)
         }, LinearLayout.LayoutParams(0, -2, 1f))
         row.setOnClickListener { check.isChecked = !check.isChecked }
         return row
@@ -832,7 +824,7 @@ class KeyboardSettingsOverlay(
             background = rounded(selectedColor, 7f, Color.argb(120, 30, 24, 62), 1)
         }, LinearLayout.LayoutParams(dp(30), dp(30)).apply { rightMargin = dp(10) })
         row.addView(TextView(context).apply {
-            text = "$label  ·  ${colorToHex(selectedColor)}\n$description"
+            text = "$label  ·  ${colorToHex(selectedColor)}"
             textSize = 11.5f
             setTextColor(Color.rgb(26, 25, 34))
             setTypeface(typeface, Typeface.BOLD)
