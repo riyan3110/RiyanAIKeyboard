@@ -657,6 +657,20 @@ class RiyanKeyboardService : InputMethodService() {
         if (::bottomBrandBar.isInitialized) {
             bottomBrandBar.setBackgroundColor(Color.rgb(14, 14, 18))
         }
+        // Bingkai manual: panel AI, panel browser/kamera, dan kartu keyboard mengikuti
+        // warna bingkai yang dipilih di Warna Manual.
+        if (::aiPanel.isInitialized) {
+            aiPanel.background = roundedStrokedBackground(Color.argb(198, 10, 10, 16), 14f, keyBorderColor, 2)
+        }
+        if (::searchSurfacePanel.isInitialized) {
+            searchSurfacePanel.background = GradientDrawable().apply {
+                setColor(keyBorderColor)
+                cornerRadius = dpFloat(24f)
+            }
+        }
+        if (::keyboardPanel.isInitialized) {
+            keyboardPanel.foreground = roundedStrokedBackground(Color.TRANSPARENT, 16f, keyBorderColor, 2)
+        }
     }
 
     private fun updateRootPadding(target: LinearLayout) {
@@ -685,7 +699,7 @@ class RiyanKeyboardService : InputMethodService() {
             setPadding(dp(7), dp(6), dp(7), dp(7))
             // Glass kartu obrolan hitam; clipToOutline memotong semua isi mengikuti sudut
             // kartu sehingga background tidak lagi bocor keluar bingkai obrolan.
-            background = roundedStrokedBackground(Color.argb(198, 10, 10, 16), 14f, purple, 2)
+            background = roundedStrokedBackground(Color.argb(198, 10, 10, 16), 14f, keyBorderColor, 2)
             outlineProvider = ViewOutlineProvider.BACKGROUND
             clipToOutline = true
             visibility = View.GONE
@@ -749,7 +763,7 @@ class RiyanKeyboardService : InputMethodService() {
         val composeCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(5), dp(3), dp(5), dp(3))
-            background = roundedStrokedBackground(Color.argb(140, 0, 0, 0), 12f, purple, 2)
+            background = roundedStrokedBackground(Color.argb(140, 0, 0, 0), 12f, keyBorderColor, 2)
         }
         aiInput = EditText(this).apply {
             hint = "Ketik pesan untuk AI…"
@@ -821,7 +835,7 @@ class RiyanKeyboardService : InputMethodService() {
         searchSurfacePanel = FrameLayout(this).apply {
             setPadding(dp(3), dp(3), dp(3), dp(3))
             background = GradientDrawable().apply {
-                setColor(Color.rgb(132, 48, 220))
+                setColor(keyBorderColor)
                 cornerRadius = dpFloat(24f)
             }
             visibility = View.GONE
@@ -1674,7 +1688,7 @@ class RiyanKeyboardService : InputMethodService() {
             scaleY = keyBoxScaleVertical
             isClickable = true
             isFocusable = false
-            background = roundedStrokedBackground(Color.argb(225, 30, 30, 40), 11f, Color.rgb(181, 86, 249), 2)
+            background = roundedStrokedBackground(Color.argb(225, 30, 30, 40), 11f, keyBorderColor, 2)
             contentDescription = when (keyCode) {
                 KeyEvent.KEYCODE_DPAD_LEFT -> "Kursor kiri"
                 KeyEvent.KEYCODE_DPAD_RIGHT -> "Kursor kanan"
@@ -1708,7 +1722,7 @@ class RiyanKeyboardService : InputMethodService() {
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     repeatRunnable?.let(handler::removeCallbacks)
                     repeatRunnable = null
-                    view.background = roundedStrokedBackground(Color.argb(225, 30, 30, 40), 11f, Color.rgb(181, 86, 249), 2)
+                    view.background = roundedStrokedBackground(Color.argb(225, 30, 30, 40), 11f, keyBorderColor, 2)
                     true
                 }
                 else -> true
