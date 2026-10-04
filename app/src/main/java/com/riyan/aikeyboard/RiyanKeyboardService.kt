@@ -1640,12 +1640,6 @@ class RiyanKeyboardService : InputMethodService() {
                 action = { cursorSelectionMode = !cursorSelectionMode },
                 highlight = cursorSelectionMode
             )
-                if (cursorSelectionMode) {
-                    cursorSelectionAnchor = -1
-                    cursorSelectionPos = -1
-                }
-                renderKeyboard()
-            },
             LinearLayout.LayoutParams(0, dp(40), 1.4f)
         )
         selectTools.addView(
