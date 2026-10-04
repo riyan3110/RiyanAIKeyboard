@@ -244,6 +244,7 @@ class RiyanKeyboardService : InputMethodService() {
     private var fastTypingMode = false
     private var longPressDurationMs = 450L
     private var wordDeleteToken = 0
+    private var lastKeyPressedViewRef: java.lang.ref.WeakReference<View>? = null
     private var activeKeyPreview: PopupWindow? = null
     private var activeKeyPreviewLabel: TextView? = null
     private var keyPreviewDismissRunnable: Runnable? = null
