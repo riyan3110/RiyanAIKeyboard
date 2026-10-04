@@ -77,6 +77,7 @@ class KeyboardSettingsOverlay(
         var keyBoxScale: Int,
         var longPressMs: Int,
         var keyBoxScaleVertical: Int,
+        var restrictedMode: Boolean,
         var numberRow: Boolean,
         var longPressSymbols: Boolean,
         var sound: Boolean,
@@ -493,6 +494,7 @@ class KeyboardSettingsOverlay(
         vibrationCard.addView(sliderRow("Durasi Getar", 5, 80, draft.vibrationDuration, " ms") { draft.vibrationDuration = it })
         body.addView(vibrationCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
         body.addView(toggleCard("Huruf Kapital Otomatis", "Mengkapitalkan huruf pertama kalimat.", draft.autoCaps) { draft.autoCaps = it }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
+        body.addView(toggleCard("Mode Terbatas (Aman 18-)", "AI vision & obrolan memakai prompt hati-hati berbahasa Indonesia, dan browser otomatis memakai Google dengan SafeSearch ketat.", draft.restrictedMode) { draft.restrictedMode = it }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
         body.addView(toggleCard("Titik Spasi Ganda", "Ketuk spasi dua kali untuk memasukkan titik dan spasi.", draft.doubleSpacePeriod) { draft.doubleSpacePeriod = it }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
         body.addView(toggleCard("Saran Teks Prediktif & Koreksi Ketik", "Menampilkan rekomendasi kata berikutnya dan koreksi typo.", draft.suggestions) { draft.suggestions = it }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
         body.addView(toggleCard("Riwayat Papan Klip", "Menyimpan teks yang disalin agar dapat ditempel kembali.", draft.clipboardHistory) { draft.clipboardHistory = it }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
@@ -548,6 +550,7 @@ class KeyboardSettingsOverlay(
             .putInt("vibration_duration_ms", draft.vibrationDuration)
             .putBoolean("automatic_capitalization_enabled", draft.autoCaps)
             .putBoolean("punctuation_space_enabled", draft.punctuationSpace)
+            .putBoolean("restricted_mode_enabled", draft.restrictedMode)
             .putBoolean("double_space_period_enabled", draft.doubleSpacePeriod)
             .putBoolean("enter_action_enabled", draft.enterAction)
             .putBoolean("suggestions_enabled", draft.suggestions)
@@ -611,6 +614,7 @@ class KeyboardSettingsOverlay(
         vibrationDuration = prefs.getInt("vibration_duration_ms", 28),
         autoCaps = prefs.getBoolean("automatic_capitalization_enabled", true),
         punctuationSpace = prefs.getBoolean("punctuation_space_enabled", false),
+        restrictedMode = prefs.getBoolean("restricted_mode_enabled", false),
         doubleSpacePeriod = prefs.getBoolean("double_space_period_enabled", false),
         enterAction = prefs.getBoolean("enter_action_enabled", false),
         suggestions = prefs.getBoolean("suggestions_enabled", true),
@@ -662,6 +666,7 @@ class KeyboardSettingsOverlay(
         vibrationDuration = 28,
         autoCaps = true,
         punctuationSpace = false,
+        restrictedMode = false,
         doubleSpacePeriod = false,
         enterAction = false,
         suggestions = true,

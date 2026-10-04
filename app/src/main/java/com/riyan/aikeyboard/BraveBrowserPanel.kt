@@ -385,11 +385,14 @@ class BraveBrowserPanel(
         if (clean.startsWith("http://", true) || clean.startsWith("https://", true)) return clean
         if (looksLikeDomain(clean)) return "https://$clean"
         val encoded = Uri.encode(clean)
-        val safe = prefs.getString(KEY_SAFE_SEARCH, SAFE_MODERATE) ?: SAFE_MODERATE
+        // MODE TERBATAS: paksa Google + SafeSearch ketat (aman di bawah 18+) apa pun setelan browser.
+        val restricted = prefs.getBoolean("restricted_mode_enabled", false)
+        val safe = if (restricted) SAFE_STRICT else (prefs.getString(KEY_SAFE_SEARCH, SAFE_MODERATE) ?: SAFE_MODERATE)
+        val engine = if (restricted) ENGINE_GOOGLE else (prefs.getString(KEY_SEARCH_ENGINE, ENGINE_BRAVE) ?: ENGINE_BRAVE)
         val country = prefs.getString(KEY_SEARCH_COUNTRY, COUNTRY_ALL) ?: COUNTRY_ALL
         val language = prefs.getString(KEY_SEARCH_LANGUAGE, LANGUAGE_ID) ?: LANGUAGE_ID
         val aiAnswers = prefs.getBoolean(KEY_AI_ANSWERS, true)
-        return when (prefs.getString(KEY_SEARCH_ENGINE, ENGINE_BRAVE) ?: ENGINE_BRAVE) {
+        return when (engine) {
             ENGINE_GOOGLE -> "https://www.google.com/search?q=$encoded&safe=${if (safe == SAFE_OFF) "off" else "active"}"
             ENGINE_BING -> "https://www.bing.com/search?q=$encoded&adlt=${when (safe) { SAFE_STRICT -> "strict"; SAFE_OFF -> "off"; else -> "moderate" }}"
             ENGINE_DDG -> "https://duckduckgo.com/?q=$encoded&kp=${if (safe == SAFE_OFF) "-2" else "1"}"

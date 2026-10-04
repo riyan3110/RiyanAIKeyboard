@@ -598,6 +598,7 @@ class RiyanKeyboardService : InputMethodService() {
         punctuationSpaceEnabled = prefs.getBoolean("punctuation_space_enabled", false)
         clipboardHistoryEnabled = prefs.getBoolean("clipboard_history_enabled", true)
         searchSurfaceUserHeightDp = prefs.getInt("search_surface_height_user_dp", 0)
+        AiClient.restrictedMode = prefs.getBoolean("restricted_mode_enabled", false)
         suggestionsEnabled = prefs.getBoolean("suggestions_enabled", true)
         personalizedLearningEnabled = prefs.getBoolean("personalized_learning_enabled", true)
         styleMemoryEnabled = prefs.getBoolean("style_memory_enabled", true)
@@ -4830,6 +4831,8 @@ private fun selectedWebSearchUrl(query: String): String {
 
 private fun selectedImageSearchUrl(query: String): String {
     val encoded = Uri.encode(query.trim())
+    // MODE TERBATAS: pencarian gambar vision dipaksa Google dengan SafeSearch ketat.
+    if (AiClient.restrictedMode) return "https://www.google.com/search?tbm=isch&q=$encoded&safe=active"
     return when (selectedSearchEngineId()) {
         "google" -> "https://www.google.com/search?tbm=isch&q=$encoded"
         "bing" -> "https://www.bing.com/images/search?q=$encoded"
