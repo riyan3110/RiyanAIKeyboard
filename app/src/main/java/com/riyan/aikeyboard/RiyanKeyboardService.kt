@@ -147,6 +147,7 @@ class RiyanKeyboardService : InputMethodService() {
     private lateinit var aiFullscreenButton: ImageButton
     private lateinit var heightLabel: TextView
     private lateinit var searchSurfacePanel: FrameLayout
+    private var searchSurfaceUserHeightDp = 0
     private lateinit var searchSurfaceContent: FrameLayout
     private var searchWebView: WebView? = null
     private var braveBrowserPanel: BraveBrowserPanel? = null
@@ -596,6 +597,7 @@ class RiyanKeyboardService : InputMethodService() {
         automaticCapitalizationEnabled = prefs.getBoolean("automatic_capitalization_enabled", true)
         punctuationSpaceEnabled = prefs.getBoolean("punctuation_space_enabled", false)
         clipboardHistoryEnabled = prefs.getBoolean("clipboard_history_enabled", true)
+        searchSurfaceUserHeightDp = prefs.getInt("search_surface_height_user_dp", 0)
         suggestionsEnabled = prefs.getBoolean("suggestions_enabled", true)
         personalizedLearningEnabled = prefs.getBoolean("personalized_learning_enabled", true)
         styleMemoryEnabled = prefs.getBoolean("style_memory_enabled", true)
@@ -825,10 +827,59 @@ class RiyanKeyboardService : InputMethodService() {
             clipChildren = false
             clipToPadding = false
             addView(searchSurfaceContent, FrameLayout.LayoutParams(-1, -1))
+            // Grip: drag up/down to resize the camera-vision / browser surface.
+            addView(View(this).apply {
+                background = GradientDrawable().apply {
+                    setColor(Color.argb(90, 255, 255, 255))
+                    cornerRadius = dpFloat(7f)
+                }
+                setOnTouchListener(searchSurfaceGripListener())
+            }, FrameLayout.LayoutParams(dp(120), dp(14), Gravity.CENTER_HORIZONTAL or Gravity.TOP).apply {
+                topMargin = dp(1)
+            })
         }
         root.addView(searchSurfacePanel, LinearLayout.LayoutParams(-1, dp(searchSurfaceHeightDp())).apply {
             setMargins(dp(4), dp(3), dp(4), dp(4))
         })
+    }
+
+    /** Drag handle for the search/browser surface: up = taller, down = shorter. */
+    private fun searchSurfaceGripListener(): View.OnTouchListener {
+        var lastRawY = 0f
+        return View.OnTouchListener { view, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    lastRawY = event.rawY
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val deltaDp = ((lastRawY - event.rawY) / resources.displayMetrics.density).toInt()
+                    if (deltaDp != 0) {
+                        lastRawY = event.rawY
+                        resizeSearchSurface(deltaDp)
+                    }
+                    true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                        .putInt("search_surface_height_user_dp", searchSurfaceUserHeightDp).apply()
+                    true
+                }
+                else -> true
+            }
+        }
+    }
+
+    private fun resizeSearchSurface(deltaDp: Int) {
+        val base = searchSurfaceUserHeightDp.takeIf { it > 0 } ?: searchSurfaceHeightDp()
+        searchSurfaceUserHeightDp = (base + deltaDp).coerceIn(150, 560)
+        if (::searchSurfacePanel.isInitialized) {
+            (searchSurfacePanel.layoutParams as? LinearLayout.LayoutParams)?.let {
+                it.height = dp(searchSurfaceHeightDp())
+                searchSurfacePanel.layoutParams = it
+            }
+        }
+        applyRootHeight()
     }
 
     private fun addSettingsPanel() {
@@ -909,7 +960,7 @@ class RiyanKeyboardService : InputMethodService() {
             setBackgroundColor(Color.argb(118, 8, 8, 14))
         }
 
-        utilityBar.addView(toolbarButton("✦ AI", dp(42)) { toggleAiPanel() })
+        utilityBar.addView(toolbarButton("✦ AI", dp(50)) { toggleAiPanel() })
         utilityBar.addView(toolbarButton("⌨", dp(30)) {
             aiComposeActive = false
             mode = KeyboardMode.LETTERS
@@ -2309,12 +2360,13 @@ class RiyanKeyboardService : InputMethodService() {
 
     private fun toolbarButton(label: String, widthPx: Int, action: () -> Unit) = Button(this).apply {
         text = label
-        textSize = if (label.length > 2) 11f else 17f
+        textSize = if (label.length > 2) 13f else 18f
         isAllCaps = false
         minWidth = 0
         minimumWidth = 0
         setPadding(0, 0, 0, 0)
         setTextColor(Color.WHITE)
+        setTypeface(typeface, Typeface.BOLD)
         setBackgroundColor(keyBg)
         setOnClickListener {
             keyFeedback(this, longPress = false)
@@ -2412,6 +2464,8 @@ class RiyanKeyboardService : InputMethodService() {
     private fun searchSurfaceHeightDp(): Int = scannerSurfaceHeightDp()
 
     private fun scannerSurfaceHeightDp(): Int {
+        // Manual resize from the grip handle wins over the automatic proportional height.
+        searchSurfaceUserHeightDp.takeIf { it > 0 }?.let { return it.coerceIn(150, 560) }
         val density = resources.displayMetrics.density
         val screenHeightDp = (resources.displayMetrics.heightPixels / density).toInt()
         val screenWidthDp = (resources.displayMetrics.widthPixels / density).toInt()
