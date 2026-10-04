@@ -1635,8 +1635,11 @@ class RiyanKeyboardService : InputMethodService() {
             setPadding(dp(3), dp(2), dp(3), dp(2))
         }
         selectTools.addView(
-            compactButton(if (cursorSelectionMode) "Pilih Teks: ON" else "Pilih Teks: OFF", { }, cursorSelectionMode) {
-                cursorSelectionMode = !cursorSelectionMode
+            compactButton(
+                label = if (cursorSelectionMode) "Pilih Teks: ON" else "Pilih Teks: OFF",
+                action = { cursorSelectionMode = !cursorSelectionMode },
+                highlight = cursorSelectionMode
+            )
                 if (cursorSelectionMode) {
                     cursorSelectionAnchor = -1
                     cursorSelectionPos = -1
