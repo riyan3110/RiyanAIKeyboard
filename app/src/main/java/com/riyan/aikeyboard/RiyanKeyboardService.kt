@@ -245,6 +245,7 @@ class RiyanKeyboardService : InputMethodService() {
     private var fastTypingMode = false
     private var longPressDurationMs = 450L
     private var wordDeleteToken = 0
+    private var cursorRepeatToken = 0
     private var lastKeyPressedViewRef: java.lang.ref.WeakReference<View>? = null
     private var activeKeyPreview: PopupWindow? = null
     private var activeKeyPreviewLabel: TextView? = null
@@ -1634,7 +1635,7 @@ class RiyanKeyboardService : InputMethodService() {
             setPadding(dp(3), dp(2), dp(3), dp(2))
         }
         selectTools.addView(
-            compactButton(if (cursorSelectionMode) "Pilih Teks: ON" else "Pilih Teks: OFF") {
+            compactButton(if (cursorSelectionMode) "Pilih Teks: ON" else "Pilih Teks: OFF", { }, cursorSelectionMode) {
                 cursorSelectionMode = !cursorSelectionMode
                 if (cursorSelectionMode) {
                     cursorSelectionAnchor = -1
@@ -1720,8 +1721,10 @@ class RiyanKeyboardService : InputMethodService() {
                     view.background = roundedStrokedBackground(pressedKeyBg, 11f, Color.rgb(205, 124, 255), 3)
                     moveCursor(keyCode)
                     keyFeedback(view, longPress = false)
+                    val token = ++cursorRepeatToken
                     repeatRunnable = object : Runnable {
                         override fun run() {
+                            if (token != cursorRepeatToken) return
                             moveCursor(keyCode)
                             handler.postDelayed(this, CURSOR_REPEAT_INTERVAL_MS)
                         }
@@ -1729,6 +1732,7 @@ class RiyanKeyboardService : InputMethodService() {
                     true
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    cursorRepeatToken++
                     repeatRunnable?.let(handler::removeCallbacks)
                     repeatRunnable = null
                     view.background = roundedStrokedBackground(Color.argb(225, 30, 30, 40), 11f, keyBorderColor, 2)
@@ -2485,7 +2489,7 @@ class RiyanKeyboardService : InputMethodService() {
         layoutParams = LinearLayout.LayoutParams(widthPx, dp(utilityHeightDp()))
     }
 
-    private fun compactButton(label: String, action: () -> Unit) = Button(this).apply {
+    private fun compactButton(label: String, action: () -> Unit, highlight: Boolean = false) = Button(this).apply {
         text = label
         textSize = if (label.length > 6) 10f else 12f
         isAllCaps = false
@@ -2496,9 +2500,9 @@ class RiyanKeyboardService : InputMethodService() {
         setPadding(dp(3), 0, dp(3), 0)
         setTextColor(Color.WHITE)
         background = roundedStrokedBackground(
-            if (label in listOf("➤", "↑", "Pakai")) purple else Color.argb(52, 255, 255, 255),
+            if (highlight || label in listOf("➤", "↑", "Pakai")) purple else Color.argb(52, 255, 255, 255),
             8f,
-            if (label in listOf("➤", "↑", "Pakai")) Color.rgb(137, 105, 243) else Color.argb(165, 255, 255, 255),
+            if (highlight || label in listOf("➤", "↑", "Pakai")) Color.rgb(137, 105, 243) else Color.argb(165, 255, 255, 255),
             1
         )
         setOnClickListener {
@@ -4940,8 +4944,7 @@ private fun selectedWebSearchUrl(query: String): String {
         val token = ++wordDeleteToken
         handler.postDelayed(object : Runnable {
             override fun run() {
-                val pressed = lastKeyPressedViewRef?.get()?.isPressed == true
-                if (token != wordDeleteToken || !pressed) return
+                if (token != wordDeleteToken) return
                 deleteWord()
                 handler.postDelayed(this, 170L)
             }
@@ -5489,8 +5492,8 @@ private fun selectedImageSearchUrl(query: String): String {
         private const val INSTANT_RESPONSE_THRESHOLD = 150
         private const val DOUBLE_TAP_SHIFT_MS = 420L
         private const val SUGGESTION_AUTO_HIDE_MS = 2_600L
-        private const val CURSOR_REPEAT_DELAY_MS = 330L
-        private const val CURSOR_REPEAT_INTERVAL_MS = 65L
+        private const val CURSOR_REPEAT_DELAY_MS = 420L
+        private const val CURSOR_REPEAT_INTERVAL_MS = 150L
         private const val SHARED_CONTEXT_MAX_AGE_MS = 30L * 60L * 1000L
         private const val MAX_AI_CONTEXT_CHARS = 24_000
         private const val MAX_REPLY_CONTEXT_CHARS = 28_000
