@@ -1920,10 +1920,10 @@ class RiyanKeyboardService : InputMethodService() {
     }
 
     /** Satu tombol panah kecil per kalimat balasan untuk dikirim ke kolom ketik. */
-    private fun renderAiSentenceButtons(text: String) {
+    private fun renderAiSentenceButtons(response: String) {
         if (!::aiSentenceRow.isInitialized) return
         aiSentenceRow.removeAllViews()
-        val sentences = text.split(Regex("(?<=[.!?…])\\s+"))
+        val sentences = response.split(Regex("(?<=[.!?…])\\s+"))
             .map { it.trim() }
             .filter { it.length > 1 }
         if (sentences.isEmpty()) return
