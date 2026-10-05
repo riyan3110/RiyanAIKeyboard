@@ -1669,7 +1669,10 @@ class RiyanKeyboardService : InputMethodService() {
         selectTools.addView(
             compactButton(
                 label = if (cursorSelectionMode) "Pilih Teks: ON" else "Pilih Teks: OFF",
-                action = { cursorSelectionMode = !cursorSelectionMode },
+                action = {
+                    cursorSelectionMode = !cursorSelectionMode
+                    renderKeyboard()
+                },
                 highlight = cursorSelectionMode
             ),
             LinearLayout.LayoutParams(0, dp(40), 1.4f)
@@ -2572,6 +2575,9 @@ class RiyanKeyboardService : InputMethodService() {
 
     private fun startAiChatImagePick() {
         aiChatImagePending = true
+        // Keyboard ditutup dulu: jendela IME selalu di atas activity, tanpa ini
+        // picker terbuka di belakang keyboard dan terlihat seperti tidak muncul.
+        requestHideSelf(0)
         startActivity(
             Intent(this, AiChatImagePickerActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -5457,6 +5463,7 @@ private fun selectedImageSearchUrl(query: String): String {
 
     /** Pilih jalur: ada lampiran gambar -> vision + aksi; tidak ada -> alur teks biasa. */
     private fun runAiSmart(action: String) {
+        AiChatImagePickerActivity.take()?.let { attachAiChatImage(it) }
         val image = aiChatImageUri
         if (image != null) {
             runAiVisionAction(action, image)

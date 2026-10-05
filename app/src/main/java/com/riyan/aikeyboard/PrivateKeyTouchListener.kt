@@ -16,7 +16,8 @@ internal class PrivateKeyTouchListener(
     private val hidePreview: () -> Unit,
     private val alternatePreview: () -> Unit,
     private val tap: () -> Unit,
-    private val hold: (() -> Unit)?
+    private val hold: (() -> Unit)?,
+    private val instantTap: Boolean = false
 ) : View.OnTouchListener, View.OnAttachStateChangeListener {
     private var active = false
     private var consumed = false
@@ -42,6 +43,11 @@ internal class PrivateKeyTouchListener(
                 feedback(false)
                 pressed(true)
                 preview()
+                if (instantTap) {
+                    // Hapus: berlaku saat ditekan, bukan saat dilepas.
+                    consumed = true
+                    tap()
+                }
                 if (hold != null) handler.postDelayed(longPress, holdMs)
             }
             MotionEvent.ACTION_MOVE -> if (active && hypot(event.x - x, event.y - y) > tolerance) cancel()
