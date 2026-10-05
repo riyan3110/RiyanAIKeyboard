@@ -508,16 +508,55 @@ object AiClient {
         }
     }
 
+    /**
+     * Obrolan dengan lampiran gambar: prompt bebas (bukan JSON pencarian) + gambar,
+     * dikirim ke transport kompatibel OpenAI sesuai provider utama. Jawaban = teks biasa.
+     */
+    fun chatWithImage(settings: AiSettings, jpegBase64: String, prompt: String): Result<AiResponse> {
+        val providers = buildList {
+            add(settings.primaryProvider)
+            if (settings.fallbackEnabled) {
+                AiProvider.entries
+                    .filter { it != settings.primaryProvider }
+                    .filter { it != AiProvider.AIHORDE }
+                    .forEach(::add)
+            }
+        }.filter { isVisionProviderConfigured(settings, it) && it != AiProvider.AIHORDE }
+
+        var lastError: Throwable? = null
+        providers.forEach { provider ->
+            if (requestCancelled) {
+                return Result.failure(lastError ?: IllegalStateException("Permintaan AI dibatalkan."))
+            }
+            val attempt = runCatching {
+                val output = when (provider) {
+                    AiProvider.OPENROUTER -> requestOpenRouterVision(settings, jpegBase64, prompt)
+                    AiProvider.TABIAI -> requestTabiAiVision(settings, jpegBase64, prompt)
+                    AiProvider.NINEROUTER -> request9RouterVision(settings, jpegBase64, prompt)
+                    AiProvider.BLUESMINDS -> requestCompatibleVision(settings.bluesMindsApiKey, settings.bluesMindsBaseUrl, settings.bluesMindsModel, "BluesMinds", jpegBase64, prompt)
+                    AiProvider.XKIRO -> requestCompatibleVision(settings.xKiroApiKey, settings.xKiroBaseUrl, settings.xKiroModel, "xKiro", jpegBase64, prompt)
+                    AiProvider.ORCAROUTER -> requestCompatibleVision(settings.orcaRouterApiKey, settings.orcaRouterBaseUrl, settings.orcaRouterModel, "OrcaRouter", jpegBase64, prompt)
+                    else -> error("Provider tidak mendukung analisis gambar.")
+                }
+                AiResponse(output.trim(), provider)
+            }
+            attempt.getOrNull()?.let { return Result.success(it) }
+            lastError = attempt.exceptionOrNull()
+        }
+        return Result.failure(lastError ?: IllegalStateException("AI gagal menganalisis gambar."))
+    }
+
     private fun requestOpenRouterVision(
         settings: AiSettings,
         jpegBase64: String,
-        localTextHint: String
+        localTextHint: String,
+        instructionOverride: String? = null
     ): String {
         require(settings.openRouterApiKey.isNotBlank()) { "API key OpenRouter belum diisi." }
         require(settings.openRouterModel.isNotBlank()) { "Model OpenRouter belum diisi." }
 
         val userContent = JSONArray()
-            .put(JSONObject().put("type", "text").put("text", visionInstruction(localTextHint)))
+            .put(JSONObject().put("type", "text").put("text", instructionOverride ?: visionInstruction(localTextHint)))
             .put(
                 JSONObject()
                     .put("type", "image_url")
@@ -569,7 +608,8 @@ object AiClient {
     private fun requestTabiAiVision(
         settings: AiSettings,
         jpegBase64: String,
-        localTextHint: String
+        localTextHint: String,
+        instructionOverride: String? = null
     ): String {
         require(settings.tabiApiKey.isNotBlank()) { "API key TabiAI belum diisi." }
         require(settings.tabiModel.isNotBlank()) { "Model TabiAI belum diisi." }
@@ -590,7 +630,7 @@ object AiClient {
                             .put("data", jpegBase64)
                     )
             )
-            .put(JSONObject().put("type", "text").put("text", visionInstruction(localTextHint)))
+            .put(JSONObject().put("type", "text").put("text", instructionOverride ?: visionInstruction(localTextHint)))
 
         val body = JSONObject()
             .put("model", settings.tabiModel.trim())
@@ -658,7 +698,8 @@ object AiClient {
         model: String,
         providerLabel: String,
         jpegBase64: String,
-        localTextHint: String
+        localTextHint: String,
+        instructionOverride: String? = null
     ): String {
         require(apiKey.isNotBlank()) { "API key $providerLabel belum diisi." }
         require(model.isNotBlank()) { "Model $providerLabel belum diisi." }
@@ -667,7 +708,7 @@ object AiClient {
             "Base URL $providerLabel harus memakai HTTPS."
         }
         val content = JSONArray()
-            .put(JSONObject().put("type", "text").put("text", visionInstruction(localTextHint)))
+            .put(JSONObject().put("type", "text").put("text", instructionOverride ?: visionInstruction(localTextHint)))
             .put(
                 JSONObject()
                     .put("type", "image_url")
@@ -751,13 +792,14 @@ object AiClient {
     private fun request9RouterVision(
         settings: AiSettings,
         jpegBase64: String,
-        localTextHint: String
+        localTextHint: String,
+        instructionOverride: String? = null
     ): String {
         require(settings.nineRouterApiKey.isNotBlank()) { "API key 9Router belum diisi." }
         require(settings.nineRouterModel.isNotBlank()) { "Model 9Router belum diisi." }
 
         val userContent = JSONArray()
-            .put(JSONObject().put("type", "text").put("text", visionInstruction(localTextHint)))
+            .put(JSONObject().put("type", "text").put("text", instructionOverride ?: visionInstruction(localTextHint)))
             .put(
                 JSONObject()
                     .put("type", "image_url")

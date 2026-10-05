@@ -76,6 +76,7 @@ import com.google.mlkit.vision.objects.defaults.ObjectDetectorOptions
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.UUID
@@ -230,6 +231,10 @@ class RiyanKeyboardService : InputMethodService() {
     private var cursorSelectionMode = false
     private var cursorSelectionAnchor = -1
     private var cursorSelectionPos = -1
+    private var aiChatImageUri: Uri? = null
+    private var aiChatImagePending = false
+    private lateinit var aiChatAttachmentRow: LinearLayout
+    private lateinit var aiChatAttachmentThumb: ImageView
     private var searchQuery = ""
     private var searchUrl = ""
     private var lastConsumedScanNonce = 0L
@@ -477,6 +482,14 @@ class RiyanKeyboardService : InputMethodService() {
             ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
         ) {
             scannerPreviewView?.post { startEmbeddedScanner() }
+        }
+    }
+
+    override fun onWindowShown() {
+        super.onWindowShown()
+        if (aiChatImagePending) {
+            aiChatImagePending = false
+            AiChatImagePickerActivity.take()?.let { attachAiChatImage(it) }
         }
     }
 
@@ -786,13 +799,35 @@ class RiyanKeyboardService : InputMethodService() {
             setOnClickListener { aiComposeActive = true }
             setOnFocusChangeListener { _, hasFocus -> aiComposeActive = hasFocus }
         }
+        aiChatAttachmentRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            visibility = View.GONE
+            setPadding(dp(4), dp(2), dp(4), dp(2))
+        }
+        aiChatAttachmentThumb = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            background = roundedBackground(Color.argb(120, 60, 50, 110), 7f)
+        }
+        aiChatAttachmentRow.addView(aiChatAttachmentThumb, LinearLayout.LayoutParams(dp(42), dp(42)))
+        aiChatAttachmentRow.addView(TextView(this).apply {
+            text = "✕"
+            textSize = 15f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            setOnClickListener {
+                aiChatImageUri = null
+                renderAiAttachment()
+            }
+        }, LinearLayout.LayoutParams(dp(34), dp(42)))
+        composeCard.addView(aiChatAttachmentRow, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(2) })
         composeCard.addView(aiInput, LinearLayout.LayoutParams(-1, dp(aiInputHeightDp())))
 
         val composeFooter = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        composeFooter.addView(aiPanelButton("＋") { pasteClipboardIntoAiInput() }, LinearLayout.LayoutParams(dp(34), dp(aiComposeFooterHeightDp())))
+        composeFooter.addView(aiPanelButton("🖼") { startAiChatImagePick() }, LinearLayout.LayoutParams(dp(34), dp(aiComposeFooterHeightDp())))
         aiStatus = TextView(this).apply {
             text = activeProviderLabel()
             textSize = if (isLandscape()) 9f else 11f
@@ -812,7 +847,7 @@ class RiyanKeyboardService : InputMethodService() {
             gravity = Gravity.CENTER_VERTICAL
         }
         listOf("Perbaiki", "Balas", "Terjemah", "Ringkas", "Santai", "Sopan").forEach { action ->
-            quickActions.addView(aiPanelButton(action) { runAi(action) }, LinearLayout.LayoutParams(0, -1, 1f).apply {
+            quickActions.addView(aiPanelButton(action) { runAiSmart(action) }, LinearLayout.LayoutParams(0, -1, 1f).apply {
                 setMargins(dp(2), 0, dp(2), 0)
             })
         }
@@ -2536,6 +2571,49 @@ class RiyanKeyboardService : InputMethodService() {
 
     private fun pasteClipboard() {
         clipboardManager.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString()?.let(::commit)
+    }
+
+    private fun startAiChatImagePick() {
+        aiChatImagePending = true
+        startActivity(
+            Intent(this, AiChatImagePickerActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+    }
+
+    private fun attachAiChatImage(uri: Uri) {
+        runCatching {
+            val bitmap = contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) }
+                ?: error("Gambar tidak bisa dibuka.")
+            val prepared = scaleBitmapForAiVision(bitmap, 1600)
+            val file = File(filesDir, "ai_chat_attachment.jpg")
+            file.outputStream().use { prepared.compress(Bitmap.CompressFormat.JPEG, 92, it) }
+            if (prepared !== bitmap && !prepared.isRecycled) prepared.recycle()
+            bitmap.recycle()
+            aiChatImageUri = Uri.fromFile(file)
+        }.onFailure { error ->
+            Toast.makeText(this, error.message ?: "Gambar gagal dilampirkan.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        renderAiAttachment()
+        if (::aiStatus.isInitialized) aiStatus.text = "Gambar terlampir. Pilih aksi, AI akan membacanya."
+    }
+
+    private fun renderAiAttachment() {
+        if (!::aiChatAttachmentRow.isInitialized || !::aiChatAttachmentThumb.isInitialized) return
+        val uri = aiChatImageUri
+        aiChatAttachmentRow.visibility = if (uri != null) View.VISIBLE else View.GONE
+        if (uri != null) {
+            runCatching {
+                val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts) }
+                val sample = maxOf(1, maxOf(opts.outWidth, opts.outHeight) / 160)
+                val opts2 = BitmapFactory.Options().apply { inSampleSize = sample }
+                contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts2) }
+            }?.let { bitmap ->
+                aiChatAttachmentThumb.setImageBitmap(bitmap)
+            }
+        }
     }
 
     private fun pasteClipboardIntoAiInput() {
@@ -5379,6 +5457,67 @@ private fun selectedImageSearchUrl(query: String): String {
     private fun activeProviderLabel(): String {
         val provider = AiProvider.fromId(getSharedPreferences(PREFS, MODE_PRIVATE).getString("provider", null))
         return "Provider: ${provider.label}"
+    }
+
+    /** Pilih jalur: ada lampiran gambar -> vision + aksi; tidak ada -> alur teks biasa. */
+    private fun runAiSmart(action: String) {
+        val image = aiChatImageUri
+        if (image != null) {
+            runAiVisionAction(action, image)
+            return
+        }
+        runAi(action)
+    }
+
+    private fun runAiVisionAction(action: String, imageUri: Uri) {
+        if (!aiPanelVisible) toggleAiPanel(true)
+        AiClient.clearCancellation()
+        aiStatus.text = "$action sedang membaca gambar…"
+        aiAnswer.text = "Menganalisis gambar…"
+        renderAiSentenceButtons("")
+        aiInput.setText("")
+        aiComposeActive = false
+        thread {
+            val result = runCatching {
+                val bitmap = contentResolver.openInputStream(imageUri)?.use { BitmapFactory.decodeStream(it) }
+                    ?: error("Gambar tidak bisa dibaca.")
+                val prepared = scaleBitmapForAiVision(bitmap, 1600)
+                val encoded = java.io.ByteArrayOutputStream().use { out ->
+                    check(prepared.compress(Bitmap.CompressFormat.JPEG, 92, out))
+                    android.util.Base64.encodeToString(out.toByteArray(), android.util.Base64.NO_WRAP)
+                }
+                if (prepared !== bitmap && !prepared.isRecycled) prepared.recycle()
+                if (!bitmap.isRecycled) bitmap.recycle()
+                val prompt = buildString {
+                    append("Ini tangkapan layar sebuah postingan. Baca dan FOKUS pada teks postingannya, ")
+                    append("abaikan elemen antarmuka lain seperti tombol, status bar, dan notifikasi. ")
+                    append(
+                        when (action) {
+                            "Balas" -> "Tulis BALASAN untuk postingan tersebut dalam Bahasa Indonesia, sesuai nuansa dan maksudnya."
+                            "Terjemah" -> "Terjemahkan seluruh teks postingan ke Bahasa Indonesia yang natural."
+                            "Ringkas" -> "Ringkas poin-poin penting postingan dalam Bahasa Indonesia."
+                            "Santai" -> "Tanggapi postingan dengan gaya santai khas media sosial dalam Bahasa Indonesia."
+                            "Sopan" -> "Tanggapi postingan dengan gaya sopan dan formal dalam Bahasa Indonesia."
+                            else -> "Lakukan tugas berikut pada teks postingan: $action. Jawab dalam Bahasa Indonesia."
+                        }
+                    )
+                    if (AiClient.restrictedMode) {
+                        append(" MODE TERBATAS: hanya bahas konten aman untuk semua umur; tolak konten dewasa dengan singkat.")
+                    }
+                }
+                AiClient.chatWithImage(aiSettings(), encoded, prompt)
+            }.getOrElse { Result.failure(it) }
+            aiStatus.post {
+                result.onSuccess { response ->
+                    pendingText = response.text
+                    aiAnswer.text = response.text
+                    aiStatus.text = "Hasil via ${response.provider.label} · ketuk jawaban atau Pakai"
+                }.onFailure { error ->
+                    aiAnswer.text = ""
+                    aiStatus.text = error.message ?: "Analisis gambar gagal."
+                }
+            }
+        }
     }
 
     private fun runAi(action: String) {
