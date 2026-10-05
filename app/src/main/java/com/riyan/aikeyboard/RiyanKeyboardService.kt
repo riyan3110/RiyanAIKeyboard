@@ -5507,7 +5507,8 @@ private fun selectedImageSearchUrl(query: String): String {
                 result.onSuccess { response ->
                     pendingText = response.text
                     aiAnswer.text = response.text
-                    aiStatus.text = "Hasil via ${response.provider.label} · ketuk jawaban atau Pakai"
+                    renderAiSentenceButtons(response.text)
+                    aiStatus.text = "Gambar dianalisis · ${response.provider.label} · ketuk jawaban atau Pakai"
                 }.onFailure { error ->
                     aiAnswer.text = ""
                     aiStatus.text = error.message ?: "Analisis gambar gagal."
