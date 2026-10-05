@@ -485,17 +485,14 @@ class RiyanKeyboardService : InputMethodService() {
         }
     }
 
-    override fun onWindowShown() {
-        super.onWindowShown()
+    override fun onWindowHidden() {
+        cancelVoiceSearch()
+        stopEmbeddedScanner(keepRequested = true)
+        // Lampiran gambar obrolan AI: ambil hasil picker saat jendela kembali.
         if (aiChatImagePending) {
             aiChatImagePending = false
             AiChatImagePickerActivity.take()?.let { attachAiChatImage(it) }
         }
-    }
-
-    override fun onWindowHidden() {
-        cancelVoiceSearch()
-        stopEmbeddedScanner(keepRequested = true)
         // Keyboard closed: the next open must start from the letters page, never from
         // wherever the user happened to be (clipboard/symbols/emoji), and never in a
         // stale manual uppercase/caps state — auto-capitalization re-derives on reopen.
@@ -2604,15 +2601,14 @@ class RiyanKeyboardService : InputMethodService() {
         val uri = aiChatImageUri
         aiChatAttachmentRow.visibility = if (uri != null) View.VISIBLE else View.GONE
         if (uri != null) {
-            runCatching {
-                val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            val bitmap = runCatching {
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+                val sample = maxOf(1, maxOf(bounds.outWidth, bounds.outHeight) / 160)
+                val opts = BitmapFactory.Options().apply { inSampleSize = sample }
                 contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts) }
-                val sample = maxOf(1, maxOf(opts.outWidth, opts.outHeight) / 160)
-                val opts2 = BitmapFactory.Options().apply { inSampleSize = sample }
-                contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts2) }
-            }?.let { bitmap ->
-                aiChatAttachmentThumb.setImageBitmap(bitmap)
-            }
+            }.getOrNull()
+            if (bitmap != null) aiChatAttachmentThumb.setImageBitmap(bitmap)
         }
     }
 
