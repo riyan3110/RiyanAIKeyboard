@@ -1639,7 +1639,7 @@ class RiyanKeyboardService : InputMethodService() {
                 label = if (cursorSelectionMode) "Pilih Teks: ON" else "Pilih Teks: OFF",
                 action = { cursorSelectionMode = !cursorSelectionMode },
                 highlight = cursorSelectionMode
-            )
+            ),
             LinearLayout.LayoutParams(0, dp(40), 1.4f)
         )
         selectTools.addView(
@@ -5050,18 +5050,7 @@ private fun selectedImageSearchUrl(query: String): String {
         refreshSuggestionsSoon()
     }
 
-    /** ⌫ long-press: hapus kata pertama, lalu ulangi per 170ms selama tombol ditahan. */
-    private fun startWordDeleteRepeat() {
-        deleteWord()
-        val token = ++wordDeleteToken
-        handler.postDelayed(object : Runnable {
-            override fun run() {
-                if (token != wordDeleteToken) return
-                deleteWord()
-                handler.postDelayed(this, 170L)
-            }
-        }, 170L)
-    }
+
 
     private fun deletePreviousCharacterCompat(ic: InputConnection): Boolean {
         if (sendDeleteKeyEvent(ic)) return true
