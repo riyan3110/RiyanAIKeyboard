@@ -2486,7 +2486,7 @@ class RiyanKeyboardService : InputMethodService() {
         layoutParams = LinearLayout.LayoutParams(widthPx, dp(utilityHeightDp()))
     }
 
-    private fun compactButton(label: String, action: () -> Unit, highlight: Boolean = false) = Button(this).apply {
+    private fun compactButton(label: String, highlight: Boolean = false, action: () -> Unit) = Button(this).apply {
         text = label
         textSize = if (label.length > 6) 10f else 12f
         isAllCaps = false
