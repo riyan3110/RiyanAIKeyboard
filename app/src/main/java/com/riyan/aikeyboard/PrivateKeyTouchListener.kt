@@ -21,6 +21,7 @@ internal class PrivateKeyTouchListener(
 ) : View.OnTouchListener, View.OnAttachStateChangeListener {
     private var active = false
     private var consumed = false
+    private var instantFired = false
     private var x = 0f
     private var y = 0f
     private val longPress = Runnable {
@@ -38,21 +39,23 @@ internal class PrivateKeyTouchListener(
                 handler.removeCallbacks(longPress)
                 active = true
                 consumed = false
+                instantFired = false
                 x = event.x
                 y = event.y
                 feedback(false)
                 pressed(true)
                 preview()
                 if (instantTap) {
-                    // Hapus: berlaku saat ditekan, bukan saat dilepas.
-                    consumed = true
+                    // Hapus: berlaku saat ditekan, bukan saat dilepas. consumed tidak
+                    // disetel agar long-press hapus-per-kata tetap bisa berjalan.
+                    instantFired = true
                     tap()
                 }
                 if (hold != null) handler.postDelayed(longPress, holdMs)
             }
             MotionEvent.ACTION_MOVE -> if (active && hypot(event.x - x, event.y - y) > tolerance) cancel()
             MotionEvent.ACTION_UP -> {
-                val send = active && !consumed && hypot(event.x - x, event.y - y) <= tolerance
+                val send = active && !consumed && !instantFired && hypot(event.x - x, event.y - y) <= tolerance
                 cancel()
                 if (send) tap()
             }
