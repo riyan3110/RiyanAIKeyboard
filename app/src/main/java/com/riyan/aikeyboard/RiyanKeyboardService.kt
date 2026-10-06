@@ -5579,6 +5579,20 @@ private fun selectedImageSearchUrl(query: String): String {
         runAi(action)
     }
 
+    /** Decode + scale + JPEG-base64 gambar lampiran untuk vision AI. */
+    private fun encodeAiVisionImage(imageUri: Uri): String {
+        val bitmap = contentResolver.openInputStream(imageUri)?.use { BitmapFactory.decodeStream(it) }
+            ?: error("Gambar tidak bisa dibaca.")
+        val prepared = scaleBitmapForAiVision(bitmap, 1600)
+        val encoded = java.io.ByteArrayOutputStream().use { out ->
+            check(prepared.compress(Bitmap.CompressFormat.JPEG, 92, out))
+            android.util.Base64.encodeToString(out.toByteArray(), android.util.Base64.NO_WRAP)
+        }
+        if (prepared !== bitmap && !prepared.isRecycled) prepared.recycle()
+        if (!bitmap.isRecycled) bitmap.recycle()
+        return encoded
+    }
+
     private fun runAiVisionAction(action: String, imageUri: Uri) {
         if (!aiPanelVisible) toggleAiPanel(true)
         AiClient.clearCancellation()
@@ -5589,15 +5603,7 @@ private fun selectedImageSearchUrl(query: String): String {
         aiComposeActive = false
         thread {
             val result = runCatching {
-                val bitmap = contentResolver.openInputStream(imageUri)?.use { BitmapFactory.decodeStream(it) }
-                    ?: error("Gambar tidak bisa dibaca.")
-                val prepared = scaleBitmapForAiVision(bitmap, 1600)
-                val encoded = java.io.ByteArrayOutputStream().use { out ->
-                    check(prepared.compress(Bitmap.CompressFormat.JPEG, 92, out))
-                    android.util.Base64.encodeToString(out.toByteArray(), android.util.Base64.NO_WRAP)
-                }
-                if (prepared !== bitmap && !prepared.isRecycled) prepared.recycle()
-                if (!bitmap.isRecycled) bitmap.recycle()
+                val encoded = encodeAiVisionImage(imageUri)
                 val prompt = buildString {
                     append("Gambar ini adalah tangkapan layar sebuah postingan. ")
                     append("ATURAN UTAMA: fokus HANYA pada teks postingan di dalam gambar; ")
@@ -5614,6 +5620,46 @@ private fun selectedImageSearchUrl(query: String): String {
                             else -> "Lakukan tugas berikut pada teks postingan: $action. Jawab dalam Bahasa Indonesia."
                         }
                     )
+                    if (AiClient.restrictedMode) {
+                        append(" MODE TERBATAS: hanya bahas konten aman untuk semua umur; tolak konten dewasa dengan singkat.")
+                    }
+                }
+                AiClient.chatWithImage(aiSettings(), encoded, prompt)
+            }.getOrElse { Result.failure(it) }
+            aiStatus.post {
+                result.onSuccess { response ->
+                    pendingText = response.text
+                    aiAnswer.text = response.text
+                    renderAiSentenceButtons(response.text)
+                    aiStatus.text = "Gambar dianalisis · ${response.provider.label} · ketuk jawaban atau Pakai"
+                }.onFailure { error ->
+                    aiAnswer.text = ""
+                    aiStatus.text = error.message ?: "Analisis gambar gagal."
+                }
+            }
+        }
+    }
+
+    /**
+     * Kirim (↑ / ➤) saat ada lampiran: instruksi bebas yang diketik pengguna dibaca
+     * BERSAMA gambarnya, bukan teks saja. Prompt per-aksi tetap untuk tombol aksi cepat;
+     * di jalur ini permintaan pengguna yang jadi instruksi utama bagi model vision.
+     */
+    private fun runAiVisionInstruction(instruction: String, imageUri: Uri) {
+        AiClient.clearCancellation()
+        aiStatus.text = "AI sedang membaca gambar…"
+        aiAnswer.text = "Menganalisis gambar…"
+        renderAiSentenceButtons("")
+        aiInput.setText("")
+        aiComposeActive = false
+        aiInput.clearFocus()
+        thread {
+            val result = runCatching {
+                val encoded = encodeAiVisionImage(imageUri)
+                val prompt = buildString {
+                    append("Gambar terlampir adalah tangkapan layar dari perangkat pengguna. ")
+                    append("Baca isinya dengan cermat, lalu lakukan permintaan pengguna berikut: ")
+                    append(instruction)
                     if (AiClient.restrictedMode) {
                         append(" MODE TERBATAS: hanya bahas konten aman untuk semua umur; tolak konten dewasa dengan singkat.")
                     }
@@ -5680,6 +5726,14 @@ private fun selectedImageSearchUrl(query: String): String {
             aiStatus.text = "Tulis pesan untuk AI terlebih dahulu."
             aiInput.requestFocus()
             aiComposeActive = true
+            return
+        }
+        // Ada lampiran + teks diketik: keduanya dikirim bersamaan ke vision AI sehingga
+        // instruksi bebas seperti "buatkan balasan untuk komentar di foto ini" mengenai
+        // isi gambar, bukan berjalan sebagai obrolan teks biasa yang mengabaikan foto.
+        val attachedImage = aiChatImageUri
+        if (attachedImage != null) {
+            runAiVisionInstruction(prompt, attachedImage)
             return
         }
         val ic = currentInputConnection
