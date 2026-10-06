@@ -93,6 +93,9 @@ object AiClient {
             "Gambar tidak dapat dianalisis dalam mode terbatas."
     private const val VISION_CONNECT_TIMEOUT_MS = 6_000
     private const val VISION_READ_TIMEOUT_MS = 16_000
+    // Chat-with-image mengirim prompt aksi pengguna sebagai instruction (bukan JSON pencarian),
+    // jadi jawaban berupa teks utuh postingan: butuh budget token jauh di atas respons JSON.
+    private const val CHAT_WITH_IMAGE_MAX_TOKENS = 1400
 
     fun correctVoiceSearch(settings: AiSettings, transcript: String): Result<AiResponse> = execute(
         settings,
@@ -530,12 +533,14 @@ object AiClient {
             }
             val attempt = runCatching {
                 val output = when (provider) {
-                    AiProvider.OPENROUTER -> requestOpenRouterVision(settings, jpegBase64, prompt)
-                    AiProvider.TABIAI -> requestTabiAiVision(settings, jpegBase64, prompt)
-                    AiProvider.NINEROUTER -> request9RouterVision(settings, jpegBase64, prompt)
-                    AiProvider.BLUESMINDS -> requestCompatibleVision(settings.bluesMindsApiKey, settings.bluesMindsBaseUrl, settings.bluesMindsModel, "BluesMinds", jpegBase64, prompt)
-                    AiProvider.XKIRO -> requestCompatibleVision(settings.xKiroApiKey, settings.xKiroBaseUrl, settings.xKiroModel, "xKiro", jpegBase64, prompt)
-                    AiProvider.ORCAROUTER -> requestCompatibleVision(settings.orcaRouterApiKey, settings.orcaRouterBaseUrl, settings.orcaRouterModel, "OrcaRouter", jpegBase64, prompt)
+                    // Prompt aksi pengguna dikirim sebagai instructionOverride sehingga
+                    // MENGGANTIKAN visionInstruction (JSON pencarian), bukan menempel sebagai hint OCR.
+                    AiProvider.OPENROUTER -> requestOpenRouterVision(settings, jpegBase64, "", prompt, CHAT_WITH_IMAGE_MAX_TOKENS)
+                    AiProvider.TABIAI -> requestTabiAiVision(settings, jpegBase64, "", prompt, CHAT_WITH_IMAGE_MAX_TOKENS)
+                    AiProvider.NINEROUTER -> request9RouterVision(settings, jpegBase64, "", prompt, CHAT_WITH_IMAGE_MAX_TOKENS)
+                    AiProvider.BLUESMINDS -> requestCompatibleVision(settings.bluesMindsApiKey, settings.bluesMindsBaseUrl, settings.bluesMindsModel, "BluesMinds", jpegBase64, "", prompt, CHAT_WITH_IMAGE_MAX_TOKENS)
+                    AiProvider.XKIRO -> requestCompatibleVision(settings.xKiroApiKey, settings.xKiroBaseUrl, settings.xKiroModel, "xKiro", jpegBase64, "", prompt, CHAT_WITH_IMAGE_MAX_TOKENS)
+                    AiProvider.ORCAROUTER -> requestCompatibleVision(settings.orcaRouterApiKey, settings.orcaRouterBaseUrl, settings.orcaRouterModel, "OrcaRouter", jpegBase64, "", prompt, CHAT_WITH_IMAGE_MAX_TOKENS)
                     else -> error("Provider tidak mendukung analisis gambar.")
                 }
                 AiResponse(output.trim(), provider)
@@ -550,7 +555,8 @@ object AiClient {
         settings: AiSettings,
         jpegBase64: String,
         localTextHint: String,
-        instructionOverride: String? = null
+        instructionOverride: String? = null,
+        maxTokens: Int = 1600
     ): String {
         require(settings.openRouterApiKey.isNotBlank()) { "API key OpenRouter belum diisi." }
         require(settings.openRouterModel.isNotBlank()) { "Model OpenRouter belum diisi." }
@@ -569,7 +575,7 @@ object AiClient {
         val body = JSONObject()
             .put("model", settings.openRouterModel.trim())
             .put("temperature", 0.12)
-            .put("max_tokens", 360)
+            .put("max_tokens", maxTokens)
             .put(
                 "messages",
                 JSONArray().put(
@@ -609,7 +615,8 @@ object AiClient {
         settings: AiSettings,
         jpegBase64: String,
         localTextHint: String,
-        instructionOverride: String? = null
+        instructionOverride: String? = null,
+        maxTokens: Int = 1600
     ): String {
         require(settings.tabiApiKey.isNotBlank()) { "API key TabiAI belum diisi." }
         require(settings.tabiModel.isNotBlank()) { "Model TabiAI belum diisi." }
@@ -634,7 +641,7 @@ object AiClient {
 
         val body = JSONObject()
             .put("model", settings.tabiModel.trim())
-            .put("max_tokens", 360)
+            .put("max_tokens", maxTokens)
             .put("temperature", 0.12)
             .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", content)))
 
@@ -699,7 +706,8 @@ object AiClient {
         providerLabel: String,
         jpegBase64: String,
         localTextHint: String,
-        instructionOverride: String? = null
+        instructionOverride: String? = null,
+        maxTokens: Int = 1600
     ): String {
         require(apiKey.isNotBlank()) { "API key $providerLabel belum diisi." }
         require(model.isNotBlank()) { "Model $providerLabel belum diisi." }
@@ -717,7 +725,7 @@ object AiClient {
         val body = JSONObject()
             .put("model", model.trim())
             .put("temperature", 0.12)
-            .put("max_tokens", 360)
+            .put("max_tokens", maxTokens)
             .put(
                 "messages", JSONArray().put(
                     JSONObject().put("role", "user").put("content", content)
@@ -793,7 +801,8 @@ object AiClient {
         settings: AiSettings,
         jpegBase64: String,
         localTextHint: String,
-        instructionOverride: String? = null
+        instructionOverride: String? = null,
+        maxTokens: Int = 1600
     ): String {
         require(settings.nineRouterApiKey.isNotBlank()) { "API key 9Router belum diisi." }
         require(settings.nineRouterModel.isNotBlank()) { "Model 9Router belum diisi." }
@@ -809,7 +818,7 @@ object AiClient {
         val body = JSONObject()
             .put("model", settings.nineRouterModel.trim())
             .put("temperature", 0.12)
-            .put("max_tokens", 360)
+            .put("max_tokens", maxTokens)
             .put(
                 "messages",
                 JSONArray().put(

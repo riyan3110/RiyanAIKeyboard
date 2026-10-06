@@ -239,6 +239,8 @@ class RiyanKeyboardService : InputMethodService() {
     private lateinit var aiComposeCardView: LinearLayout
     private lateinit var aiQuickActionsRow: LinearLayout
     private lateinit var aiGalleryTitle: TextView
+    private lateinit var aiPanelHeaderView: LinearLayout
+    private var aiPanelSavedPadding: IntArray? = null
     private var aiChatGalleryOpen = false
     private var searchQuery = ""
     private var searchUrl = ""
@@ -417,11 +419,17 @@ class RiyanKeyboardService : InputMethodService() {
         }
         inputHost.addView(root, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
 
+        // View dibuat ulang: state galeri chat dari view lama tidak boleh terbawa.
+        aiChatGalleryOpen = false
+        aiPanelSavedPadding = null
+        aiChatGalleryPanel?.release()
+        aiChatGalleryPanel = null
         addAiConversationPanel()
         addSearchSurfacePanel()
         addUtilityBar()
         addSuggestionBar()
         addResizePanel()
+        addAiAttachmentStrip()
 
         keyboardPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -718,7 +726,7 @@ class RiyanKeyboardService : InputMethodService() {
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-        }
+        }.also { aiPanelHeaderView = it }
         val headerControlHeight = dp(aiHeaderControlHeightDp())
         header.addView(ImageView(this).apply {
             setImageResource(R.drawable.ai_ads_keyboard_header)
@@ -810,28 +818,6 @@ class RiyanKeyboardService : InputMethodService() {
             setOnClickListener { aiComposeActive = true }
             setOnFocusChangeListener { _, hasFocus -> aiComposeActive = hasFocus }
         }
-        aiChatAttachmentRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            visibility = View.GONE
-            setPadding(dp(4), dp(2), dp(4), dp(2))
-        }
-        aiChatAttachmentThumb = ImageView(this).apply {
-            scaleType = ImageView.ScaleType.CENTER_CROP
-            background = roundedBackground(Color.argb(120, 60, 50, 110), 7f)
-        }
-        aiChatAttachmentRow.addView(aiChatAttachmentThumb, LinearLayout.LayoutParams(dp(42), dp(42)))
-        aiChatAttachmentRow.addView(TextView(this).apply {
-            text = "✕"
-            textSize = 15f
-            gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
-            setOnClickListener {
-                aiChatImageUri = null
-                renderAiAttachment()
-            }
-        }, LinearLayout.LayoutParams(dp(34), dp(42)))
-        composeCard.addView(aiChatAttachmentRow, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(2) })
         composeCard.addView(aiInput, LinearLayout.LayoutParams(-1, dp(aiInputHeightDp())))
 
         val composeFooter = LinearLayout(this).apply {
@@ -872,6 +858,38 @@ class RiyanKeyboardService : InputMethodService() {
             rightMargin = dp(3)
         })
     }
+
+    /**
+     * Strip lampiran chat AI: ramping (±48dp), di atas kartu keyboard dan DI LUAR bingkai
+     * keyboard maupun kartu compose, sehingga thumbnail tidak pernah mendorong/menutup
+     * teks yang diketik di kotak AI.
+     */
+    private fun addAiAttachmentStrip() {
+        aiChatAttachmentRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            visibility = View.GONE
+            setPadding(dp(7), dp(3), dp(7), dp(3))
+        }
+        aiChatAttachmentThumb = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            background = roundedBackground(Color.argb(120, 60, 50, 110), 7f)
+        }
+        aiChatAttachmentRow.addView(aiChatAttachmentThumb, LinearLayout.LayoutParams(dp(40), dp(40)))
+        aiChatAttachmentRow.addView(TextView(this).apply {
+            text = "✕"
+            textSize = 15f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            setOnClickListener {
+                aiChatImageUri = null
+                renderAiAttachment()
+            }
+        }, LinearLayout.LayoutParams(dp(34), dp(40)).apply { leftMargin = dp(2) })
+        root.addView(aiChatAttachmentRow, LinearLayout.LayoutParams(-1, dp(aiAttachmentStripHeightDp())))
+    }
+
+    private fun aiAttachmentStripHeightDp(): Int = 48
 
     /**
      * The camera and search page live above the utility bar so the actual keyboard never gets
@@ -1166,6 +1184,8 @@ class RiyanKeyboardService : InputMethodService() {
             aiComposeActive = false
             aiInput.clearFocus()
         }
+        if (!aiPanelVisible) closeAiChatGallery()
+        renderAiAttachment()
         applyAiDisplayMode()
         applyRootHeight()
     }
@@ -1331,7 +1351,12 @@ class RiyanKeyboardService : InputMethodService() {
         val extra = brandBarHeightDp() +
             (if (aiPanelVisible) currentAiPanelHeightDp() else 0) +
             (if (resizePanelVisible) resizePanelHeightDp() else 0) +
-            (if (searchSurfaceVisible) searchSurfaceHeightDp() + 7 else 0)
+            (if (searchSurfaceVisible) searchSurfaceHeightDp() + 7 else 0) +
+            (if (::aiChatAttachmentRow.isInitialized && aiChatAttachmentRow.visibility == View.VISIBLE) {
+                aiAttachmentStripHeightDp()
+            } else {
+                0
+            })
         val rootHeight = dp(baseKeyboardHeightDp.coerceAtLeast(1) + extra)
         root.minimumHeight = rootHeight
         root.layoutParams = (root.layoutParams ?: FrameLayout.LayoutParams(-1, rootHeight, Gravity.BOTTOM)).apply {
@@ -2593,46 +2618,37 @@ class RiyanKeyboardService : InputMethodService() {
     private fun toggleAiChatGallery() {
         if (!::aiGalleryContainer.isInitialized) return
         if (aiChatGalleryOpen) {
-            aiChatGalleryPanel?.release()
-            aiChatGalleryPanel = null
-            aiChatGalleryOpen = false
-            aiGalleryContainer.visibility = View.GONE
-            aiAnswerScroll.visibility = View.VISIBLE
-            aiComposeCardView.visibility = View.VISIBLE
-            aiQuickActionsRow.visibility = View.VISIBLE
+            closeAiChatGallery()
             return
         }
         aiChatGalleryPanel?.release()
         val panel = InternalGalleryPanel(this)
         aiChatGalleryPanel = panel
         aiChatGalleryOpen = true
+        // Galeri full-bingkai: header dan isi obrolan disembunyikan sementara, padding kartu
+        // = 0, sehingga galeri mengisi seluruh kartu sampai bingkai. Chip ✕ melayang di
+        // pojok galeri untuk kembali ke obrolan.
         aiAnswerScroll.visibility = View.GONE
         aiComposeCardView.visibility = View.GONE
         aiQuickActionsRow.visibility = View.GONE
+        aiPanelHeaderView.visibility = View.GONE
+        aiPanelSavedPadding = intArrayOf(
+            aiPanel.paddingLeft, aiPanel.paddingTop, aiPanel.paddingRight, aiPanel.paddingBottom
+        )
+        aiPanel.setPadding(0, 0, 0, 0)
+        (aiGalleryContainer.layoutParams as? LinearLayout.LayoutParams)?.topMargin = 0
         aiGalleryContainer.visibility = View.VISIBLE
         aiGalleryContainer.removeAllViews()
         panel.show(
             container = aiGalleryContainer,
             onSelected = selected@ { uri ->
                 if (aiChatGalleryPanel !== panel) return@selected
-                aiChatGalleryPanel?.release()
-                aiChatGalleryPanel = null
-                aiChatGalleryOpen = false
-                aiGalleryContainer.visibility = View.GONE
-                aiAnswerScroll.visibility = View.VISIBLE
-                aiComposeCardView.visibility = View.VISIBLE
-                aiQuickActionsRow.visibility = View.VISIBLE
+                closeAiChatGallery()
                 attachAiChatImage(uri)
             },
             onCamera = camera@ {
                 if (aiChatGalleryPanel !== panel) return@camera
-                aiChatGalleryPanel?.release()
-                aiChatGalleryPanel = null
-                aiChatGalleryOpen = false
-                aiGalleryContainer.visibility = View.GONE
-                aiAnswerScroll.visibility = View.VISIBLE
-                aiComposeCardView.visibility = View.VISIBLE
-                aiQuickActionsRow.visibility = View.VISIBLE
+                closeAiChatGallery()
                 launchScanner()
             },
             onPermissionRequired = permission@ {
@@ -2646,6 +2662,37 @@ class RiyanKeyboardService : InputMethodService() {
                 }
             }
         )
+        // Chip ✕ kecil melayang di pojok galeri: ditambahkan SETELAH panel.show agar tidak
+        // ikut terhapus oleh removeAllViews di dalam show().
+        aiGalleryContainer.addView(TextView(this).apply {
+            text = "✕"
+            textSize = 13f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            typeface = Typeface.DEFAULT_BOLD
+            background = roundedBackground(Color.argb(190, 0, 0, 0), 15f)
+            contentDescription = "Kembali ke obrolan"
+            setOnClickListener { closeAiChatGallery() }
+        }, FrameLayout.LayoutParams(dp(30), dp(30), Gravity.BOTTOM or Gravity.END).apply {
+            setMargins(0, 0, dp(8), dp(8))
+        })
+    }
+
+    /** Tutup galeri chat AI dan pulihkan header + padding kartu obrolan seperti semula. */
+    private fun closeAiChatGallery() {
+        if (!aiChatGalleryOpen) return
+        aiChatGalleryPanel?.release()
+        aiChatGalleryPanel = null
+        aiChatGalleryOpen = false
+        aiGalleryContainer.visibility = View.GONE
+        aiGalleryContainer.removeAllViews()
+        aiPanelHeaderView.visibility = View.VISIBLE
+        aiPanelSavedPadding?.let { aiPanel.setPadding(it[0], it[1], it[2], it[3]) }
+        aiPanelSavedPadding = null
+        (aiGalleryContainer.layoutParams as? LinearLayout.LayoutParams)?.topMargin = dp(3)
+        aiAnswerScroll.visibility = View.VISIBLE
+        aiComposeCardView.visibility = View.VISIBLE
+        aiQuickActionsRow.visibility = View.VISIBLE
     }
 
     private fun attachAiChatImage(uri: Uri) {
@@ -2669,7 +2716,7 @@ class RiyanKeyboardService : InputMethodService() {
     private fun renderAiAttachment() {
         if (!::aiChatAttachmentRow.isInitialized || !::aiChatAttachmentThumb.isInitialized) return
         val uri = aiChatImageUri
-        aiChatAttachmentRow.visibility = if (uri != null) View.VISIBLE else View.GONE
+        aiChatAttachmentRow.visibility = if (uri != null && aiPanelVisible) View.VISIBLE else View.GONE
         if (uri != null) {
             val bitmap = runCatching {
                 val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -2680,6 +2727,7 @@ class RiyanKeyboardService : InputMethodService() {
             }.getOrNull()
             if (bitmap != null) aiChatAttachmentThumb.setImageBitmap(bitmap)
         }
+        if (::root.isInitialized) applyRootHeight()
     }
 
     private fun pasteClipboardIntoAiInput() {
@@ -5555,13 +5603,16 @@ private fun selectedImageSearchUrl(query: String): String {
                 if (prepared !== bitmap && !prepared.isRecycled) prepared.recycle()
                 if (!bitmap.isRecycled) bitmap.recycle()
                 val prompt = buildString {
-                    append("Ini tangkapan layar sebuah postingan. Baca dan FOKUS pada teks postingannya, ")
-                    append("abaikan elemen antarmuka lain seperti tombol, status bar, dan notifikasi. ")
+                    append("Gambar ini adalah tangkapan layar sebuah postingan. ")
+                    append("ATURAN UTAMA: fokus HANYA pada teks postingan di dalam gambar; ")
+                    append("jangan ambil teks di luar topik seperti status bar, jam, nama akun, jumlah suka/komentar, ")
+                    append("waktu unggah, tombol, menu, iklan, watermark, atau elemen antarmuka aplikasi. ")
                     append(
                         when (action) {
                             "Balas" -> "Tulis BALASAN untuk postingan tersebut dalam Bahasa Indonesia, sesuai nuansa dan maksudnya."
-                            "Terjemah" -> "Terjemahkan seluruh teks postingan ke Bahasa Indonesia yang natural."
+                            "Terjemah" -> "Terjemahkan seluruh teks postingan ke Bahasa Indonesia yang natural dan lengkap."
                             "Ringkas" -> "Ringkas poin-poin penting postingan dalam Bahasa Indonesia."
+                            "Inggris" -> "Terjemahkan seluruh teks postingan ke bahasa Inggris yang natural dan akurat. Keluarkan hanya hasil akhirnya."
                             "Santai" -> "Tanggapi postingan dengan gaya santai khas media sosial dalam Bahasa Indonesia."
                             "Sopan" -> "Tanggapi postingan dengan gaya sopan dan formal dalam Bahasa Indonesia."
                             else -> "Lakukan tugas berikut pada teks postingan: $action. Jawab dalam Bahasa Indonesia."
