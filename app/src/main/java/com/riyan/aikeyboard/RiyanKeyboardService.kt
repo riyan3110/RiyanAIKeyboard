@@ -144,7 +144,6 @@ class RiyanKeyboardService : InputMethodService() {
     private lateinit var aiStatus: TextView
     private lateinit var aiAnswer: TextView
     private lateinit var aiAnswerScroll: ScrollView
-    private lateinit var aiSentenceRow: LinearLayout
     private lateinit var aiInput: EditText
     private lateinit var aiFullscreenButton: ImageButton
     private lateinit var heightLabel: TextView
@@ -743,7 +742,6 @@ class RiyanKeyboardService : InputMethodService() {
             conversationHistory.clear()
             pendingText = null
             aiAnswer.text = "Jawaban AI akan muncul di sini."
-            renderAiSentenceButtons("")
             aiStatus.text = activeProviderLabel()
         }, LinearLayout.LayoutParams(dp(52), headerControlHeight))
         aiFullscreenButton = premiumIconButton(
@@ -769,18 +767,12 @@ class RiyanKeyboardService : InputMethodService() {
         val aiAnswerColumn = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
-        aiSentenceRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(6), 0, dp(6), dp(6))
-        }
         aiAnswerScroll = ScrollView(this).apply {
             // Glass hitam dengan sudut bulat + clip: kotak jawaban tidak lagi persegi
             // yang menyembul keluar bingkai kartu obrolan.
             background = roundedBackground(Color.argb(150, 0, 0, 0), 12f)
             clipToOutline = true
             aiAnswerColumn.addView(aiAnswer, ViewGroup.LayoutParams(-1, -2))
-            aiAnswerColumn.addView(aiSentenceRow, ViewGroup.LayoutParams(-1, -2))
             addView(aiAnswerColumn, ViewGroup.LayoutParams(-1, -2))
         }
         aiGalleryContainer = FrameLayout(this).apply {
@@ -1992,33 +1984,6 @@ class RiyanKeyboardService : InputMethodService() {
     }
 
     /** Satu tombol panah kecil per kalimat balasan untuk dikirim ke kolom ketik. */
-    private fun renderAiSentenceButtons(response: String) {
-        if (!::aiSentenceRow.isInitialized) return
-        aiSentenceRow.removeAllViews()
-        val sentences = response.split(Regex("(?<=[.!?…])\\s+"))
-            .map { it.trim() }
-            .filter { it.length > 1 }
-        if (sentences.isEmpty()) return
-        aiSentenceRow.addView(TextView(this).apply {
-            text = "Kirim:"
-            textSize = 10.5f
-            setTextColor(Color.rgb(178, 176, 188))
-        }, LinearLayout.LayoutParams(-2, -2).apply { rightMargin = dp(4) })
-        sentences.forEachIndexed { index, sentence ->
-            val btn = TextView(this).apply {
-                text = "→${index + 1}"
-                textSize = 11f
-                gravity = Gravity.CENTER
-                setTextColor(Color.WHITE)
-                setTypeface(typeface, Typeface.BOLD)
-                background = roundedStrokedBackground(Color.argb(150, 60, 50, 110), 7f, keyBorderColor, 1)
-                setPadding(dp(6), dp(3), dp(6), dp(3))
-                setOnClickListener { commitToTarget(sentence) }
-            }
-            aiSentenceRow.addView(btn, LinearLayout.LayoutParams(-2, -2).apply { rightMargin = dp(4) })
-        }
-    }
-
     private fun pasteAtCursor() {
         val text = clipboardManager.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString().orEmpty()
         if (text.isBlank()) {
@@ -5598,7 +5563,6 @@ private fun selectedImageSearchUrl(query: String): String {
         AiClient.clearCancellation()
         aiStatus.text = "$action sedang membaca gambar…"
         aiAnswer.text = "Menganalisis gambar…"
-        renderAiSentenceButtons("")
         aiInput.setText("")
         aiComposeActive = false
         thread {
@@ -5630,7 +5594,6 @@ private fun selectedImageSearchUrl(query: String): String {
                 result.onSuccess { response ->
                     pendingText = response.text
                     aiAnswer.text = response.text
-                    renderAiSentenceButtons(response.text)
                     aiStatus.text = "Gambar dianalisis · ${response.provider.label} · ketuk jawaban atau Pakai"
                 }.onFailure { error ->
                     aiAnswer.text = ""
@@ -5649,7 +5612,6 @@ private fun selectedImageSearchUrl(query: String): String {
         AiClient.clearCancellation()
         aiStatus.text = "AI sedang membaca gambar…"
         aiAnswer.text = "Menganalisis gambar…"
-        renderAiSentenceButtons("")
         aiInput.setText("")
         aiComposeActive = false
         aiInput.clearFocus()
@@ -5670,7 +5632,6 @@ private fun selectedImageSearchUrl(query: String): String {
                 result.onSuccess { response ->
                     pendingText = response.text
                     aiAnswer.text = response.text
-                    renderAiSentenceButtons(response.text)
                     aiStatus.text = "Gambar dianalisis · ${response.provider.label} · ketuk jawaban atau Pakai"
                 }.onFailure { error ->
                     aiAnswer.text = ""
@@ -5687,7 +5648,6 @@ private fun selectedImageSearchUrl(query: String): String {
         if (input.isBlank()) {
             aiStatus.text = "Tempel atau ketik teks di kotak AI terlebih dahulu."
             aiAnswer.text = "Jawaban AI akan muncul di sini."
-            renderAiSentenceButtons("")
             aiInput.requestFocus()
             aiComposeActive = true
             return
@@ -5700,7 +5660,6 @@ private fun selectedImageSearchUrl(query: String): String {
         }
         aiStatus.text = "$action sedang diproses dari teks yang kamu masukkan…"
         aiAnswer.text = "Menunggu jawaban…"
-        renderAiSentenceButtons("")
 
         thread {
             AiClient.clearCancellation()
@@ -5709,11 +5668,9 @@ private fun selectedImageSearchUrl(query: String): String {
                 result.onSuccess { response ->
                     pendingText = response.text
                     aiAnswer.text = response.text
-                    renderAiSentenceButtons(response.text)
                     aiStatus.text = "Hasil via ${response.provider.label} · ketuk jawaban atau Pakai"
                 }.onFailure { error ->
                     aiAnswer.text = ""
-                    renderAiSentenceButtons("")
                     aiStatus.text = error.message ?: "Permintaan AI gagal."
                 }
             }
@@ -5744,7 +5701,6 @@ private fun selectedImageSearchUrl(query: String): String {
         val history = conversationHistory.takeLast(4).joinToString("\n") { (role, text) -> "$role: $text" }
         aiStatus.text = "AI sedang menjawab…"
         aiAnswer.text = "Menunggu jawaban…"
-        renderAiSentenceButtons("")
         aiInput.setText("")
         aiComposeActive = false
         aiInput.clearFocus()
@@ -5758,7 +5714,6 @@ private fun selectedImageSearchUrl(query: String): String {
                     while (conversationHistory.size > 8) conversationHistory.removeAt(0)
                     pendingText = response.text
                     aiAnswer.text = response.text
-                    renderAiSentenceButtons(response.text)
                     aiStatus.text = "Jawaban via ${response.provider.label} · ketuk jawaban atau Pakai"
                 }.onFailure { error ->
                     aiAnswer.text = "Jawaban AI akan muncul di sini."
@@ -5769,11 +5724,33 @@ private fun selectedImageSearchUrl(query: String): String {
     }
 
     private fun insertPendingResult() {
-        pendingText?.let { result ->
-            commitToTarget(result)
-            pendingText = null
+        val result = pendingText
+        if (result.isNullOrBlank()) {
+            aiStatusOrToast("Belum ada jawaban AI untuk dipakai.")
+            return
+        }
+        pendingText = null
+        if (commitAnswerToTarget(result)) {
             aiStatus.text = "Jawaban dimasukkan ke kolom teks."
         }
+    }
+
+    /**
+     * Masukkan jawaban ke kolom teks aplikasi. Bila kolom tidak aktif / gagal menulis,
+     * jawaban JANGAN hilang diam-diam: kopikan ke clipboard dan beri tahu pengguna.
+     */
+    private fun commitAnswerToTarget(text: String): Boolean {
+        val connection = currentInputConnection
+        val committed = connection != null && runCatching {
+            connection.commitText(text, 1)
+        }.getOrDefault(false)
+        if (committed) {
+            refreshSuggestionsSoon()
+            return true
+        }
+        clipboardManager.setPrimaryClip(android.content.ClipData.newPlainText("Jawaban AI", text))
+        aiStatusOrToast("Tidak ada kolom teks aktif — jawaban dikopi ke clipboard.")
+        return false
     }
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
