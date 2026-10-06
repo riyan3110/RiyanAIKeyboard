@@ -236,6 +236,11 @@ class RiyanKeyboardService : InputMethodService() {
     private lateinit var aiChatAttachmentRow: LinearLayout
     private lateinit var aiChatAttachmentThumb: ImageView
     private lateinit var aiGalleryContainer: FrameLayout
+    private lateinit var aiComposeCardView: LinearLayout
+    private lateinit var aiQuickActionsRow: LinearLayout
+    private lateinit var aiGalleryTitle: TextView
+    private lateinit var aiAnswerScroll: ScrollView
+    private var aiChatGalleryOpen = false
     private var searchQuery = ""
     private var searchUrl = ""
     private var lastConsumedScanNonce = 0L
@@ -776,7 +781,16 @@ class RiyanKeyboardService : InputMethodService() {
             visibility = View.GONE
             setBackgroundColor(Color.rgb(16, 16, 22))
         }
-        aiPanel.addView(aiGalleryContainer, LinearLayout.LayoutParams(-1, dp(150)).apply { topMargin = dp(3) })
+        aiGalleryTitle = TextView(this).apply {
+            text = "📁 Pilih gambar untuk dilampirkan ke obrolan"
+            textSize = 12f
+            setTextColor(Color.rgb(200, 196, 214))
+            gravity = Gravity.CENTER
+            visibility = View.GONE
+            setPadding(dp(4), dp(4), dp(4), dp(2))
+        }
+        aiPanel.addView(aiGalleryTitle, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(3) })
+        aiPanel.addView(aiGalleryContainer, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(3) })
         aiPanel.addView(aiAnswerScroll, LinearLayout.LayoutParams(-1, dp(aiAnswerHeightDp())).apply { topMargin = dp(3) })
 
         val composeCard = LinearLayout(this).apply {
@@ -838,12 +852,14 @@ class RiyanKeyboardService : InputMethodService() {
         composeFooter.addView(aiPanelButton("Pakai", primary = true) { insertPendingResult() }, LinearLayout.LayoutParams(dp(52), dp(aiComposeFooterHeightDp())))
         composeFooter.addView(aiPanelButton("↑", primary = true) { runAiConversation() }, LinearLayout.LayoutParams(dp(38), dp(aiComposeFooterHeightDp())).apply { leftMargin = dp(4) })
         composeCard.addView(composeFooter)
+        aiComposeCardView = composeCard
         aiPanel.addView(composeCard, LinearLayout.LayoutParams(-1, dp(aiComposeHeightDp())).apply { topMargin = dp(3) })
 
         val quickActions = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
+        aiQuickActionsRow = quickActions
         listOf("Perbaiki", "Balas", "Terjemah", "Ringkas", "Santai", "Sopan").forEach { action ->
             quickActions.addView(aiPanelButton(action) { runAiSmart(action) }, LinearLayout.LayoutParams(0, -1, 1f).apply {
                 setMargins(dp(2), 0, dp(2), 0)
@@ -2574,18 +2590,26 @@ class RiyanKeyboardService : InputMethodService() {
         clipboardManager.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString()?.let(::commit)
     }
 
-    /** 🖼 obrolan AI: galeri internal tampil DI DALAM kartu obrolan, bukan activity. */
+    /** 🖼 obrolan AI: SELURUH kartu berubah jadi galeri, sampai bingkai. */
     private fun toggleAiChatGallery() {
         if (!::aiGalleryContainer.isInitialized) return
-        if (aiGalleryContainer.visibility == View.VISIBLE) {
+        if (aiChatGalleryOpen) {
             aiChatGalleryPanel?.release()
             aiChatGalleryPanel = null
+            aiChatGalleryOpen = false
             aiGalleryContainer.visibility = View.GONE
+            aiAnswerScroll.visibility = View.VISIBLE
+            aiComposeCardView.visibility = View.VISIBLE
+            aiQuickActionsRow.visibility = View.VISIBLE
             return
         }
         aiChatGalleryPanel?.release()
         val panel = InternalGalleryPanel(this)
         aiChatGalleryPanel = panel
+        aiChatGalleryOpen = true
+        aiAnswerScroll.visibility = View.GONE
+        aiComposeCardView.visibility = View.GONE
+        aiQuickActionsRow.visibility = View.GONE
         aiGalleryContainer.visibility = View.VISIBLE
         aiGalleryContainer.removeAllViews()
         panel.show(
@@ -2594,14 +2618,22 @@ class RiyanKeyboardService : InputMethodService() {
                 if (aiChatGalleryPanel !== panel) return@selected
                 aiChatGalleryPanel?.release()
                 aiChatGalleryPanel = null
+                aiChatGalleryOpen = false
                 aiGalleryContainer.visibility = View.GONE
+                aiAnswerScroll.visibility = View.VISIBLE
+                aiComposeCardView.visibility = View.VISIBLE
+                aiQuickActionsRow.visibility = View.VISIBLE
                 attachAiChatImage(uri)
             },
             onCamera = camera@ {
                 if (aiChatGalleryPanel !== panel) return@camera
                 aiChatGalleryPanel?.release()
                 aiChatGalleryPanel = null
+                aiChatGalleryOpen = false
                 aiGalleryContainer.visibility = View.GONE
+                aiAnswerScroll.visibility = View.VISIBLE
+                aiComposeCardView.visibility = View.VISIBLE
+                aiQuickActionsRow.visibility = View.VISIBLE
                 launchScanner()
             },
             onPermissionRequired = permission@ {

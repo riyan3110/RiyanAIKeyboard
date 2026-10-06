@@ -254,6 +254,6 @@ class InternalGalleryPanel(private val context: Context) {
     private fun dp(value: Int): Int = (value * context.resources.displayMetrics.density).toInt().coerceAtLeast(1)
 
     companion object {
-        private const val MAX_IMAGES = 120
+        private const val MAX_IMAGES = 1000
     }
 }
