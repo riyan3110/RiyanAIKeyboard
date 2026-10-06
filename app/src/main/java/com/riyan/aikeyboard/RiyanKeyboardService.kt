@@ -2590,8 +2590,9 @@ class RiyanKeyboardService : InputMethodService() {
         aiChatGalleryPanel = panel
         aiChatGalleryOpen = true
         // Galeri full-bingkai: header dan isi obrolan disembunyikan sementara, padding kartu
-        // = 0, sehingga galeri mengisi seluruh kartu sampai bingkai. Chip ✕ melayang di
-        // pojok galeri untuk kembali ke obrolan.
+        // disusutkan TIPIS selebar stroke bingkai (2dp) supaya galeri mengisi seluruh kartu
+        // sampai bingkai TANPA menutupi garis bingkai di kiri/kanan/atas/bawah. Chip ✕
+        // melayang di pojok galeri untuk kembali ke obrolan.
         aiAnswerScroll.visibility = View.GONE
         // Sembunyikan WRAPPER compose (composeArea), bukan composeCard di dalamnya —
         // wrapper tetap tampak = kotak kosong 71dp di bawah galeri (galeri tidak full).
@@ -2601,7 +2602,8 @@ class RiyanKeyboardService : InputMethodService() {
         aiPanelSavedPadding = intArrayOf(
             aiPanel.paddingLeft, aiPanel.paddingTop, aiPanel.paddingRight, aiPanel.paddingBottom
         )
-        aiPanel.setPadding(0, 0, 0, 0)
+        val frameInset = dp(2)
+        aiPanel.setPadding(frameInset, frameInset, frameInset, frameInset)
         (aiGalleryContainer.layoutParams as? LinearLayout.LayoutParams)?.topMargin = 0
         aiGalleryContainer.visibility = View.VISIBLE
         aiGalleryContainer.removeAllViews()
