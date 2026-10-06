@@ -236,6 +236,7 @@ class RiyanKeyboardService : InputMethodService() {
     private lateinit var aiChatAttachmentThumb: ImageView
     private lateinit var aiGalleryContainer: FrameLayout
     private lateinit var aiComposeCardView: LinearLayout
+    private lateinit var aiComposeAreaView: FrameLayout
     private lateinit var aiQuickActionsRow: LinearLayout
     private lateinit var aiGalleryTitle: TextView
     private lateinit var aiPanelHeaderView: LinearLayout
@@ -833,6 +834,8 @@ class RiyanKeyboardService : InputMethodService() {
         // "Ketik pesan untuk AI", DI LUAR bingkai kartu compose. Karena hanya overlay
         // (translationY negatif), chip tidak mengubah tinggi kartu apa pun: kolom ketik dan
         // keyboard selalu bernilai persis seperti tanpa lampiran.
+        // Wrapper ini yang di-toggle saat galeri full-bingkai (BUKAN composeCard di dalamnya,
+        // agar tidak menyisakan kotak kosong 71dp di bawah galeri).
         val composeArea = FrameLayout(this).apply {
             clipChildren = false
             clipToPadding = false
@@ -863,6 +866,7 @@ class RiyanKeyboardService : InputMethodService() {
             aiChatAttachmentRow,
             FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { leftMargin = dp(4) }
         )
+        aiComposeAreaView = composeArea
         aiPanel.addView(composeArea, LinearLayout.LayoutParams(-1, dp(aiComposeHeightDp())).apply { topMargin = dp(3) })
 
         val quickActions = LinearLayout(this).apply {
@@ -2589,7 +2593,9 @@ class RiyanKeyboardService : InputMethodService() {
         // = 0, sehingga galeri mengisi seluruh kartu sampai bingkai. Chip ✕ melayang di
         // pojok galeri untuk kembali ke obrolan.
         aiAnswerScroll.visibility = View.GONE
-        aiComposeCardView.visibility = View.GONE
+        // Sembunyikan WRAPPER compose (composeArea), bukan composeCard di dalamnya —
+        // wrapper tetap tampak = kotak kosong 71dp di bawah galeri (galeri tidak full).
+        aiComposeAreaView.visibility = View.GONE
         aiQuickActionsRow.visibility = View.GONE
         aiPanelHeaderView.visibility = View.GONE
         aiPanelSavedPadding = intArrayOf(
@@ -2651,7 +2657,7 @@ class RiyanKeyboardService : InputMethodService() {
         aiPanelSavedPadding = null
         (aiGalleryContainer.layoutParams as? LinearLayout.LayoutParams)?.topMargin = dp(3)
         aiAnswerScroll.visibility = View.VISIBLE
-        aiComposeCardView.visibility = View.VISIBLE
+        aiComposeAreaView.visibility = View.VISIBLE
         aiQuickActionsRow.visibility = View.VISIBLE
     }
 
