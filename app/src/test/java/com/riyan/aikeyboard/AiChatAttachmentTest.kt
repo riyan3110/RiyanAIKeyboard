@@ -40,4 +40,44 @@ class AiChatAttachmentTest {
         assertEquals(800, decoded.height)
         decoded.recycle()
     }
+    @Test fun previewHasSpaceAboveInputAndClearingRestoresAnswerSpace() {
+        val service = Robolectric.buildService(RiyanKeyboardService::class.java).get()
+        val area = android.widget.FrameLayout(service)
+        val card = android.widget.LinearLayout(service)
+        val row = android.widget.LinearLayout(service)
+        val thumb = android.widget.ImageView(service)
+        val answer = android.widget.ScrollView(service)
+        area.layoutParams = android.widget.LinearLayout.LayoutParams(300, 71)
+        area.addView(card, android.widget.FrameLayout.LayoutParams(300, 71))
+        area.addView(row, android.widget.FrameLayout.LayoutParams(50, 26))
+        answer.layoutParams = android.widget.LinearLayout.LayoutParams(300, 70)
+        fun field(name: String, value: Any?) {
+            RiyanKeyboardService::class.java.getDeclaredField(name).apply {
+                isAccessible = true
+                set(service, value)
+            }
+        }
+        field("aiComposeAreaView", area)
+        field("aiComposeCardView", card)
+        field("aiChatAttachmentRow", row)
+        field("aiChatAttachmentThumb", thumb)
+        field("aiAnswerScroll", answer)
+        val render = RiyanKeyboardService::class.java.getDeclaredMethod("renderAiAttachment").apply {
+            isAccessible = true
+        }
+        render.invoke(service)
+        val originalHeight = area.layoutParams.height + answer.layoutParams.height
+        field("aiChatImageUri", Uri.fromFile(File(service.cacheDir, "preview.jpg")))
+        render.invoke(service)
+        assertEquals(android.view.View.VISIBLE, row.visibility)
+        assertEquals(0f, row.translationY, 0f)
+        assertTrue((card.layoutParams as android.widget.FrameLayout.LayoutParams).topMargin > 0)
+        assertEquals(originalHeight, area.layoutParams.height + answer.layoutParams.height)
+        field("aiChatImageUri", null)
+        render.invoke(service)
+        assertEquals(android.view.View.GONE, row.visibility)
+        assertEquals(0, (card.layoutParams as android.widget.FrameLayout.LayoutParams).topMargin)
+        assertEquals(originalHeight, area.layoutParams.height + answer.layoutParams.height)
+    }
+
 }
