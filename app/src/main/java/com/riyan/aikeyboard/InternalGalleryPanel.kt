@@ -143,8 +143,11 @@ class InternalGalleryPanel(private val context: Context) {
         onSelected: (Uri) -> Unit
     ) {
         parent.removeAllViews()
-        val columns = if (context.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) 5 else 3
-        val cellHeight = if (columns >= 5) dp(74) else dp(96)
+        // Sel kecil: 4 kolom potret / 7 kolom lanskap supaya lebih banyak foto terlihat
+        // sebelum pengguna harus menggulir.
+        val landscape = context.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        val columns = if (landscape) 7 else 4
+        val cellHeight = if (landscape) dp(56) else dp(72)
 
         images.chunked(columns).forEach { chunk ->
             val row = LinearLayout(context).apply {

@@ -429,7 +429,6 @@ class RiyanKeyboardService : InputMethodService() {
         addUtilityBar()
         addSuggestionBar()
         addResizePanel()
-        addAiAttachmentStrip()
 
         keyboardPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -819,7 +818,6 @@ class RiyanKeyboardService : InputMethodService() {
             setOnFocusChangeListener { _, hasFocus -> aiComposeActive = hasFocus }
         }
         composeCard.addView(aiInput, LinearLayout.LayoutParams(-1, dp(aiInputHeightDp())))
-
         val composeFooter = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -838,7 +836,42 @@ class RiyanKeyboardService : InputMethodService() {
         composeFooter.addView(aiPanelButton("↑", primary = true) { runAiConversation() }, LinearLayout.LayoutParams(dp(38), dp(aiComposeFooterHeightDp())).apply { leftMargin = dp(4) })
         composeCard.addView(composeFooter)
         aiComposeCardView = composeCard
-        aiPanel.addView(composeCard, LinearLayout.LayoutParams(-1, dp(aiComposeHeightDp())).apply { topMargin = dp(3) })
+
+        // Lampiran chat: chip kecil (thumbnail 26dp + ✕) yang MELAYANG tepat di atas teks
+        // "Ketik pesan untuk AI", DI LUAR bingkai kartu compose. Karena hanya overlay
+        // (translationY negatif), chip tidak mengubah tinggi kartu apa pun: kolom ketik dan
+        // keyboard selalu bernilai persis seperti tanpa lampiran.
+        val composeArea = FrameLayout(this).apply {
+            clipChildren = false
+            clipToPadding = false
+        }
+        composeArea.addView(composeCard, FrameLayout.LayoutParams(-1, dp(aiComposeHeightDp())))
+        aiChatAttachmentRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            visibility = View.GONE
+            translationY = -dpFloat(27f)
+        }
+        aiChatAttachmentThumb = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            background = roundedBackground(Color.argb(120, 60, 50, 110), 7f)
+        }
+        aiChatAttachmentRow.addView(aiChatAttachmentThumb, LinearLayout.LayoutParams(dp(26), dp(26)))
+        aiChatAttachmentRow.addView(TextView(this).apply {
+            text = "✕"
+            textSize = 13f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            setOnClickListener {
+                aiChatImageUri = null
+                renderAiAttachment()
+            }
+        }, LinearLayout.LayoutParams(dp(24), dp(26)))
+        composeArea.addView(
+            aiChatAttachmentRow,
+            FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { leftMargin = dp(4) }
+        )
+        aiPanel.addView(composeArea, LinearLayout.LayoutParams(-1, dp(aiComposeHeightDp())).apply { topMargin = dp(3) })
 
         val quickActions = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -858,38 +891,6 @@ class RiyanKeyboardService : InputMethodService() {
             rightMargin = dp(3)
         })
     }
-
-    /**
-     * Strip lampiran chat AI: ramping (±48dp), di atas kartu keyboard dan DI LUAR bingkai
-     * keyboard maupun kartu compose, sehingga thumbnail tidak pernah mendorong/menutup
-     * teks yang diketik di kotak AI.
-     */
-    private fun addAiAttachmentStrip() {
-        aiChatAttachmentRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            visibility = View.GONE
-            setPadding(dp(7), dp(3), dp(7), dp(3))
-        }
-        aiChatAttachmentThumb = ImageView(this).apply {
-            scaleType = ImageView.ScaleType.CENTER_CROP
-            background = roundedBackground(Color.argb(120, 60, 50, 110), 7f)
-        }
-        aiChatAttachmentRow.addView(aiChatAttachmentThumb, LinearLayout.LayoutParams(dp(40), dp(40)))
-        aiChatAttachmentRow.addView(TextView(this).apply {
-            text = "✕"
-            textSize = 15f
-            gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
-            setOnClickListener {
-                aiChatImageUri = null
-                renderAiAttachment()
-            }
-        }, LinearLayout.LayoutParams(dp(34), dp(40)).apply { leftMargin = dp(2) })
-        root.addView(aiChatAttachmentRow, LinearLayout.LayoutParams(-1, dp(aiAttachmentStripHeightDp())))
-    }
-
-    private fun aiAttachmentStripHeightDp(): Int = 48
 
     /**
      * The camera and search page live above the utility bar so the actual keyboard never gets
@@ -1185,7 +1186,6 @@ class RiyanKeyboardService : InputMethodService() {
             aiInput.clearFocus()
         }
         if (!aiPanelVisible) closeAiChatGallery()
-        renderAiAttachment()
         applyAiDisplayMode()
         applyRootHeight()
     }
@@ -1351,12 +1351,7 @@ class RiyanKeyboardService : InputMethodService() {
         val extra = brandBarHeightDp() +
             (if (aiPanelVisible) currentAiPanelHeightDp() else 0) +
             (if (resizePanelVisible) resizePanelHeightDp() else 0) +
-            (if (searchSurfaceVisible) searchSurfaceHeightDp() + 7 else 0) +
-            (if (::aiChatAttachmentRow.isInitialized && aiChatAttachmentRow.visibility == View.VISIBLE) {
-                aiAttachmentStripHeightDp()
-            } else {
-                0
-            })
+            (if (searchSurfaceVisible) searchSurfaceHeightDp() + 7 else 0)
         val rootHeight = dp(baseKeyboardHeightDp.coerceAtLeast(1) + extra)
         root.minimumHeight = rootHeight
         root.layoutParams = (root.layoutParams ?: FrameLayout.LayoutParams(-1, rootHeight, Gravity.BOTTOM)).apply {
@@ -2716,7 +2711,9 @@ class RiyanKeyboardService : InputMethodService() {
     private fun renderAiAttachment() {
         if (!::aiChatAttachmentRow.isInitialized || !::aiChatAttachmentThumb.isInitialized) return
         val uri = aiChatImageUri
-        aiChatAttachmentRow.visibility = if (uri != null && aiPanelVisible) View.VISIBLE else View.GONE
+        // Chip hidup di dalam kartu obrolan AI, jadi ikut tersembunyi otomatis saat panel
+        // ditutup dan tidak pernah mengubah tinggi root/keyboard.
+        aiChatAttachmentRow.visibility = if (uri != null) View.VISIBLE else View.GONE
         if (uri != null) {
             val bitmap = runCatching {
                 val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -2727,7 +2724,6 @@ class RiyanKeyboardService : InputMethodService() {
             }.getOrNull()
             if (bitmap != null) aiChatAttachmentThumb.setImageBitmap(bitmap)
         }
-        if (::root.isInitialized) applyRootHeight()
     }
 
     private fun pasteClipboardIntoAiInput() {
