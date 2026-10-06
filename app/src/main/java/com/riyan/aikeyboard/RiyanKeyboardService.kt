@@ -5527,7 +5527,6 @@ private fun selectedImageSearchUrl(query: String): String {
 
     /** Pilih jalur: ada lampiran gambar -> vision + aksi; tidak ada -> alur teks biasa. */
     private fun runAiSmart(action: String) {
-        AiChatImagePickerActivity.take()?.let { attachAiChatImage(it) }
         val image = aiChatImageUri
         if (image != null) {
             runAiVisionAction(action, image)
