@@ -830,12 +830,8 @@ class RiyanKeyboardService : InputMethodService() {
         composeCard.addView(composeFooter)
         aiComposeCardView = composeCard
 
-        // Lampiran chat: chip kecil (thumbnail 26dp + ✕) yang MELAYANG tepat di atas teks
-        // "Ketik pesan untuk AI", DI LUAR bingkai kartu compose. Karena hanya overlay
-        // (translationY negatif), chip tidak mengubah tinggi kartu apa pun: kolom ketik dan
-        // keyboard selalu bernilai persis seperti tanpa lampiran.
-        // Wrapper ini yang di-toggle saat galeri full-bingkai (BUKAN composeCard di dalamnya,
-        // agar tidak menyisakan kotak kosong 71dp di bawah galeri).
+        // Reserve attachment space inside the composer wrapper so the thumbnail
+        // is drawn and receives touches within its parent's bounds.
         val composeArea = FrameLayout(this).apply {
             clipChildren = false
             clipToPadding = false
@@ -845,7 +841,6 @@ class RiyanKeyboardService : InputMethodService() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             visibility = View.GONE
-            translationY = -dpFloat(27f)
         }
         aiChatAttachmentThumb = ImageView(this).apply {
             scaleType = ImageView.ScaleType.CENTER_CROP
@@ -1214,7 +1209,7 @@ class RiyanKeyboardService : InputMethodService() {
             aiAnswerScroll.layoutParams = (aiAnswerScroll.layoutParams as? LinearLayout.LayoutParams
                 ?: LinearLayout.LayoutParams(-1, dp(aiAnswerHeightDp()))).apply {
                 width = ViewGroup.LayoutParams.MATCH_PARENT
-                height = if (aiFullscreen) 0 else dp(aiAnswerHeightDp())
+                height = if (aiFullscreen) 0 else dp(aiAnswerHeightDp() - if (aiChatImageUri != null) 30 else 0)
                 weight = if (aiFullscreen) 1f else 0f
                 topMargin = dp(3)
             }
@@ -2704,6 +2699,20 @@ class RiyanKeyboardService : InputMethodService() {
         // Chip hidup di dalam kartu obrolan AI, jadi ikut tersembunyi otomatis saat panel
         // ditutup dan tidak pernah mengubah tinggi root/keyboard.
         aiChatAttachmentRow.visibility = if (uri != null) View.VISIBLE else View.GONE
+        val attachmentHeight = if (uri != null) dp(30) else 0
+        (aiComposeCardView.layoutParams as FrameLayout.LayoutParams).let {
+            it.topMargin = attachmentHeight
+            aiComposeCardView.layoutParams = it
+        }
+        aiComposeAreaView.layoutParams = aiComposeAreaView.layoutParams.apply {
+            height = dp(aiComposeHeightDp()) + attachmentHeight
+        }
+        (aiAnswerScroll.layoutParams as LinearLayout.LayoutParams).let {
+            it.height = if (aiFullscreen) 0 else dp(aiAnswerHeightDp()) - attachmentHeight
+            it.weight = if (aiFullscreen) 1f else 0f
+            aiAnswerScroll.layoutParams = it
+        }
+        if (uri == null) aiChatAttachmentThumb.setImageDrawable(null)
         if (uri != null) {
             val bitmap = runCatching {
                 val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -5613,13 +5622,13 @@ private fun selectedImageSearchUrl(query: String): String {
                         append(" MODE TERBATAS: hanya bahas konten aman untuk semua umur; tolak konten dewasa dengan singkat.")
                     }
                 }
-                AiClient.chatWithImage(aiSettings(), encoded, prompt)
+                runPrivateImageChat(encoded, prompt)
             }.getOrElse { Result.failure(it) }
             aiStatus.post {
                 result.onSuccess { response ->
                     pendingText = response.text
                     aiAnswer.text = response.text
-                    aiStatus.text = "Gambar dianalisis · ${response.provider.label} · ketuk jawaban atau Pakai"
+                    aiStatus.text = "Gambar dianalisis · ${response.profile.name} · ${response.profile.model} · ketuk jawaban atau Pakai"
                 }.onFailure { error ->
                     aiAnswer.text = ""
                     aiStatus.text = error.message ?: "Analisis gambar gagal."
@@ -5651,13 +5660,13 @@ private fun selectedImageSearchUrl(query: String): String {
                         append(" MODE TERBATAS: hanya bahas konten aman untuk semua umur; tolak konten dewasa dengan singkat.")
                     }
                 }
-                AiClient.chatWithImage(aiSettings(), encoded, prompt)
+                runPrivateImageChat(encoded, prompt)
             }.getOrElse { Result.failure(it) }
             aiStatus.post {
                 result.onSuccess { response ->
                     pendingText = response.text
                     aiAnswer.text = response.text
-                    aiStatus.text = "Gambar dianalisis · ${response.provider.label} · ketuk jawaban atau Pakai"
+                    aiStatus.text = "Gambar dianalisis · ${response.profile.name} · ${response.profile.model} · ketuk jawaban atau Pakai"
                 }.onFailure { error ->
                     aiAnswer.text = ""
                     aiStatus.text = error.message ?: "Analisis gambar gagal."
@@ -5693,7 +5702,7 @@ private fun selectedImageSearchUrl(query: String): String {
                 result.onSuccess { response ->
                     pendingText = response.text
                     aiAnswer.text = response.text
-                    aiStatus.text = "Hasil via ${response.provider.label} · ketuk jawaban atau Pakai"
+                    aiStatus.text = "Hasil via ${response.profile.name} · ${response.profile.model} · ketuk jawaban atau Pakai"
                 }.onFailure { error ->
                     aiAnswer.text = ""
                     aiStatus.text = error.message ?: "Permintaan AI gagal."
@@ -5739,7 +5748,7 @@ private fun selectedImageSearchUrl(query: String): String {
                     while (conversationHistory.size > 8) conversationHistory.removeAt(0)
                     pendingText = response.text
                     aiAnswer.text = response.text
-                    aiStatus.text = "Jawaban via ${response.provider.label} · ketuk jawaban atau Pakai"
+                    aiStatus.text = "Jawaban via ${response.profile.name} · ${response.profile.model} · ketuk jawaban atau Pakai"
                 }.onFailure { error ->
                     aiAnswer.text = "Jawaban AI akan muncul di sini."
                     aiStatus.text = error.message ?: "Terjadi kesalahan"
