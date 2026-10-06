@@ -239,7 +239,6 @@ class RiyanKeyboardService : InputMethodService() {
     private lateinit var aiComposeCardView: LinearLayout
     private lateinit var aiQuickActionsRow: LinearLayout
     private lateinit var aiGalleryTitle: TextView
-    private lateinit var aiAnswerScroll: ScrollView
     private var aiChatGalleryOpen = false
     private var searchQuery = ""
     private var searchUrl = ""
