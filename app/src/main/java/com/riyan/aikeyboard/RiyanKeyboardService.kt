@@ -2673,8 +2673,11 @@ class RiyanKeyboardService : InputMethodService() {
             // IME dan gagal (OOM) -> lampiran tidak pernah muncul; thumbnail galeri lolos
             // karena memang di-sample kecil.
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+            val boundsStream = contentResolver.openInputStream(uri)
                 ?: error("Gambar tidak bisa dibuka.")
+            // Bounds-only decoding returns null even for a valid photo. Validate the
+            // stream and decoded dimensions, not the deliberately absent bitmap.
+            boundsStream.use { BitmapFactory.decodeStream(it, null, bounds) }
             check(bounds.outWidth > 0 && bounds.outHeight > 0) { "Gambar tidak bisa dibaca." }
             var sample = 1
             while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 1600 * 2) sample *= 2
