@@ -45,12 +45,6 @@
             android:name="android.webkit.WebView.EnableSafeBrowsing"
             android:value="true" />
 
-        <activity
-            android:name=".AiChatImagePickerActivity"
-            android:exported="false"
-            android:launchMode="singleTask"
-            android:excludeFromRecents="true"
-            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
         <activity android:name=".MicrophonePermissionActivity"
             android:exported="false" android:excludeFromRecents="true"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />

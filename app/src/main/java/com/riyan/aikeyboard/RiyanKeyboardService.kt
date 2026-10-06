@@ -232,9 +232,10 @@ class RiyanKeyboardService : InputMethodService() {
     private var cursorSelectionAnchor = -1
     private var cursorSelectionPos = -1
     private var aiChatImageUri: Uri? = null
-    private var aiChatImagePending = false
+    private var aiChatGalleryPanel: InternalGalleryPanel? = null
     private lateinit var aiChatAttachmentRow: LinearLayout
     private lateinit var aiChatAttachmentThumb: ImageView
+    private lateinit var aiGalleryContainer: FrameLayout
     private var searchQuery = ""
     private var searchUrl = ""
     private var lastConsumedScanNonce = 0L
@@ -488,11 +489,6 @@ class RiyanKeyboardService : InputMethodService() {
     override fun onWindowHidden() {
         cancelVoiceSearch()
         stopEmbeddedScanner(keepRequested = true)
-        // Lampiran gambar obrolan AI: ambil hasil picker saat jendela kembali.
-        if (aiChatImagePending) {
-            aiChatImagePending = false
-            AiChatImagePickerActivity.take()?.let { attachAiChatImage(it) }
-        }
         // Keyboard closed: the next open must start from the letters page, never from
         // wherever the user happened to be (clipboard/symbols/emoji), and never in a
         // stale manual uppercase/caps state — auto-capitalization re-derives on reopen.
@@ -776,6 +772,11 @@ class RiyanKeyboardService : InputMethodService() {
             aiAnswerColumn.addView(aiSentenceRow, ViewGroup.LayoutParams(-1, -2))
             addView(aiAnswerColumn, ViewGroup.LayoutParams(-1, -2))
         }
+        aiGalleryContainer = FrameLayout(this).apply {
+            visibility = View.GONE
+            setBackgroundColor(Color.rgb(16, 16, 22))
+        }
+        aiPanel.addView(aiGalleryContainer, LinearLayout.LayoutParams(-1, dp(150)).apply { topMargin = dp(3) })
         aiPanel.addView(aiAnswerScroll, LinearLayout.LayoutParams(-1, dp(aiAnswerHeightDp())).apply { topMargin = dp(3) })
 
         val composeCard = LinearLayout(this).apply {
@@ -824,7 +825,7 @@ class RiyanKeyboardService : InputMethodService() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        composeFooter.addView(aiPanelButton("🖼") { startAiChatImagePick() }, LinearLayout.LayoutParams(dp(34), dp(aiComposeFooterHeightDp())))
+        composeFooter.addView(aiPanelButton("🖼") { toggleAiChatGallery() }, LinearLayout.LayoutParams(dp(34), dp(aiComposeFooterHeightDp())))
         aiStatus = TextView(this).apply {
             text = activeProviderLabel()
             textSize = if (isLandscape()) 9f else 11f
@@ -2573,14 +2574,46 @@ class RiyanKeyboardService : InputMethodService() {
         clipboardManager.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString()?.let(::commit)
     }
 
-    private fun startAiChatImagePick() {
-        aiChatImagePending = true
-        // Keyboard ditutup dulu: jendela IME selalu di atas activity, tanpa ini
-        // picker terbuka di belakang keyboard dan terlihat seperti tidak muncul.
-        requestHideSelf(0)
-        startActivity(
-            Intent(this, AiChatImagePickerActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    /** 🖼 obrolan AI: galeri internal tampil DI DALAM kartu obrolan, bukan activity. */
+    private fun toggleAiChatGallery() {
+        if (!::aiGalleryContainer.isInitialized) return
+        if (aiGalleryContainer.visibility == View.VISIBLE) {
+            aiChatGalleryPanel?.release()
+            aiChatGalleryPanel = null
+            aiGalleryContainer.visibility = View.GONE
+            return
+        }
+        aiChatGalleryPanel?.release()
+        val panel = InternalGalleryPanel(this)
+        aiChatGalleryPanel = panel
+        aiGalleryContainer.visibility = View.VISIBLE
+        aiGalleryContainer.removeAllViews()
+        panel.show(
+            container = aiGalleryContainer,
+            onSelected = selected@ { uri ->
+                if (aiChatGalleryPanel !== panel) return@selected
+                aiChatGalleryPanel?.release()
+                aiChatGalleryPanel = null
+                aiGalleryContainer.visibility = View.GONE
+                attachAiChatImage(uri)
+            },
+            onCamera = camera@ {
+                if (aiChatGalleryPanel !== panel) return@camera
+                aiChatGalleryPanel?.release()
+                aiChatGalleryPanel = null
+                aiGalleryContainer.visibility = View.GONE
+                launchScanner()
+            },
+            onPermissionRequired = permission@ {
+                runCatching {
+                    startActivity(
+                        Intent(this, GalleryPermissionActivity::class.java)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+                    )
+                }.onFailure {
+                    Toast.makeText(this, "Buka aplikasi AI Ads Keyboard lalu izinkan akses Foto & Video.", Toast.LENGTH_LONG).show()
+                }
+            }
         )
     }
 
