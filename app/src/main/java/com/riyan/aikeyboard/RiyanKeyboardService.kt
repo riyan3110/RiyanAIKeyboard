@@ -1182,6 +1182,9 @@ class RiyanKeyboardService : InputMethodService() {
             aiInput.clearFocus()
         }
         if (!aiPanelVisible) closeAiChatGallery()
+        // Segarkan chip lampiran: foto yang sudah dipilih tetap terbawa walau view keyboard
+        // sempat dibangun ulang saat panel tertutup.
+        renderAiAttachment()
         applyAiDisplayMode()
         applyRootHeight()
     }
@@ -2665,16 +2668,27 @@ class RiyanKeyboardService : InputMethodService() {
 
     private fun attachAiChatImage(uri: Uri) {
         runCatching {
-            val bitmap = contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) }
+            // Decode langsung di ukuran ~1600px (dua tahap: bounds dulu, lalu inSampleSize).
+            // Decode resolusi penuh untuk foto kamera besar bisa memakan ratusan MB di proses
+            // IME dan gagal (OOM) -> lampiran tidak pernah muncul; thumbnail galeri lolos
+            // karena memang di-sample kecil.
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+                ?: error("Gambar tidak bisa dibuka.")
+            check(bounds.outWidth > 0 && bounds.outHeight > 0) { "Gambar tidak bisa dibaca." }
+            var sample = 1
+            while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 1600 * 2) sample *= 2
+            val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+            val bitmap = contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts) }
                 ?: error("Gambar tidak bisa dibuka.")
             val prepared = scaleBitmapForAiVision(bitmap, 1600)
             val file = File(filesDir, "ai_chat_attachment.jpg")
-            file.outputStream().use { prepared.compress(Bitmap.CompressFormat.JPEG, 92, it) }
+            file.outputStream().use { check(prepared.compress(Bitmap.CompressFormat.JPEG, 92, it)) }
             if (prepared !== bitmap && !prepared.isRecycled) prepared.recycle()
-            bitmap.recycle()
+            if (!bitmap.isRecycled) bitmap.recycle()
             aiChatImageUri = Uri.fromFile(file)
         }.onFailure { error ->
-            Toast.makeText(this, error.message ?: "Gambar gagal dilampirkan.", Toast.LENGTH_SHORT).show()
+            aiStatusOrToast(error.message ?: "Gambar gagal dilampirkan.")
             return
         }
         renderAiAttachment()
