@@ -769,6 +769,11 @@ class RiyanKeyboardService : InputMethodService() {
 
         aiAnswer = TextView(this).apply {
             text = "Jawaban AI akan muncul di sini."
+            gravity = Gravity.TOP or Gravity.START
+            textDirection = View.TEXT_DIRECTION_FIRST_STRONG
+            setLineSpacing(dpFloat(3f), 1.08f)
+            breakStrategy = android.text.Layout.BREAK_STRATEGY_SIMPLE
+            hyphenationFrequency = android.text.Layout.HYPHENATION_FREQUENCY_NONE
             textSize = if (isLandscape()) 12f else 14f
             setTextColor(Color.rgb(246, 245, 252))
             setPadding(dp(9), dp(7), dp(9), dp(7))
@@ -5601,8 +5606,8 @@ private fun selectedImageSearchUrl(query: String): String {
             }.getOrElse { Result.failure(it) }
             aiStatus.post {
                 result.onSuccess { response ->
-                    pendingText = response.text
-                    aiAnswer.text = response.text
+                    pendingText = AiAnswerFormat.clean(response.text)
+                    aiAnswer.text = pendingText
                     aiStatus.text = "Gambar dianalisis · ${response.profile.name} · ${response.profile.model} · ketuk jawaban atau Pakai"
                 }.onFailure { error ->
                     aiAnswer.text = ""
@@ -5639,8 +5644,8 @@ private fun selectedImageSearchUrl(query: String): String {
             }.getOrElse { Result.failure(it) }
             aiStatus.post {
                 result.onSuccess { response ->
-                    pendingText = response.text
-                    aiAnswer.text = response.text
+                    pendingText = AiAnswerFormat.clean(response.text)
+                    aiAnswer.text = pendingText
                     aiStatus.text = "Gambar dianalisis · ${response.profile.name} · ${response.profile.model} · ketuk jawaban atau Pakai"
                 }.onFailure { error ->
                     aiAnswer.text = ""
@@ -5675,8 +5680,8 @@ private fun selectedImageSearchUrl(query: String): String {
             val result = AiClient.transform(aiSettings(), action, input)
             aiStatus.post {
                 result.onSuccess { response ->
-                    pendingText = response.text
-                    aiAnswer.text = response.text
+                    pendingText = AiAnswerFormat.clean(response.text)
+                    aiAnswer.text = pendingText
                     aiStatus.text = "Hasil via ${response.profile.name} · ${response.profile.model} · ketuk jawaban atau Pakai"
                 }.onFailure { error ->
                     aiAnswer.text = ""
@@ -5719,10 +5724,10 @@ private fun selectedImageSearchUrl(query: String): String {
             aiStatus.post {
                 result.onSuccess { response ->
                     conversationHistory += "Pengguna" to prompt
-                    conversationHistory += "AI" to response.text
+                    conversationHistory += "AI" to AiAnswerFormat.clean(response.text)
                     while (conversationHistory.size > 8) conversationHistory.removeAt(0)
-                    pendingText = response.text
-                    aiAnswer.text = response.text
+                    pendingText = AiAnswerFormat.clean(response.text)
+                    aiAnswer.text = pendingText
                     aiStatus.text = "Jawaban via ${response.profile.name} · ${response.profile.model} · ketuk jawaban atau Pakai"
                 }.onFailure { error ->
                     aiAnswer.text = "Jawaban AI akan muncul di sini."

@@ -233,6 +233,8 @@ object AiClient {
                 append("\n\n")
                 append(settings.writingStyleProfile)
             }
+            append("\n\n")
+            append(AiAnswerFormat.INSTRUCTION)
         }
 
         val providers = buildList {
@@ -272,7 +274,7 @@ object AiClient {
                     AiProvider.ORCAROUTER -> requestCompatibleChat(settings.orcaRouterApiKey, settings.orcaRouterBaseUrl, settings.orcaRouterModel, "OrcaRouter", personalizedInstruction, text, temperature, maxTokens)
                     AiProvider.AIHORDE -> requestAiHordeChat(settings, personalizedInstruction, text, temperature, maxTokens)
                 }
-                AiResponse(output, provider)
+                AiResponse(AiAnswerFormat.clean(output), provider)
             }
             attempt.getOrNull()?.let { return Result.success(it) }
             lastError = attempt.exceptionOrNull()
@@ -516,6 +518,7 @@ object AiClient {
      * dikirim ke transport kompatibel OpenAI sesuai provider utama. Jawaban = teks biasa.
      */
     fun chatWithImage(settings: AiSettings, jpegBase64: String, prompt: String): Result<AiResponse> {
+        val formattedPrompt = prompt + "\n\n" + AiAnswerFormat.INSTRUCTION
         val providers = buildList {
             add(settings.primaryProvider)
             if (settings.fallbackEnabled) {
@@ -535,15 +538,15 @@ object AiClient {
                 val output = when (provider) {
                     // Prompt aksi pengguna dikirim sebagai instructionOverride sehingga
                     // MENGGANTIKAN visionInstruction (JSON pencarian), bukan menempel sebagai hint OCR.
-                    AiProvider.OPENROUTER -> requestOpenRouterVision(settings, jpegBase64, "", prompt, CHAT_WITH_IMAGE_MAX_TOKENS)
-                    AiProvider.TABIAI -> requestTabiAiVision(settings, jpegBase64, "", prompt, CHAT_WITH_IMAGE_MAX_TOKENS)
-                    AiProvider.NINEROUTER -> request9RouterVision(settings, jpegBase64, "", prompt, CHAT_WITH_IMAGE_MAX_TOKENS)
-                    AiProvider.BLUESMINDS -> requestCompatibleVision(settings.bluesMindsApiKey, settings.bluesMindsBaseUrl, settings.bluesMindsModel, "BluesMinds", jpegBase64, "", prompt, CHAT_WITH_IMAGE_MAX_TOKENS)
-                    AiProvider.XKIRO -> requestCompatibleVision(settings.xKiroApiKey, settings.xKiroBaseUrl, settings.xKiroModel, "xKiro", jpegBase64, "", prompt, CHAT_WITH_IMAGE_MAX_TOKENS)
-                    AiProvider.ORCAROUTER -> requestCompatibleVision(settings.orcaRouterApiKey, settings.orcaRouterBaseUrl, settings.orcaRouterModel, "OrcaRouter", jpegBase64, "", prompt, CHAT_WITH_IMAGE_MAX_TOKENS)
+                    AiProvider.OPENROUTER -> requestOpenRouterVision(settings, jpegBase64, "", formattedPrompt, CHAT_WITH_IMAGE_MAX_TOKENS)
+                    AiProvider.TABIAI -> requestTabiAiVision(settings, jpegBase64, "", formattedPrompt, CHAT_WITH_IMAGE_MAX_TOKENS)
+                    AiProvider.NINEROUTER -> request9RouterVision(settings, jpegBase64, "", formattedPrompt, CHAT_WITH_IMAGE_MAX_TOKENS)
+                    AiProvider.BLUESMINDS -> requestCompatibleVision(settings.bluesMindsApiKey, settings.bluesMindsBaseUrl, settings.bluesMindsModel, "BluesMinds", jpegBase64, "", formattedPrompt, CHAT_WITH_IMAGE_MAX_TOKENS)
+                    AiProvider.XKIRO -> requestCompatibleVision(settings.xKiroApiKey, settings.xKiroBaseUrl, settings.xKiroModel, "xKiro", jpegBase64, "", formattedPrompt, CHAT_WITH_IMAGE_MAX_TOKENS)
+                    AiProvider.ORCAROUTER -> requestCompatibleVision(settings.orcaRouterApiKey, settings.orcaRouterBaseUrl, settings.orcaRouterModel, "OrcaRouter", jpegBase64, "", formattedPrompt, CHAT_WITH_IMAGE_MAX_TOKENS)
                     else -> error("Provider tidak mendukung analisis gambar.")
                 }
-                AiResponse(output.trim(), provider)
+                AiResponse(AiAnswerFormat.clean(output), provider)
             }
             attempt.getOrNull()?.let { return Result.success(it) }
             lastError = attempt.exceptionOrNull()
