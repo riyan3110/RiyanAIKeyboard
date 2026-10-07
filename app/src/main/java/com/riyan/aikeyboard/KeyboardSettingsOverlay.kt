@@ -386,7 +386,7 @@ class KeyboardSettingsOverlay(
             Triple(KeyboardTheme.MODE_DARK, "Gelap Modern", Color.rgb(138, 112, 255)),
             Triple(KeyboardTheme.MODE_BLUE, "Deep Navy", Color.rgb(52, 166, 255)),
             Triple(KeyboardTheme.MODE_PURPLE, "Cyber Purple", Color.rgb(197, 73, 255)),
-            Triple(KeyboardTheme.MODE_ROSE, "Ruby Crimson", Color.rgb(255, 73, 98)),
+            Triple(KeyboardTheme.MODE_ROSE, "Ruby Crimson", Color.rgb(220, 30, 65)),
             Triple(KeyboardTheme.MODE_GREEN, "Emerald Forest", Color.rgb(48, 215, 132)),
             Triple(KeyboardTheme.MODE_AMOLED, "Amoled Pitch Black", Color.rgb(151, 116, 255)),
             Triple(KeyboardTheme.MODE_CUSTOM, "Kustomisasi Warna", customPreview),
@@ -404,7 +404,18 @@ class KeyboardSettingsOverlay(
                     background = rounded(if (selected) Color.rgb(31, 28, 55) else card, 12f, if (selected) accent else border, if (selected) 1 else 1)
                     setOnClickListener {
                         draft.themeMode = mode
-                        renderBody()
+                        // Apply the chosen preset immediately without saving unrelated drafts.
+                        prefs.edit().putString("keyboard_theme_mode", mode).apply()
+                        onApply()
+                        if (mode == KeyboardTheme.MODE_PHOTO) {
+                            val pickerIntent = Intent(context, ThemePhotoPickerActivity::class.java)
+                            if (context !is android.app.Activity) {
+                                pickerIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            context.startActivity(pickerIntent)
+                        } else {
+                            renderBody()
+                        }
                     }
                 }, LinearLayout.LayoutParams(0, dp(80), 1f).apply { setMargins(dp(3), dp(3), dp(3), dp(3)) })
             }

@@ -154,6 +154,9 @@ val patchSettingsInputAndGallery by tasks.registering {
                     }"""
         val newPhotoClick = """                    setOnClickListener {
                         draft.themeMode = mode
+                        // Apply the chosen preset immediately without saving unrelated drafts.
+                        prefs.edit().putString("keyboard_theme_mode", mode).apply()
+                        onApply()
                         if (mode == KeyboardTheme.MODE_PHOTO) {
                             val pickerIntent = Intent(context, ThemePhotoPickerActivity::class.java)
                             if (context !is android.app.Activity) {
