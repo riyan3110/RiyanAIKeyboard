@@ -247,6 +247,11 @@ if SERVICE_MARKER not in service:
             AiClient.chat(privateSettingsFor(profile), prompt, context, history).map { it.text }
         }.map { PrivateProviderAiResponse(it.value, it.profile) }
 
+    private fun runPrivateImageChat(jpegBase64: String, prompt: String): Result<PrivateProviderAiResponse> =
+        runPrivateProviderRequest { profile ->
+            AiClient.chatWithImage(privateSettingsFor(profile), jpegBase64, prompt).map { it.text }
+        }.map { PrivateProviderAiResponse(it.value, it.profile) }
+
     private fun runPrivateVoiceCorrection(transcript: String): Result<PrivateProviderAiResponse> =
         runPrivateProviderRequest { profile ->
             AiClient.correctVoiceSearch(privateSettingsFor(profile), transcript).map { it.text }

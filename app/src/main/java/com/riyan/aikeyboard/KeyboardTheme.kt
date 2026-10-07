@@ -12,6 +12,7 @@ import android.graphics.PixelFormat
 import android.graphics.RectF
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.Drawable
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import kotlin.math.max
 
@@ -40,11 +41,11 @@ object KeyboardTheme {
 
     val modes = listOf(
         MODE_TRANSPARENT to "Transparan",
-        MODE_DARK to "Gelap",
-        MODE_PURPLE to "Ungu",
-        MODE_BLUE to "Biru",
-        MODE_GREEN to "Hijau",
-        MODE_ROSE to "Merah muda",
+        MODE_DARK to "Gelap Modern",
+        MODE_PURPLE to "Cyber Purple",
+        MODE_BLUE to "Deep Navy",
+        MODE_GREEN to "Emerald Forest",
+        MODE_ROSE to "Ruby Crimson",
         MODE_CUSTOM to "Warna sendiri",
         MODE_AMOLED to "Amoled Pitch Black",
         MODE_PHOTO to "Foto dari galeri"
@@ -61,10 +62,10 @@ object KeyboardTheme {
         val customLetter = parseColor(prefs.getString("keyboard_custom_letter_color", "#FFFFFF"), Color.WHITE)
         val customNumber = parseColor(prefs.getString("keyboard_custom_number_color", "#FFFFFF"), Color.WHITE)
         val accent = when (mode) {
-            MODE_PURPLE -> Color.rgb(104, 75, 214)
-            MODE_BLUE -> Color.rgb(25, 118, 210)
-            MODE_GREEN -> Color.rgb(38, 137, 91)
-            MODE_ROSE -> Color.rgb(194, 64, 115)
+            MODE_PURPLE -> Color.rgb(197, 73, 255)
+            MODE_BLUE -> Color.rgb(52, 166, 255)
+            MODE_GREEN -> Color.rgb(48, 215, 132)
+            MODE_ROSE -> Color.rgb(220, 30, 65)
             MODE_CUSTOM -> custom
             else -> Color.rgb(89, 68, 196)
         }
@@ -72,7 +73,7 @@ object KeyboardTheme {
         // it; the translucent key faces come from the service's glass override.
         if (mode == MODE_TRANSPARENT) {
             return KeyboardThemePalette(
-                background = Color.rgb(14, 14, 18),
+                background = Color.TRANSPARENT,
                 key = Color.argb(74, 255, 255, 255),
                 specialKey = Color.argb(116, 12, 12, 16),
                 pressedKey = Color.rgb(96, 72, 214),
@@ -135,12 +136,20 @@ object KeyboardTheme {
             pressedKey = blend(accent, Color.WHITE, 0.10f),
             accent = accent,
             text = Color.WHITE,
-            usesPhoto = false
+            usesPhoto = false,
+            border = accent
         )
     }
 
     fun background(context: Context, prefs: SharedPreferences, palette: KeyboardThemePalette): Drawable {
-        if (!palette.usesPhoto) return ColorDrawable(palette.background)
+        if (!palette.usesPhoto) {
+            val mode = prefs.getString("keyboard_theme_mode", MODE_TRANSPARENT)
+            if (mode in listOf(MODE_BLUE, MODE_PURPLE, MODE_GREEN, MODE_ROSE)) {
+                return GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                    intArrayOf(blend(palette.accent, Color.BLACK, 0.62f), palette.background))
+            }
+            return ColorDrawable(palette.background)
+        }
         val uri = prefs.getString("keyboard_theme_image_uri", "").orEmpty()
         val bitmap = loadThemeBitmap(context, uri) ?: return ColorDrawable(palette.background)
         val dim = prefs.getInt("keyboard_theme_photo_dim", 48).coerceIn(10, 85)

@@ -141,6 +141,27 @@ class PrivateProviderStoreTest {
         assertEquals("fallback", result.getOrNull()?.profile?.name)
     }
 
+    @Test fun imageTransportBindsSavedEndpointKeyAndModelWithoutChangingSelection() {
+        val service = org.robolectric.Robolectric.buildService(RiyanKeyboardService::class.java).get()
+        val prefs = service.getSharedPreferences("riyan_ai", Context.MODE_PRIVATE)
+        prefs.edit().clear().commit()
+        val saved = PrivateProviderStore.save(prefs, "https://selected.example/v1", "selected-key", "selected-model")
+        val other = PrivateProviderStore.save(prefs, "https://other.example/v1", "other-key", "other-model")
+        PrivateProviderStore.select(prefs, saved.id)
+        val settingsFor = RiyanKeyboardService::class.java.getDeclaredMethod("privateSettingsFor", PrivateProviderProfile::class.java).apply {
+            isAccessible = true
+        }
+        for (candidate in listOf(saved, other)) {
+            val settings = settingsFor.invoke(service, candidate) as AiSettings
+            assertEquals(candidate.baseUrl, settings.xKiroBaseUrl)
+            assertEquals(candidate.apiKey, settings.xKiroApiKey)
+            assertEquals(candidate.model, settings.xKiroModel)
+            assertFalse(settings.fallbackEnabled)
+            assertEquals(saved.id, PrivateProviderStore.selected(prefs)?.id)
+        }
+        prefs.edit().clear().commit()
+    }
+
     private fun profile(name: String) = PrivateProviderProfile(
         id = name,
         name = name,
