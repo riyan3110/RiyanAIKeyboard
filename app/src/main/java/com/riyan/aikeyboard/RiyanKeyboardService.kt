@@ -230,6 +230,8 @@ class RiyanKeyboardService : InputMethodService() {
     private var cursorSelectionMode = false
     private var cursorSelectionAnchor = -1
     private var cursorSelectionPos = -1
+    private var editorSelectionStart = -1
+    private var editorSelectionEnd = -1
     private var aiChatImageUri: Uri? = null
     private var aiChatGalleryPanel: InternalGalleryPanel? = null
     private lateinit var aiChatAttachmentRow: LinearLayout
@@ -381,12 +383,19 @@ class RiyanKeyboardService : InputMethodService() {
         candidatesEnd: Int
     ) {
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
+        editorSelectionStart = newSelStart
+        editorSelectionEnd = newSelEnd
         if (!fastTypingMode) refreshSuggestionsSoon()
         refreshEnterKeyIfNeeded()
     }
 
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
         super.onStartInput(attribute, restarting)
+        cursorSelectionAnchor = -1
+        cursorSelectionPos = -1
+        cursorRepeatToken++
+        editorSelectionStart = attribute?.initialSelStart ?: -1
+        editorSelectionEnd = attribute?.initialSelEnd ?: -1
         if (browserImagePickerRestoreUntil > 0L) {
             handler.removeCallbacks(restoreBrowserAfterPicker)
             handler.post(restoreBrowserAfterPicker)
@@ -1658,7 +1667,7 @@ class RiyanKeyboardService : InputMethodService() {
         }
 
         val touchPad = TextView(this).apply {
-            text = "Mouse\nGeser untuk memindahkan kursor"
+            text = "Mouse\n↔ per huruf · ↕ per kalimat"
             textSize = if (isLandscape()) 12f else 14f
             gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
@@ -1701,6 +1710,8 @@ class RiyanKeyboardService : InputMethodService() {
                 label = if (cursorSelectionMode) "Pilih Teks: ON" else "Pilih Teks: OFF",
                 action = {
                     cursorSelectionMode = !cursorSelectionMode
+                    cursorSelectionAnchor = -1
+                    cursorSelectionPos = -1
                     renderKeyboard()
                 },
                 highlight = cursorSelectionMode
@@ -1777,9 +1788,13 @@ class RiyanKeyboardService : InputMethodService() {
         }, FrameLayout.LayoutParams(-1, -1))
 
         var repeatRunnable: Runnable? = null
+        val drag = CursorDrag(dpFloat(24f))
         frame.setOnTouchListener { view, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
+                    beginCursorGesture()
+                    drag.start(event.rawX, event.rawY)
+                    view.parent?.requestDisallowInterceptTouchEvent(true)
                     view.background = roundedStrokedBackground(pressedKeyBg, 11f, Color.rgb(205, 124, 255), 3)
                     moveCursor(keyCode)
                     keyFeedback(view, longPress = false)
@@ -1793,7 +1808,17 @@ class RiyanKeyboardService : InputMethodService() {
                     }.also { handler.postDelayed(it, CURSOR_REPEAT_DELAY_MS) }
                     true
                 }
+                MotionEvent.ACTION_MOVE -> {
+                    drag.move(event.rawX, event.rawY)?.let { direction ->
+                        cursorRepeatToken++
+                        repeatRunnable?.let(handler::removeCallbacks)
+                        repeatRunnable = null
+                        moveCursor(direction)
+                    }
+                    true
+                }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    view.parent?.requestDisallowInterceptTouchEvent(false)
                     cursorRepeatToken++
                     repeatRunnable?.let(handler::removeCallbacks)
                     repeatRunnable = null
@@ -1806,47 +1831,37 @@ class RiyanKeyboardService : InputMethodService() {
         return frame
     }
 
+    private fun beginCursorGesture() {
+        val input = activeInternalInput()
+        val start = input?.selectionStart ?: editorSelectionStart
+        val end = input?.selectionEnd ?: editorSelectionEnd
+        if (minOf(start, end) != minOf(cursorSelectionAnchor, cursorSelectionPos) ||
+            maxOf(start, end) != maxOf(cursorSelectionAnchor, cursorSelectionPos)) {
+            cursorSelectionAnchor = -1
+            cursorSelectionPos = -1
+        }
+    }
+
     private fun cursorPadTouchListener(): View.OnTouchListener {
-        var lastX = 0f
-        var lastY = 0f
-        var accumulatedX = 0f
-        var accumulatedY = 0f
-        var gaveFeedback = false
+        val drag = CursorDrag(dpFloat(24f))
         return View.OnTouchListener { view, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
-                    lastX = event.x
-                    lastY = event.y
-                    accumulatedX = 0f
-                    accumulatedY = 0f
-                    gaveFeedback = false
+                    beginCursorGesture()
+                    drag.start(event.rawX, event.rawY)
+                    view.parent?.requestDisallowInterceptTouchEvent(true)
                     view.background = cursorPadBackground(pressed = true)
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    accumulatedX += event.x - lastX
-                    accumulatedY += event.y - lastY
-                    lastX = event.x
-                    lastY = event.y
-                    val step = dpFloat(if (isLandscape()) 13f else 17f)
-                    var moved = false
-                    while (abs(accumulatedX) >= step) {
-                        moveCursor(if (accumulatedX > 0f) KeyEvent.KEYCODE_DPAD_RIGHT else KeyEvent.KEYCODE_DPAD_LEFT)
-                        accumulatedX += if (accumulatedX > 0f) -step else step
-                        moved = true
-                    }
-                    while (abs(accumulatedY) >= step) {
-                        moveCursor(if (accumulatedY > 0f) KeyEvent.KEYCODE_DPAD_DOWN else KeyEvent.KEYCODE_DPAD_UP)
-                        accumulatedY += if (accumulatedY > 0f) -step else step
-                        moved = true
-                    }
-                    if (moved && !gaveFeedback) {
+                    drag.move(event.rawX, event.rawY)?.let {
+                        moveCursor(it)
                         keyFeedback(view, longPress = false)
-                        gaveFeedback = true
                     }
                     true
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    view.parent?.requestDisallowInterceptTouchEvent(false)
                     view.background = cursorPadBackground(pressed = false)
                     true
                 }
@@ -1889,62 +1904,57 @@ class RiyanKeyboardService : InputMethodService() {
         refreshSuggestionsSoon()
     }
 
-    /** Arrow pad in selection mode: extend the highlighted range from a fixed anchor. */
+    private data class CursorTextWindow(val text: String, val offset: Int, val start: Int, val end: Int)
+
+    private fun cursorTextWindow(ic: InputConnection): CursorTextWindow? {
+        val extracted = runCatching { ic.getExtractedText(ExtractedTextRequest(), 0) }.getOrNull()
+        if (extracted?.text != null && extracted.selectionStart >= 0 && extracted.selectionEnd >= 0) {
+            return CursorTextWindow(extracted.text.toString(), extracted.startOffset,
+                extracted.startOffset + extracted.selectionStart, extracted.startOffset + extracted.selectionEnd)
+        }
+        val start = editorSelectionStart
+        val end = editorSelectionEnd
+        if (start < 0 || end < 0) return null
+        val before = ic.getTextBeforeCursor(4000, 0)?.toString() ?: return null
+        val selected = if (start == end) "" else ic.getSelectedText(0)?.toString() ?: return null
+        val after = ic.getTextAfterCursor(4000, 0)?.toString() ?: return null
+        val offset = minOf(start, end) - before.length
+        if (offset < 0 || selected.length != kotlin.math.abs(end - start)) return null
+        return CursorTextWindow(before + selected + after, offset, start, end)
+    }
+
+    /** Keep a fixed absolute anchor and move only the active selection endpoint. */
     private fun extendCursorSelection(keyCode: Int) {
         val internalInput = activeInternalInput()
         if (internalInput != null) {
-            val editable = internalInput.text
-            val selStart = internalInput.selectionStart.coerceIn(0, editable.length)
-            val selEnd = internalInput.selectionEnd.coerceIn(0, editable.length)
-            if (cursorSelectionAnchor < 0) cursorSelectionAnchor = selStart
-            val cursor = if (cursorSelectionAnchor <= selStart) selStart else selEnd
-            val target = cursorTarget(editable.toString(), cursor, cursor, keyCode) ?: cursor
-            internalInput.setSelection(cursorSelectionAnchor.coerceIn(0, editable.length), target)
+            val text = internalInput.text.toString()
+            if (cursorSelectionAnchor < 0) cursorSelectionAnchor = internalInput.selectionStart.coerceAtLeast(0)
+            if (cursorSelectionPos < 0) cursorSelectionPos = internalInput.selectionEnd.coerceAtLeast(0)
+            val target = CursorNavigation.target(text, cursorSelectionPos, keyCode)
+            cursorSelectionAnchor = cursorSelectionAnchor.coerceIn(0, text.length)
+            internalInput.setSelection(cursorSelectionAnchor, target)
             cursorSelectionPos = target
             return
         }
         val ic = currentInputConnection ?: return
-
-        // Editors often return null for getExtractedText and ignore synthesized key
-        // events, so the selection is tracked manually: the anchor stays fixed and the
-        // moving end is recomputed from the text before/after the caret on each press,
-        // then applied with setSelection so the highlight is visible in the editor.
-        val before = runCatching { ic.getTextBeforeCursor(4000, 0)?.toString().orEmpty() }.getOrDefault("")
-        val after = runCatching { ic.getTextAfterCursor(4000, 0)?.toString().orEmpty() }.getOrDefault("")
-        val cursorAbs = before.length
-        if (cursorSelectionAnchor < 0) cursorSelectionAnchor = cursorAbs
-        if (cursorSelectionPos < 0) cursorSelectionPos = cursorAbs
-
-        val lastNl = before.lastIndexOf('\n')
-        val lineStartAbs = cursorAbs - before.length + (lastNl + 1)
-        val newEnd = when (keyCode) {
-            KeyEvent.KEYCODE_DPAD_LEFT -> (cursorSelectionPos - 1).coerceAtLeast(0)
-            KeyEvent.KEYCODE_DPAD_RIGHT -> (cursorSelectionPos + 1).coerceAtMost(cursorAbs + after.length)
-            KeyEvent.KEYCODE_DPAD_UP -> {
-                if (lastNl < 0) {
-                    0
-                } else {
-                    val col = (cursorSelectionPos - lineStartAbs).coerceAtLeast(0)
-                    val secondLastNl = before.lastIndexOf('\n', lastNl - 1)
-                    val prevStartAbs = cursorAbs - before.length + (if (secondLastNl >= 0) secondLastNl + 1 else 0)
-                    (prevStartAbs + col).coerceAtMost(lineStartAbs - 1).coerceAtLeast(prevStartAbs)
-                }
-            }
-            else -> {
-                val nl1 = after.indexOf('\n')
-                if (nl1 < 0) {
-                    cursorAbs + after.length
-                } else {
-                    val col = (cursorSelectionPos - lineStartAbs).coerceAtLeast(0)
-                    val nextStartAbs = cursorAbs + nl1 + 1
-                    val nl2 = after.indexOf('\n', nl1 + 1)
-                    val nextLen = if (nl2 >= 0) nl2 - nl1 - 1 else after.length - nl1 - 1
-                    nextStartAbs + col.coerceAtMost(nextLen)
-                }
-            }
+        val window = cursorTextWindow(ic)
+        if (window == null) {
+            // Never guess absolute offsets from a truncated text-before-cursor result.
+            val meta = KeyEvent.META_SHIFT_ON or KeyEvent.META_SHIFT_LEFT_ON
+            ic.sendKeyEvent(KeyEvent(0, 0, KeyEvent.ACTION_DOWN, keyCode, 0, meta))
+            ic.sendKeyEvent(KeyEvent(0, 0, KeyEvent.ACTION_UP, keyCode, 0, meta))
+            return
         }
-        cursorSelectionPos = newEnd
-        ic.setSelection(minOf(cursorSelectionAnchor, cursorSelectionPos), maxOf(cursorSelectionAnchor, cursorSelectionPos))
+        if (cursorSelectionAnchor < 0) cursorSelectionAnchor = window.start
+        if (cursorSelectionPos < 0) cursorSelectionPos = window.end
+        val relative = cursorSelectionPos - window.offset
+        if (relative !in 0..window.text.length) return
+        val target = window.offset + CursorNavigation.target(window.text, relative, keyCode)
+        if (ic.setSelection(cursorSelectionAnchor, target)) {
+            cursorSelectionPos = target
+            editorSelectionStart = cursorSelectionAnchor
+            editorSelectionEnd = target
+        }
     }
 
     private fun copyCursorSelection() {
@@ -1961,19 +1971,11 @@ class RiyanKeyboardService : InputMethodService() {
             finishCopy(viaIc)
             return
         }
-        // Manual slice from the tracked anchor/selection end for editors that do not
-        // expose their selection through the input connection.
-        if (cursorSelectionAnchor < 0 || cursorSelectionPos < 0 || cursorSelectionAnchor == cursorSelectionPos) {
-            aiStatusOrToast("Tidak ada teks terseleksi. Nyalakan Pilih Teks lalu geser panah.")
-            return
-        }
-        val start = minOf(cursorSelectionAnchor, cursorSelectionPos)
-        val end = maxOf(cursorSelectionAnchor, cursorSelectionPos)
-        val before = ic?.getTextBeforeCursor(8000, 0)?.toString().orEmpty()
-        val windowStart = before.length
-        val from = (start - (windowStart - before.length)).coerceIn(0, before.length)
-        val to = (end - (windowStart - before.length)).coerceIn(0, before.length)
-        finishCopy(if (to > from) before.substring(from, to) else "")
+        val window = ic?.let(::cursorTextWindow)
+        val start = minOf(cursorSelectionAnchor, cursorSelectionPos) - (window?.offset ?: 0)
+        val end = maxOf(cursorSelectionAnchor, cursorSelectionPos) - (window?.offset ?: 0)
+        finishCopy(if (window != null && start >= 0 && end > start && end <= window.text.length)
+            window.text.substring(start, end) else "")
     }
 
     private fun finishCopy(selected: String) {
@@ -2019,37 +2021,10 @@ class RiyanKeyboardService : InputMethodService() {
     }
 
     private fun cursorTarget(text: String, selectionStart: Int, selectionEnd: Int, keyCode: Int): Int? {
-        fun lineStartAt(position: Int): Int =
-            if (position <= 0) 0 else text.lastIndexOf('\n', position - 1) + 1
-
         val start = minOf(selectionStart, selectionEnd).coerceIn(0, text.length)
         val end = maxOf(selectionStart, selectionEnd).coerceIn(0, text.length)
-        if (start != end) {
-            return if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_UP) start else end
-        }
-        val cursor = end
-        return when (keyCode) {
-            KeyEvent.KEYCODE_DPAD_LEFT -> (cursor - 1).coerceAtLeast(0)
-            KeyEvent.KEYCODE_DPAD_RIGHT -> (cursor + 1).coerceAtMost(text.length)
-            KeyEvent.KEYCODE_DPAD_UP -> {
-                val lineStart = lineStartAt(cursor)
-                if (lineStart <= 0) cursor else {
-                    val previousEnd = lineStart - 1
-                    val previousStart = lineStartAt(previousEnd)
-                    (previousStart + (cursor - lineStart)).coerceAtMost(previousEnd)
-                }
-            }
-            KeyEvent.KEYCODE_DPAD_DOWN -> {
-                val lineStart = lineStartAt(cursor)
-                val lineEnd = text.indexOf('\n', cursor)
-                if (lineEnd < 0) cursor else {
-                    val nextStart = lineEnd + 1
-                    val nextEnd = text.indexOf('\n', nextStart).let { if (it < 0) text.length else it }
-                    (nextStart + (cursor - lineStart)).coerceAtMost(nextEnd)
-                }
-            }
-            else -> null
-        }
+        if (start != end) return if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_UP) start else end
+        return CursorNavigation.target(text, end, keyCode)
     }
 
     private fun addSimpleSymbolRow(symbols: List<String>) = addRow(symbols.map(::symbolSpec))
