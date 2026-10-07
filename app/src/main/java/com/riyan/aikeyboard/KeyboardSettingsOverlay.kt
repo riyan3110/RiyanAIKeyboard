@@ -407,7 +407,15 @@ class KeyboardSettingsOverlay(
                         // Apply the chosen preset immediately without saving unrelated drafts.
                         prefs.edit().putString("keyboard_theme_mode", mode).apply()
                         onApply()
-                        renderBody()
+                        if (mode == KeyboardTheme.MODE_PHOTO) {
+                            val pickerIntent = Intent(context, ThemePhotoPickerActivity::class.java)
+                            if (context !is android.app.Activity) {
+                                pickerIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            context.startActivity(pickerIntent)
+                        } else {
+                            renderBody()
+                        }
                     }
                 }, LinearLayout.LayoutParams(0, dp(80), 1f).apply { setMargins(dp(3), dp(3), dp(3), dp(3)) })
             }
